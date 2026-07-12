@@ -1,27 +1,35 @@
 """Resolution of the Kratos Multiphysics environment.
 
-Kratos is usually not pip-installed; it lives in a compiled build tree
-(e.g. $KRATOS_ROOT/bin/Release) and needs PYTHONPATH and LD_LIBRARY_PATH
-set before the interpreter starts. This module centralises that logic.
+A local compiled build tree (e.g. $KRATOS_ROOT/bin/Release, needing
+PYTHONPATH/LD_LIBRARY_PATH) is one way to get Kratos, but it is not
+required: Kratos publishes official PyPI wheels for Linux/Windows x86_64
+(`KratosMultiphysics` core, `Kratos<AppName>` per application, or the
+`KratosMultiphysics-all` omnibus package) that `pip_install()` below can
+install straight into this server's own Python environment. Once
+installed that way, `resolve()` picks it up automatically through the
+plain-import probe. See `tools/environment.py`'s `kratos_install` tool,
+which is how an MCP client triggers this.
 
 IMPORTANT: Kratos must NEVER be imported in the MCP server process.
 It prints an ASCII banner on import (which would corrupt the stdio
 JSON-RPC stream) and its C++ core can abort the whole process. All
-Kratos access goes through subprocesses built with `build_env()`.
-
-Author: Vicente Mataix Ferrándiz
-"""
+Kratos access goes through subprocesses built with `build_env()`."""
 
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from importlib import metadata
 from pathlib import Path
 
 DEFAULT_KRATOS_ROOT = "/home/vicente/src/Kratos"
+
+# Official Kratos PyPI package names (Linux/Windows x86_64 wheels only, no
+# macOS): https://pypi.org/project/KratosMultiphysics-all/
+PYPI_CORE_PACKAGE = "KratosMultiphysics"
+PYPI_ALL_PACKAGE = "KratosMultiphysics-all"
 
 # Candidate build subdirectories, in order of preference.
 _BUILD_CANDIDATES = ("bin/Release", "bin/FullDebug", "bin/Debug")
@@ -74,7 +82,15 @@ class KratosEnv:
                 return f"{marker}:{marker.stat().st_mtime_ns}"
             except OSError:
                 return str(marker)
-        return "pip"
+        if self.pip_installed:
+            # Reading dist-info metadata does not execute the package (safe
+            # even though we can't import Kratos here); this lets the bridge
+            # cache invalidate itself after kratos_install upgrades/installs.
+            try:
+                return f"pip:{metadata.version(PYPI_CORE_PACKAGE)}"
+            except metadata.PackageNotFoundError:
+                return "pip"
+        return "unknown"
 
 
 def resolve() -> KratosEnv:
@@ -83,7 +99,12 @@ def resolve() -> KratosEnv:
     Precedence:
       1. KRATOS_PYTHONPATH / KRATOS_LIBS explicit overrides
       2. KRATOS_ROOT (default /home/vicente/src/Kratos) + bin/Release
-      3. pip-installed KratosMultiphysics (importable without env tweaks)
+      3. pip-installed KratosMultiphysics (importable without env tweaks;
+         this is also what `kratos_install` produces)
+
+    A local build tree is optional: if none is found and nothing is
+    pip-installed yet, `is_available()` returns False and tools report it,
+    with a hint to call kratos_install rather than requiring KRATOS_ROOT.
     """
     root_str = os.environ.get("KRATOS_ROOT", DEFAULT_KRATOS_ROOT)
     root = Path(root_str).expanduser() if root_str else None
@@ -120,6 +141,33 @@ def resolve() -> KratosEnv:
 def is_available(env: KratosEnv | None = None) -> bool:
     env = env or resolve()
     return env.pip_installed or env.pythonpath is not None
+
+
+def pypi_package_name(application: str) -> str:
+    """Map a Kratos application name (e.g. 'StructuralMechanicsApplication')
+    to its PyPI project name (e.g. 'KratosStructuralMechanicsApplication')."""
+    return application if application.startswith("Kratos") else f"Kratos{application}"
+
+
+def pip_install(
+    packages: list[str],
+    python: str | None = None,
+    upgrade: bool = False,
+    timeout: float = 1800.0,
+) -> subprocess.CompletedProcess:
+    """Install packages with pip into the given (or current) interpreter.
+
+    This never imports Kratos, so unlike everything else that touches
+    Kratos it is safe to call from the server process; kratos_install still
+    runs it off the event loop via anyio.to_thread.run_sync. Kratos wheels
+    are large (hundreds of MB for KratosMultiphysics-all), hence the long
+    default timeout.
+    """
+    cmd = [python or sys.executable, "-m", "pip", "install"]
+    if upgrade:
+        cmd.append("--upgrade")
+    cmd += packages
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
 def data_dir() -> Path:

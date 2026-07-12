@@ -1,7 +1,4 @@
-"""Simulation execution tools backed by the job manager.
-
-Author: Vicente Mataix Ferrándiz
-"""
+"""Simulation execution tools backed by the job manager."""
 
 from __future__ import annotations
 

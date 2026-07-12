@@ -1,7 +1,4 @@
-"""Introspection tools: what does this Kratos installation provide?
-
-Author: Vicente Mataix Ferrándiz
-"""
+"""Introspection tools: what does this Kratos installation provide?"""
 
 from __future__ import annotations
 
@@ -65,29 +62,80 @@ def _compiled_apps() -> list[str] | None:
         return None
 
 
+async def _check_installation() -> dict[str, Any]:
+    """Shared by the kratos_check_installation and kratos_install tools."""
+    env = kratos_env.resolve()
+    info: dict[str, Any] = {
+        "kratos_root": str(env.root) if env.root else None,
+        "pythonpath": str(env.pythonpath) if env.pythonpath else None,
+        "ld_library_path": str(env.libs) if env.libs else None,
+        "source_tree": str(env.source) if env.source else None,
+        "pip_installed": env.pip_installed,
+    }
+    if not kratos_env.is_available(env):
+        info["importable"] = False
+        info["hint"] = (
+            "No local build found and nothing pip-installed. Either set KRATOS_ROOT "
+            "to a Kratos checkout containing a compiled build (bin/Release), or call "
+            "kratos_install to pip-install Kratos into this server's own environment "
+            "(Linux/Windows x86_64 only -- macOS has no Kratos wheels).")
+        return info
+    result = await _bridge_op("check")
+    if isinstance(result, dict):
+        info.update(result)
+    return info
+
+
 def register(mcp) -> None:
 
     @mcp.tool()
     async def kratos_check_installation() -> dict[str, Any]:
         """Check that Kratos Multiphysics is available and report version,
         paths, thread count and the list of compiled applications."""
-        env = kratos_env.resolve()
-        info: dict[str, Any] = {
-            "kratos_root": str(env.root) if env.root else None,
-            "pythonpath": str(env.pythonpath) if env.pythonpath else None,
-            "ld_library_path": str(env.libs) if env.libs else None,
-            "source_tree": str(env.source) if env.source else None,
-            "pip_installed": env.pip_installed,
+        return await _check_installation()
+
+    @mcp.tool()
+    async def kratos_install(
+        applications: list[str] | None = None,
+        all: bool = False,
+        upgrade: bool = False,
+    ) -> dict[str, Any]:
+        """Install Kratos Multiphysics via pip into this server's own Python
+        environment -- a local compiled build (KRATOS_ROOT) is not required.
+        Installs the 'KratosMultiphysics' core plus any named applications
+        (e.g. ["StructuralMechanicsApplication", "ConvectionDiffusionApplication",
+        "LinearSolversApplication"]); pass all=true instead for the
+        'KratosMultiphysics-all' omnibus package covering essentially every
+        application. Official wheels are only published for Linux and
+        Windows x86_64 -- there is no Kratos wheel for macOS, where a local
+        KRATOS_ROOT build is still required. This can take several minutes
+        and download hundreds of MB (KratosMultiphysics-all is the largest);
+        prefer naming only the applications you need. Once it returns ok,
+        Kratos is importable immediately -- no server restart needed."""
+        packages = [kratos_env.PYPI_ALL_PACKAGE] if all else (
+            [kratos_env.PYPI_CORE_PACKAGE]
+            + [kratos_env.pypi_package_name(a) for a in (applications or [])]
+        )
+        try:
+            result = await anyio.to_thread.run_sync(
+                lambda: kratos_env.pip_install(packages, upgrade=upgrade))
+        except Exception as exc:
+            return {"ok": False, "packages": packages, "error": str(exc)}
+
+        out: dict[str, Any] = {
+            "packages": packages,
+            "returncode": result.returncode,
+            "ok": result.returncode == 0,
         }
-        if not kratos_env.is_available(env):
-            info["importable"] = False
-            info["hint"] = ("Set KRATOS_ROOT to a Kratos checkout containing a compiled "
-                            "build (bin/Release), or KRATOS_PYTHONPATH/KRATOS_LIBS directly.")
-            return info
-        result = await _bridge_op("check")
-        if isinstance(result, dict):
-            info.update(result)
-        return info
+        if result.returncode != 0:
+            out["stderr_tail"] = result.stderr[-2000:]
+            out["hint"] = (
+                "pip install failed. Kratos wheels only exist for Linux/Windows "
+                "x86_64 -- on macOS or other unsupported platforms, build Kratos "
+                "from source and point KRATOS_ROOT at it instead.")
+        else:
+            out["check"] = await _check_installation()
+        return out
 
     @mcp.tool()
     async def kratos_list_applications() -> dict[str, Any]:

@@ -3,10 +3,7 @@
 Runs INSIDE the Kratos environment as `python -m kratos_mcp.runner
 --case-dir DIR --parameters ProjectParameters.json`, spawned detached by
 jobs.JobManager. All output goes to stdout/stderr (redirected to the job
-log by the manager). The exit code is the job result.
-
-Author: Vicente Mataix Ferrándiz
-"""
+log by the manager). The exit code is the job result."""
 
 from __future__ import annotations
 

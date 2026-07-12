@@ -10,10 +10,7 @@ criterion; we capture the common patterns without depending on any one:
 
     ... ITERATION:  3
     RESIDUAL CRITERION ... :: [ Obtained ratio = 1.2e-05; Expected ratio = 0.0001; ...]
-    ... Convergence is achieved after 4 iterations
-
-Author: Vicente Mataix Ferrándiz
-"""
+    ... Convergence is achieved after 4 iterations"""
 
 from __future__ import annotations
 

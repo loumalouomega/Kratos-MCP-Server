@@ -8,10 +8,7 @@ persistent directory under ~/.kratos-mcp/jobs/<job_id>/ holding:
 
 State machine: queued -> running -> succeeded | failed | cancelled.
 Because everything lives on disk, jobs survive MCP server restarts:
-status is recomputed from pid liveness and the recorded return code.
-
-Author: Vicente Mataix Ferrándiz
-"""
+status is recomputed from pid liveness and the recorded return code."""
 
 from __future__ import annotations
 
