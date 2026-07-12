@@ -6,21 +6,19 @@ communicates over stdin/stdout. Pass `KRATOS_ROOT` (and any other
 through the client's `env` mechanism — or skip that entirely and let the
 assistant pip-install Kratos via `kratos_install` on first use.
 
-Two ways to launch the server, depending on whether it's published to PyPI
-yet:
+Two ways to launch the server:
 
-- **`uvx kratos-mcp-server`** — once released, this fetches and runs it with no
-  local checkout at all (verified end-to-end: `uvx` installs the wheel into
-  an ephemeral environment and the bundled templates/tools all resolve
-  correctly from there).
+- **`uvx kratos-mcp-server`** — published on PyPI, this fetches and runs it
+  with no local checkout at all (verified end-to-end: `uvx` installs the
+  wheel into an ephemeral environment and the bundled templates/tools all
+  resolve correctly from there).
 - **`uv --directory /path/to/Kratos-MCP-Server run kratos-mcp`** — runs
-  from a local clone; use this before the first release, or when developing
-  the server itself.
+  from a local clone; use this when developing the server itself.
 
 ## Claude Code
 
 ```bash
-# once published to PyPI
+# published on PyPI (recommended)
 claude mcp add kratos -- uvx kratos-mcp-server
 
 # from a local checkout
@@ -58,6 +56,61 @@ Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
 ```
 
 Restart Claude Desktop afterwards.
+
+## GitHub Copilot (VS Code)
+
+VS Code's MCP support lives in a `mcp.json` file with a top-level `servers`
+key (not `mcpServers` — this is the one place the shape differs from
+Claude's config).
+
+**Per-workspace** (recommended — checked into the repo you're working in,
+so teammates get it automatically): create `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "kratos": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["kratos-mcp-server"]
+    }
+  }
+}
+```
+
+If you're pointing at a local Kratos build instead of letting `kratos_install`
+pip-install one, add an `env` block:
+
+```json
+{
+  "servers": {
+    "kratos": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["kratos-mcp-server"],
+      "env": {
+        "KRATOS_ROOT": "/path/to/Kratos"
+      }
+    }
+  }
+}
+```
+
+**User-level** (available in every workspace): open the Command Palette
+(`Ctrl+Shift+P` / `Cmd+Shift+P`) → **MCP: Open User Configuration** → add the
+same `"kratos": {...}` block under `servers`.
+
+**Using it**: open the Copilot Chat panel, switch the mode dropdown from
+*Ask*/*Edit* to **Agent** — MCP tools are only available in Agent mode. Click
+the 🔧 **Tools** icon to confirm `kratos` tools are listed (VS Code caps how
+many tools can be active at once across all servers; deselect ones you don't
+need if you hit the limit). The first time the model calls a `kratos` tool,
+VS Code prompts you to allow it — approve once and it won't ask again for
+that tool in that workspace.
+
+Verify the connection: Command Palette → **MCP: List Servers** → `kratos`
+should show as running; or just ask Copilot Chat (in Agent mode) *"check the
+Kratos installation"* and confirm it calls `kratos_check_installation`.
 
 ## Any MCP client
 

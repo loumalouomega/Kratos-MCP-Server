@@ -11,7 +11,25 @@ You can hand the whole thing to an assistant as one request:
 > downward line load on the right edge. Run it and compare the tip
 > deflection with beam theory.
 
-What follows is the tool-by-tool walkthrough.
+The same prompt works in both **Claude Code** and **GitHub Copilot Chat in
+VS Code** (Agent mode) — see [Connecting a client](/guide/connecting) for
+setup. The two differ only in how tool calls are surfaced:
+
+- **Claude Code** shows each tool call and its result inline as it happens;
+  no confirmation is needed unless your permission settings require it.
+- **GitHub Copilot Chat** requires **Agent mode** (the mode dropdown above
+  the chat box — MCP tools aren't available in Ask/Edit mode) and asks you
+  to approve the *first* call to each tool per workspace (a one-time click
+  per tool, not per call).
+
+Want something to inspect or paste in without running any tools at all? The
+`kratos://examples/cantilever` MCP resource is a smaller, literal version of
+this same setup (a 4×1 mesh instead of 20×4) with the exact file contents
+and a pre-verified result baked in — ask either assistant to *"read the
+kratos cantilever example resource"*, or fetch it yourself with an MCP
+inspector.
+
+What follows is the tool-by-tool walkthrough for the full 20×4 case.
 
 ## 1. Check the environment
 

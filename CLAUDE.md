@@ -75,6 +75,14 @@ only run inside subprocesses with the env vars injected.
   `Materials.json.tpl`. Substitution: quoted `"{{key}}"` → JSON-typed value,
   bare `{{key}}` → text.
 - `src/kratos_mcp/logparse.py` — step/convergence extraction from job logs
+- `src/kratos_mcp/examples/cantilever/` — real `mesh.mdpa` +
+  ProjectParameters.json + Materials.json files (a coarse 4x1 case), read
+  verbatim by the `kratos://examples/cantilever` resource in
+  `tools/resources.py`, not rendered from `templates/` at request time. If
+  `structural_static`'s template changes, regenerate these files by hand
+  and re-verify the numbers with a real run (recipe in
+  `tests/test_examples.py` and the cantilever-beam.md tutorial).
+  `thermal-bar` stays dynamically rendered via `_example_bundle()`.
 
 ## Kratos gotchas learned the hard way
 

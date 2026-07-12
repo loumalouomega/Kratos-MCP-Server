@@ -8,6 +8,8 @@ from pathlib import Path
 from .. import jobs
 from .scaffold import TEMPLATES_DIR, load_registry, render_template_file
 
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+
 MDPA_FORMAT_GUIDE = """\
 # Kratos MDPA mesh format
 
@@ -158,6 +160,46 @@ The file is referenced from
 """
 
 
+CANTILEVER_INTRO = """\
+# Worked example: 2D cantilever plate (structural_static)
+
+1 m x 0.2 m steel plate, fixed on the left edge, 1 MN/m downward line load
+on the right edge. The files below are copied verbatim from
+src/kratos_mcp/examples/cantilever/ in this package -- real files on disk,
+not text baked into this module, and not rendered from templates/ at
+request time. A coarse 4x1 mesh was chosen so the whole thing fits on one
+screen (the cantilever-beam tutorial in the docs site uses the same setup
+at 20x4 for a result closer to slender-beam theory)."""
+
+CANTILEVER_RESULT = """\
+## Verified result
+
+Running this exact case (validate_case -> run_simulation ->
+results_probe at the tip, point [1.0, 0.0, 0.0]) gives:
+
+    DISPLACEMENT at the tip: [-3.6684e-05, -2.5312e-04, 0.0]  (metres)
+    -> 0.253 mm downward, 0.037 mm sideways
+
+This coarse mesh under-predicts deflection relative to the converged
+(fine-mesh) beam-theory estimate of ~0.48 mm -- expected, coarse meshes are
+stiffer. Refine by regenerating the mesh with more divisions, e.g.
+mdpa_create_structured_mesh(kind='rectangle', size=[1.0, 0.2],
+divisions=[20, 4]) instead of [4, 1].
+
+## Reproducing this with the tools instead of copy-pasting
+
+```
+mdpa_create_structured_mesh(path='case/mesh.mdpa', kind='rectangle',
+                             size=[1.0, 0.2], divisions=[4, 1])
+create_project(directory='case', template='structural_static', name='cantilever')
+add_boundary_condition(parameters_file='case/ProjectParameters.json',
+                        kind='line_load', model_part='Structure.right',
+                        modulus=1000000.0, direction=[0.0, -1.0, 0.0])
+run_simulation(case_dir='case', wait_seconds=60)
+```
+"""
+
+
 def _example_bundle(template: str, mesh_hint: str) -> str:
     registry = load_registry()
     values = dict(registry[template]["placeholders"])
@@ -203,12 +245,21 @@ def register(mcp) -> None:
 
     @mcp.resource("kratos://examples/cantilever")
     def cantilever_example() -> str:
-        """Complete structural static example: cantilever plate under edge load."""
-        return _example_bundle(
-            "structural_static",
-            "Generate with mdpa_create_structured_mesh(path='mesh.mdpa', "
-            "kind='rectangle', size=[1.0, 0.2], divisions=[20, 4]). Fix the 'left' "
-            "edge; apply a line_load on 'right' with add_boundary_condition.")
+        """Complete structural static example: cantilever plate under edge load.
+        Copied verbatim from real files on disk (examples/cantilever/) --
+        not rendered from the templates at request time, so it works
+        identically even if the templates change later."""
+        case_dir = EXAMPLES_DIR / "cantilever"
+        mesh = (case_dir / "mesh.mdpa").read_text()
+        pp = (case_dir / "ProjectParameters.json").read_text()
+        mats = (case_dir / "Materials.json").read_text()
+        return (
+            f"{CANTILEVER_INTRO}\n\n"
+            f"## mesh.mdpa\n\n```\n{mesh}```\n\n"
+            f"## ProjectParameters.json\n\n```json\n{pp}```\n\n"
+            f"## Materials.json\n\n```json\n{mats}```\n\n"
+            f"{CANTILEVER_RESULT}"
+        )
 
     @mcp.resource("kratos://examples/thermal-bar")
     def thermal_bar_example() -> str:
