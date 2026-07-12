@@ -1,6 +1,6 @@
 # Tool reference
 
-The server exposes **31 tools**, **7 resources** and **4 prompts**, grouped
+The server exposes **33 tools**, **7 resources** and **4 prompts**, grouped
 by workflow stage:
 
 | Category | Tools |
@@ -10,6 +10,7 @@ by workflow stage:
 | [Meshes](/tools/mesh) | `mdpa_create_structured_mesh`, `mdpa_inspect`, `mdpa_validate`, `mdpa_get_nodes` |
 | [Simulation & jobs](/tools/simulation) | `run_simulation`, `validate_case`, `job_status`, `job_list`, `job_logs`, `job_cancel` |
 | [Post-processing](/tools/postprocessing) | `results_list`, `results_summary`, `results_probe`, `results_convergence` |
+| [Visualization](/tools/visualization) | `results_render`, `results_animate` (optional `viz` extra) |
 
 Plus [resources](/tools/resources) (templates, format guides, worked
 examples, live job logs) and [prompts](/tools/prompts) (guided workflows).
@@ -34,4 +35,5 @@ kratos_check_installation (→ kratos_install, if missing)
   → validate_case
   → run_simulation → job_status / job_logs
   → results_list → results_summary / results_probe
+  → results_render (inline PNG preview; results_animate for a GIF)
 ```

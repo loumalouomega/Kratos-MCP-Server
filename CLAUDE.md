@@ -2,8 +2,9 @@
 
 MCP (Model Context Protocol) server exposing Kratos Multiphysics to AI
 assistants: installation introspection, case scaffolding (ProjectParameters /
-Materials / MDPA meshes), simulation execution as background jobs, and VTK
-post-processing. Python, `mcp` SDK (FastMCP), stdio transport.
+Materials / MDPA meshes), simulation execution as background jobs, VTK
+post-processing, and pyvista result previews (PNG/GIF returned inline).
+Python, `mcp` SDK (FastMCP), stdio transport.
 
 ## Environment
 
@@ -49,9 +50,18 @@ abort the process. All Kratos access goes through subprocesses:
 `worker.py` and `runner.py` are the ONLY modules that import Kratos, and they
 only run inside subprocesses with the env vars injected.
 
+The same class of rule covers pyvista/VTK: its OpenGL init can abort the
+process on headless/misconfigured systems, so `tools/visualize.py` spawns
+`render_worker.py` (the ONLY module that imports pyvista) as a plain
+subprocess — no Kratos env needed — with the same `--result-file` JSON
+convention. When no display is available it starts a private Xvfb (if
+installed) via `-displayfd`.
+
 ## Commands
 
 - `uv sync` — install deps (`mcp`, `meshio`, `numpy`; dev: pytest)
+- `uv sync --extra viz` — adds pyvista + imageio for `results_render`/
+  `results_animate` (optional; without it those tools return an install hint)
 - `uv run kratos-mcp` — run the server (stdio)
 - `uv run pytest -m "not kratos"` — unit tests, no Kratos needed
 - `uv run pytest -m kratos` — integration tests against the real build
@@ -63,8 +73,10 @@ only run inside subprocesses with the env vars injected.
 
 - `src/kratos_mcp/server.py` — FastMCP instance + main()
 - `src/kratos_mcp/tools/` — one module per tool category (`environment`,
-  `scaffold`, `mesh`, `simulation`, `postprocess`, `resources`, `prompts`),
-  each exposing `register(mcp)`; `register_all` in `__init__.py`
+  `scaffold`, `mesh`, `simulation`, `postprocess`, `visualize`, `resources`,
+  `prompts`), each exposing `register(mcp)`; `register_all` in `__init__.py`
+- `src/kratos_mcp/render_worker.py` — pyvista/VTK rendering, subprocess-only
+  (see above)
 - `src/kratos_mcp/mdpa.py` — pure-Python MDPA parse/write/inspect/validate +
   structured mesh generators (line/rectangle/box with named boundary parts)
 - `src/kratos_mcp/source_catalog.py` — parses `KRATOS_REGISTER_ELEMENT/
@@ -105,6 +117,17 @@ only run inside subprocesses with the env vars injected.
   files may fail.
 - Kratos resolves mdpa/materials paths relative to the CWD → `runner.py`
   chdirs into the case directory.
+
+## MCP / pyvista gotchas
+
+- Tools that return a mixed `[dict, Image]` list (inline image + metadata)
+  must be registered with `@mcp.tool(structured_output=False)`, or FastMCP's
+  output-schema validation chokes; `Image` comes from `mcp.server.fastmcp`.
+  This is why `pyproject.toml` requires `mcp>=1.10`.
+- `imageio` is needed by pyvista's `open_gif` but is NOT a pyvista core
+  dependency — the `viz` extra lists it explicitly.
+- `pyvista.start_xvfb()` was removed in pyvista 0.48; `render_worker.py`
+  manages its own Xvfb via `-displayfd`.
 
 ## Conventions
 

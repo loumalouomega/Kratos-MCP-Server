@@ -22,6 +22,21 @@ jobs:
       - name: Run unit tests (Kratos integration tests are skipped without a build)
         run: uv run pytest -m "not kratos" -q
 
+  test-viz:
+    name: Visualization tests (pyvista, headless)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install headless rendering support
+        run: sudo apt-get update && sudo apt-get install -y libgl1 xvfb
+      - name: Install dependencies with the viz extra
+        run: uv sync --extra viz
+      - name: Run visualization tests (render worker starts Xvfb itself)
+        run: uv run pytest tests/test_visualize.py -m "not kratos" -q
+
   build-package:
     name: Build Python package
     runs-on: ubuntu-latest

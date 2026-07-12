@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 from typing import Any
 
 import anyio
@@ -72,6 +73,10 @@ async def _check_installation() -> dict[str, Any]:
         "source_tree": str(env.source) if env.source else None,
         "pip_installed": env.pip_installed,
     }
+    try:
+        info["pyvista_version"] = importlib.metadata.version("pyvista")
+    except importlib.metadata.PackageNotFoundError:
+        info["pyvista_version"] = None  # results_render/animate unavailable
     if not kratos_env.is_available(env):
         info["importable"] = False
         info["hint"] = (

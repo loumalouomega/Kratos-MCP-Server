@@ -6,7 +6,7 @@ hero:
   text: Finite element simulations for AI assistants
   tagline: >-
     Scaffold, run and post-process Kratos Multiphysics simulations through
-    the Model Context Protocol — 30 tools, guided workflows, managed jobs.
+    the Model Context Protocol — 33 tools, guided workflows, managed jobs.
   actions:
     - theme: brand
       text: Get started
@@ -42,6 +42,12 @@ features:
     details: >-
       Discover result files, summarise VTK fields, probe values at points,
       and analyse nonlinear convergence from the solver logs.
+  - icon: 🖼️
+    title: Inline result previews
+    details: >-
+      Render results to PNG screenshots and GIF animations with pyvista —
+      deformed shapes, field contours — shown directly in the conversation,
+      no ParaView needed (optional viz extra).
   - icon: 🛡️
     title: Crash-proof architecture
     details: >-
