@@ -27,6 +27,44 @@ plus a `hint`.
 }
 ```
 
+When Kratos is missing, the `hint` field points at `kratos_install`.
+
+## kratos_install
+
+Install Kratos Multiphysics via pip into the server's own Python
+environment — no local build required. Official wheels exist for **Linux
+and Windows x86_64 only**; on macOS or other unsupported platforms this
+fails and you need a local `KRATOS_ROOT` build instead (see
+[Installation](/guide/installation)).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `applications` | string[]? | application names to install alongside the core, e.g. `["StructuralMechanicsApplication", "LinearSolversApplication"]` — each is mapped to its PyPI name by prefixing `Kratos` (so `StructuralMechanicsApplication` → `KratosStructuralMechanicsApplication`) |
+| `all` | bool | install the `KratosMultiphysics-all` omnibus package (essentially every application) instead of naming individual ones; largest download, simplest choice (default `false`) |
+| `upgrade` | bool | pass `--upgrade` to pip (default `false`) |
+
+**Returns**: `{ok, packages, returncode}`; on failure `stderr_tail` and a
+`hint`; on success a nested `check` — the same payload
+`kratos_check_installation` returns, so a single call installs and confirms.
+No server restart is needed — the very next tool call sees the new install.
+
+```json
+// kratos_install(applications=["StructuralMechanicsApplication", "LinearSolversApplication"])
+{
+  "ok": true,
+  "packages": ["KratosMultiphysics", "KratosStructuralMechanicsApplication", "KratosLinearSolversApplication"],
+  "returncode": 0,
+  "check": { "importable": true, "version": "...", "compiled_applications": ["StructuralMechanicsApplication", "..."] }
+}
+```
+
+::: tip Which applications to install
+Match them to the template you're using — `kratos_list_solvers` and
+`list_templates` name the `required_applications` for each analysis type.
+`LinearSolversApplication` is needed by essentially every template (it
+provides `sparse_lu`, the default linear solver).
+:::
+
 ## kratos_list_applications
 
 List every application in the source tree with a `compiled` flag.

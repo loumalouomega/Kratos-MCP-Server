@@ -1,11 +1,11 @@
 # Tool reference
 
-The server exposes **30 tools**, **7 resources** and **4 prompts**, grouped
+The server exposes **31 tools**, **7 resources** and **4 prompts**, grouped
 by workflow stage:
 
 | Category | Tools |
 | --- | --- |
-| [Environment & introspection](/tools/environment) | `kratos_check_installation`, `kratos_list_applications`, `kratos_list_elements`, `kratos_list_conditions`, `kratos_list_constitutive_laws`, `kratos_list_variables`, `kratos_list_solvers`, `kratos_list_processes`, `kratos_get_solver_defaults` |
+| [Environment & introspection](/tools/environment) | `kratos_check_installation`, `kratos_install`, `kratos_list_applications`, `kratos_list_elements`, `kratos_list_conditions`, `kratos_list_constitutive_laws`, `kratos_list_variables`, `kratos_list_solvers`, `kratos_list_processes`, `kratos_get_solver_defaults` |
 | [Project scaffolding](/tools/scaffolding) | `list_templates`, `create_project`, `create_project_parameters`, `create_materials`, `add_boundary_condition`, `add_output_process`, `validate_project_parameters` |
 | [Meshes](/tools/mesh) | `mdpa_create_structured_mesh`, `mdpa_inspect`, `mdpa_validate`, `mdpa_get_nodes` |
 | [Simulation & jobs](/tools/simulation) | `run_simulation`, `validate_case`, `job_status`, `job_list`, `job_logs`, `job_cancel` |
@@ -28,7 +28,7 @@ examples, live job logs) and [prompts](/tools/prompts) (guided workflows).
 ## The typical chain
 
 ```
-kratos_check_installation
+kratos_check_installation (→ kratos_install, if missing)
   → mdpa_create_structured_mesh
   → create_project (+ add_boundary_condition ...)
   → validate_case

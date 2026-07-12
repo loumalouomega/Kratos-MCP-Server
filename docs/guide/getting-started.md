@@ -5,11 +5,16 @@ any [MCP](https://modelcontextprotocol.io) client) to
 [Kratos Multiphysics](https://github.com/KratosMultiphysics/Kratos), the
 open-source multiphysics finite element framework.
 
+A local Kratos build is optional — if none is configured, the assistant can
+pip-install Kratos into the server's own environment on the spot via the
+`kratos_install` tool (Linux/Windows x86_64 only; macOS needs a local build).
+
 Once connected, an assistant can carry a simulation through its whole
 lifecycle:
 
 1. **Check the environment** — `kratos_check_installation` reports the Kratos
-   version and which applications are compiled.
+   version and which applications are compiled; if it's missing, `kratos_install`
+   pip-installs it on demand.
 2. **Create a mesh** — `mdpa_create_structured_mesh` writes a line, rectangle
    or box mesh with named boundary regions (`left`, `right`, `xmin`, ...).
 3. **Scaffold the case** — `create_project` renders ProjectParameters.json and
@@ -31,18 +36,18 @@ git clone <this-repo> Kratos-MCP-Server
 cd Kratos-MCP-Server
 uv sync
 
-# Point at a Kratos checkout that contains a compiled bin/Release build
-export KRATOS_ROOT=/path/to/Kratos
-
-claude mcp add kratos -e KRATOS_ROOT=$KRATOS_ROOT -- \
-    uv --directory "$PWD" run kratos-mcp
+claude mcp add kratos -- uv --directory "$PWD" run kratos-mcp
 ```
+
+No `KRATOS_ROOT` needed yet — the assistant can pip-install Kratos itself on
+first use. (If you already have a compiled checkout, pass
+`-e KRATOS_ROOT=/path/to/Kratos` instead; see [Installation](/guide/installation).)
 
 Then, in Claude Code:
 
-> Check the Kratos installation, then set up and run a cantilever plate
-> (1 m × 0.2 m, fixed on the left, 1 MN/m downward line load on the right)
-> and report the tip deflection.
+> Check the Kratos installation — if it's missing, install it — then set up
+> and run a cantilever plate (1 m × 0.2 m, fixed on the left, 1 MN/m
+> downward line load on the right) and report the tip deflection.
 
 The assistant will chain the tools above and answer with the deflection —
 for the setup in the [cantilever tutorial](/tutorials/cantilever-beam) it is
@@ -53,7 +58,9 @@ about **0.43 mm downward**, within a few percent of beam theory.
 | Requirement | Notes |
 | --- | --- |
 | Python ≥ 3.10 + [uv](https://docs.astral.sh/uv/) | server runtime |
-| Compiled Kratos build | `bin/Release` inside `KRATOS_ROOT`; see [Installation](/guide/installation) |
+| Kratos, one of: | |
+| — pip-installed via `kratos_install` | Linux/Windows x86_64 only; no setup needed beforehand |
+| — a compiled build | `bin/Release` inside `KRATOS_ROOT`; needed on macOS or for custom builds — see [Installation](/guide/installation) |
 | Kratos applications | StructuralMechanics, ConvectionDiffusion, FluidDynamics, LinearSolvers cover all templates |
 | Node 18+ | only for building this documentation |
 

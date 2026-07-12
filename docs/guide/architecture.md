@@ -34,6 +34,21 @@ all Kratos access:
 └───────────────┘   └───────────────┘
 ```
 
+## Getting Kratos itself
+
+`kratos_env.resolve()` finds Kratos in one of three ways, in order: an
+explicit `KRATOS_PYTHONPATH`/`KRATOS_LIBS` override, a `KRATOS_ROOT`
+checkout with a compiled `bin/Release`, or a **pip-installed**
+`KratosMultiphysics` importable by the server's own interpreter — probed in
+a subprocess so a missing package fails safely instead of raising in the
+server process. That third path is what `kratos_env.pip_install()` and the
+`kratos_install` tool populate: they run `pip install` (never Kratos itself)
+directly in the server process — safe, since pip does not import
+Kratos — installing the official `KratosMultiphysics` / `Kratos<AppName>` /
+`KratosMultiphysics-all` wheels (Linux/Windows x86_64 only). Once installed,
+the very next `resolve()` call picks it up automatically; no restart needed.
+A local build always takes priority when both are present.
+
 ## The bridge (short operations)
 
 `bridge.run_op(op, args)` spawns `python -m kratos_mcp.worker` with the Kratos

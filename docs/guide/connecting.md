@@ -3,17 +3,36 @@
 The server speaks MCP over **stdio**: the client spawns `kratos-mcp` and
 communicates over stdin/stdout. Pass `KRATOS_ROOT` (and any other
 [environment variables](/guide/installation#_3-environment-variables))
-through the client's `env` mechanism.
+through the client's `env` mechanism — or skip that entirely and let the
+assistant pip-install Kratos via `kratos_install` on first use.
+
+Two ways to launch the server, depending on whether it's published to PyPI
+yet:
+
+- **`uvx kratos-mcp`** — once released, this fetches and runs it with no
+  local checkout at all (verified end-to-end: `uvx` installs the wheel into
+  an ephemeral environment and the bundled templates/tools all resolve
+  correctly from there).
+- **`uv --directory /path/to/Kratos-MCP-Server run kratos-mcp`** — runs
+  from a local clone; use this before the first release, or when developing
+  the server itself.
 
 ## Claude Code
 
 ```bash
+# once published to PyPI
+claude mcp add kratos -- uvx kratos-mcp
+
+# from a local checkout
 claude mcp add kratos -e KRATOS_ROOT=/path/to/Kratos -- \
     uv --directory /path/to/Kratos-MCP-Server run kratos-mcp
 ```
 
+`KRATOS_ROOT` is optional either way — omit it to have the assistant
+pip-install Kratos itself.
+
 Verify with `/mcp` inside Claude Code — the `kratos` server should list
-30 tools, 7 resources and 4 prompts.
+31 tools, 7 resources and 4 prompts.
 
 To make it available in every project, add `--scope user`.
 
@@ -44,10 +63,11 @@ Restart Claude Desktop afterwards.
 
 The generic server description:
 
-- **command**: `uv --directory /path/to/Kratos-MCP-Server run kratos-mcp`
-  (or, with the venv activated, just `kratos-mcp`)
+- **command**: `uvx kratos-mcp` (published) or `uv --directory
+  /path/to/Kratos-MCP-Server run kratos-mcp` (local checkout)
 - **transport**: stdio
-- **environment**: `KRATOS_ROOT=/path/to/Kratos`
+- **environment**: `KRATOS_ROOT=/path/to/Kratos` (optional — omit to use
+  `kratos_install` instead)
 
 ## Smoke test without a client
 
