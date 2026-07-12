@@ -21,8 +21,11 @@ element simulations end to end:
   progress, cancel) that survive server restarts.
 - **Post-process** VTK results: summaries, point probes, convergence
   analysis.
+- **Preview** results without ParaView: PNG screenshots and GIF animations
+  (deformed shapes, field contours) rendered with pyvista and shown inline
+  in the conversation — optional `viz` extra.
 
-31 tools, 7 resources and 4 guided prompts. See the full documentation in
+33 tools, 7 resources and 4 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start
@@ -63,6 +66,10 @@ mcp add` line) — see [Installation](docs/guide/installation.md).
   (Linux/Windows x86_64 only — no macOS wheels) or a compiled build (tested
   with 10.4, StructuralMechanics / ConvectionDiffusion / FluidDynamics /
   LinearSolvers applications)
+- Optional, for `results_render`/`results_animate`: the `viz` extra
+  (`uv sync --extra viz` or `pip install 'kratos-mcp-server[viz]'`) and a
+  working OpenGL context (on headless machines: Xvfb or OSMesa VTK wheels —
+  see [docs/tools/visualization.md](docs/tools/visualization.md))
 
 ## Architecture in one paragraph
 

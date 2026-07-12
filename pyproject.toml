@@ -1,15 +1,21 @@
 [project]
 name = "kratos-mcp-server"
-version = "0.1.1"
+version = "0.2.0"
 description = "MCP server for Kratos Multiphysics: scaffold, run and post-process finite element simulations"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Vicente Mataix Ferrándiz" }]
 dependencies = [
-    "mcp>=1.2",
+    "mcp>=1.10",
     "meshio>=5.3",
     "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+viz = [
+    "pyvista>=0.44",
+    "imageio>=2.31",
 ]
 
 [project.scripts]

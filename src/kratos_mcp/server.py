@@ -26,9 +26,12 @@ mcp = FastMCP(
         "introspect the installation (kratos_check_installation, kratos_list_*), "
         "scaffold cases (create_project, list_templates, add_boundary_condition), "
         "generate and inspect MDPA meshes (mdpa_*), run simulations as background "
-        "jobs (run_simulation, job_*), and post-process VTK results (results_*). "
+        "jobs (run_simulation, job_*), post-process VTK results (results_*), and "
+        "render PNG/GIF previews of them (results_render, results_animate -- "
+        "needs the optional 'viz' extra). "
         "Typical workflow: check installation -> create mesh -> create project -> "
-        "add BCs/loads -> validate_case -> run_simulation -> results_summary."
+        "add BCs/loads -> validate_case -> run_simulation -> results_summary "
+        "-> results_render."
     ),
 )
 

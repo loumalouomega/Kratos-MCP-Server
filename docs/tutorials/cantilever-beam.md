@@ -112,7 +112,29 @@ results_probe({
 
 **Tip deflection: 0.427 mm downward.**
 
-## 7. Sanity check against beam theory
+## 7. Preview the result
+
+With the optional `viz` extra installed (`uv sync --extra viz`, see
+[Visualization](/tools/visualization)), render the deformed shape straight
+into the conversation — no ParaView needed. At true scale a 0.4 mm
+deflection is invisible on a 1 m beam, so exaggerate it with `warp_factor`:
+
+```json
+results_render({
+  "file": "/tmp/cantilever/vtk_output/Structure_0_1.vtk",
+  "variable": "DISPLACEMENT",
+  "warp_by": "DISPLACEMENT", "warp_factor": 200,
+  "camera": "xy"
+})
+→ { "image_path": "/tmp/cantilever/vtk_output/Structure_0_1_DISPLACEMENT.png",
+    "data_range": [0.0, 4.32e-4] }  + the PNG shown inline
+```
+
+The beam bends down toward the free end, displacement magnitude growing
+from the fixed left edge (dark) to the tip (bright) — the classic
+cantilever picture.
+
+## 8. Sanity check against beam theory
 
 Total load `P = q·h = 10⁶ × 0.2 = 2×10⁵ N`. Euler–Bernoulli:
 

@@ -78,6 +78,25 @@ mesh. The integration test
 `tests/test_run_integration.py::test_thermal_bar_linear_profile` asserts the
 whole field against `100·(1−x)`.
 
+## 6. Preview the field
+
+With the optional `viz` extra installed (see
+[Visualization](/tools/visualization)), render the temperature field
+inline:
+
+```json
+results_render({
+  "file": "/tmp/bar/vtk_output/ThermalModelPart_0_1.vtk",
+  "variable": "TEMPERATURE",
+  "camera": "xy"
+})
+→ { "data_range": [0.0, 100.0] }  + the PNG shown inline
+```
+
+A clean left-to-right gradient from 100 °C to 0 °C. For the transient
+variant, `results_animate({"files": "/tmp/bar/vtk_output"})` turns the
+whole time series into a GIF of the profile developing.
+
 ## Variations
 
 - **Transient heating**: template `thermal_transient` with `end_time` /

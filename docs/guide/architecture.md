@@ -34,6 +34,13 @@ all Kratos access:
 └───────────────┘   └───────────────┘
 ```
 
+The same isolation pattern covers pyvista: `render_worker.py` (spawned by
+the `results_render`/`results_animate` tools) is the only code that imports
+VTK, because VTK's OpenGL setup can abort the process on headless or
+misconfigured systems. It doesn't need the Kratos environment — just the
+server's own interpreter — so it is a plain subprocess without the bridge's
+env injection or caching.
+
 ## Getting Kratos itself
 
 `kratos_env.resolve()` finds Kratos in one of three ways, in order: an

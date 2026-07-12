@@ -11,6 +11,23 @@ uv sync
 `uv sync` creates a virtual environment with the runtime dependencies
 (`mcp`, `meshio`, `numpy`) and the dev tools (`pytest`).
 
+### Optional: result previews (pyvista)
+
+The `results_render` and `results_animate` tools render VTK results to
+PNG/GIF previews with [pyvista](https://pyvista.org). They need the `viz`
+extra (~200 MB, pulls in VTK):
+
+```bash
+uv sync --extra viz
+# or, when installing from PyPI:
+pip install 'kratos-mcp-server[viz]'
+```
+
+Rendering needs a working OpenGL context. Desktops and WSL2 (WSLg) have
+one; on headless machines install Xvfb (`sudo apt install xvfb`) — the
+render worker starts it automatically — or the OSMesa VTK wheels. See
+[Visualization](/tools/visualization#headless-rendering).
+
 ## 2. Get Kratos
 
 A local compiled build is **not required**. There are two ways to get

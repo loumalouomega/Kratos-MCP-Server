@@ -35,6 +35,7 @@ export default defineConfig({
             { text: 'Meshes (MDPA)', link: '/tools/mesh' },
             { text: 'Simulation & jobs', link: '/tools/simulation' },
             { text: 'Post-processing', link: '/tools/postprocessing' },
+            { text: 'Visualization', link: '/tools/visualization' },
             { text: 'Resources', link: '/tools/resources' },
             { text: 'Prompts', link: '/tools/prompts' },
           ],
