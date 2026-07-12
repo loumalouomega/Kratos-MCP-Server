@@ -1,0 +1,36 @@
+[project]
+name = "kratos-mcp"
+version = "0.1.0"
+description = "MCP server for Kratos Multiphysics: scaffold, run and post-process finite element simulations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Vicente" }]
+dependencies = [
+    "mcp>=1.2",
+    "meshio>=5.3",
+    "numpy>=1.26",
+]
+
+[project.scripts]
+kratos-mcp = "kratos_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kratos_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "kratos: integration tests that require a working Kratos build (deselect with '-m \"not kratos\"')",
+]
+asyncio_mode = "auto"
