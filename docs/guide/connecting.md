@@ -9,7 +9,7 @@ assistant pip-install Kratos via `kratos_install` on first use.
 Two ways to launch the server, depending on whether it's published to PyPI
 yet:
 
-- **`uvx kratos-mcp`** — once released, this fetches and runs it with no
+- **`uvx kratos-mcp-server`** — once released, this fetches and runs it with no
   local checkout at all (verified end-to-end: `uvx` installs the wheel into
   an ephemeral environment and the bundled templates/tools all resolve
   correctly from there).
@@ -21,7 +21,7 @@ yet:
 
 ```bash
 # once published to PyPI
-claude mcp add kratos -- uvx kratos-mcp
+claude mcp add kratos -- uvx kratos-mcp-server
 
 # from a local checkout
 claude mcp add kratos -e KRATOS_ROOT=/path/to/Kratos -- \
@@ -63,7 +63,7 @@ Restart Claude Desktop afterwards.
 
 The generic server description:
 
-- **command**: `uvx kratos-mcp` (published) or `uv --directory
+- **command**: `uvx kratos-mcp-server` (published) or `uv --directory
   /path/to/Kratos-MCP-Server run kratos-mcp` (local checkout)
 - **transport**: stdio
 - **environment**: `KRATOS_ROOT=/path/to/Kratos` (optional — omit to use

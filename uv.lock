@@ -355,8 +355,8 @@ wheels = [
 ]
 
 [[package]]
-name = "kratos-mcp"
-version = "0.1.0"
+name = "kratos-mcp-server"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },

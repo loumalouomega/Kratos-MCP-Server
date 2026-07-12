@@ -3,7 +3,7 @@
 [![CI](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/ci.yml/badge.svg)](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/ci.yml)
 [![Deploy docs](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/docs.yml/badge.svg)](https://loumalouomega.github.io/Kratos-MCP-Server/)
 [![Release](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/release.yml/badge.svg)](https://github.com/loumalouomega/Kratos-MCP-Server/releases)
-[![PyPI](https://img.shields.io/pypi/v/kratos-mcp.svg)](https://pypi.org/project/kratos-mcp/)
+[![PyPI](https://img.shields.io/pypi/v/kratos-mcp-server.svg)](https://pypi.org/project/kratos-mcp-server/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/github/license/loumalouomega/Kratos-MCP-Server)](LICENSE)
 
@@ -33,7 +33,7 @@ Kratos itself on first use.
 **Once published to PyPI**, no clone needed — `uvx` fetches and runs it:
 
 ```bash
-claude mcp add kratos -- uvx kratos-mcp
+claude mcp add kratos -- uvx kratos-mcp-server
 ```
 
 **From a local checkout** (current state, before the first PyPI release):
@@ -83,4 +83,4 @@ npm install && npm run docs:dev  # documentation site
 
 ## License
 
-MIT
+[MIT](LICENSE)
