@@ -7,8 +7,10 @@ post-processing. Python, `mcp` SDK (FastMCP), stdio transport.
 
 ## Environment
 
-Kratos is NOT pip-installed; it lives in a compiled build tree resolved by
-`src/kratos_mcp/kratos_env.py`:
+A local compiled build is optional: `src/kratos_mcp/kratos_env.py` resolves
+Kratos from, in order, an explicit `KRATOS_PYTHONPATH`/`KRATOS_LIBS`, a
+`KRATOS_ROOT` build tree, or a pip-installed `KratosMultiphysics` importable
+by the server's own interpreter.
 
 - `KRATOS_ROOT` (default `/home/vicente/src/Kratos`) → uses
   `$KRATOS_ROOT/bin/Release` as `PYTHONPATH` and `$KRATOS_ROOT/bin/Release/libs`
@@ -17,7 +19,16 @@ Kratos is NOT pip-installed; it lives in a compiled build tree resolved by
   for macro parsing), `KRATOS_EXTRA_LIBS` (extra lib dirs; MKL under
   `/opt/intel/oneapi/mkl/latest/lib` is auto-detected — LinearSolversApplication
   needs `libmkl_rt.so.2`).
-- Manual incantation for ad-hoc Kratos scripts:
+- **Pip fallback**: if no build tree resolves, `kratos_env.resolve()` probes
+  `python -c "import KratosMultiphysics"` in a subprocess. The `kratos_install`
+  tool (`tools/environment.py`) populates this by running `pip install` —
+  official wheels are `KratosMultiphysics` (core), `Kratos<AppName>` per
+  application (e.g. `KratosStructuralMechanicsApplication`), or
+  `KratosMultiphysics-all` (everything) — Linux/Windows x86_64 only, no macOS
+  wheels. `kratos_env.pip_install()`/`pypi_package_name()` do the mapping and
+  subprocess call; running pip itself is fine in the server process (it never
+  imports Kratos), unlike everything else Kratos-related.
+- Manual incantation for ad-hoc Kratos scripts against a build tree:
   `PYTHONPATH=$KRATOS_ROOT/bin/Release LD_LIBRARY_PATH=$KRATOS_ROOT/bin/Release/libs:/opt/intel/oneapi/mkl/latest/lib python3 ...`
 - Server state (jobs, bridge cache) lives in `~/.kratos-mcp/`
   (`KRATOS_MCP_HOME` overrides; tests set it to a tmp dir).
