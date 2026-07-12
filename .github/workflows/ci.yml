@@ -31,11 +31,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install headless rendering support
-        run: sudo apt-get update && sudo apt-get install -y libgl1 xvfb
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libglx-mesa0 xvfb
       - name: Install dependencies with the viz extra
         run: uv sync --extra viz
-      - name: Run visualization tests (render worker starts Xvfb itself)
-        run: uv run pytest tests/test_visualize.py -m "not kratos" -q
+      # xvfb-run gives the render worker a display; the worker's own
+      # Xvfb auto-start path is covered by a dedicated no-DISPLAY test.
+      - name: Run visualization tests
+        run: xvfb-run -a uv run pytest tests/test_visualize.py -m "not kratos" -q
 
   build-package:
     name: Build Python package

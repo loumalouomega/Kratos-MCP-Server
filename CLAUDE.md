@@ -128,6 +128,10 @@ installed) via `-displayfd`.
   dependency — the `viz` extra lists it explicitly.
 - `pyvista.start_xvfb()` was removed in pyvista 0.48; `render_worker.py`
   manages its own Xvfb via `-displayfd`.
+- A missing GL context makes VTK SEGFAULT, not raise — try/except is
+  useless. Never render in-process, not even in tests: tests go through the
+  `render_worker` subprocess too (a crash becomes a skippable nonzero exit),
+  and CI runs them under `xvfb-run`.
 
 ## Conventions
 

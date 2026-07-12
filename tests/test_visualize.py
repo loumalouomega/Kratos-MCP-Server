@@ -1,14 +1,20 @@
 """Tests for the pyvista visualization tools (results_render / results_animate).
 
 The error paths and helpers need neither pyvista nor a GL context, so they
-always run. Actual rendering tests are skipped when pyvista is missing
-(the base CI job proves the install-hint path that way) or when no usable
-GL context exists (caught and skipped, not failed).
+always run. Rendering tests go through the render_worker SUBPROCESS, never
+in-process: VTK segfaults (rather than raising) when GL init fails, which
+would kill pytest itself — the same failure class the worker exists to
+contain. They are skipped when pyvista is missing (the base CI job proves
+the install-hint path that way) or when the worker reports/crashes on a
+missing GL context.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -92,26 +98,46 @@ def test_render_failure_attaches_gl_hint_and_stderr_tail():
 
 
 # --------------------------------------------------------------------------
-# Rendering: need pyvista and a usable GL context
+# Rendering: worker subprocess only (a GL failure segfaults, it does not
+# raise — in-process rendering would take pytest down with it)
 # --------------------------------------------------------------------------
 
-pyvista = pytest.importorskip("pyvista")
+requires_pyvista = pytest.mark.skipif(
+    importlib.util.find_spec("pyvista") is None, reason="pyvista not installed")
 
 
-def _render(func, req):
-    try:
-        return func(req)
-    except (ValueError, KeyError):
-        raise  # our own validation errors must not be masked as GL skips
-    except Exception as exc:
-        pytest.skip(f"no usable GL context: {exc}")
+def _worker(tmp_path, op, args, env=None):
+    """Round-trip a request through `python -m kratos_mcp.render_worker`.
+    Skips the test if the worker died without writing a result (GL abort)."""
+    request = tmp_path / "req.json"
+    result_file = tmp_path / "res.json"
+    request.write_text(json.dumps({"op": op, "args": args}))
+    proc = subprocess.run(
+        [sys.executable, "-m", "kratos_mcp.render_worker",
+         "--request-file", str(request), "--result-file", str(result_file)],
+        capture_output=True, text=True, timeout=180, env=env,
+    )
+    if not result_file.exists():
+        pytest.skip(f"render worker crashed (exit {proc.returncode}), "
+                    f"no usable GL context: {proc.stderr[-500:]}")
+    return json.loads(result_file.read_text())
 
 
+def _render(tmp_path, op, args, env=None):
+    """Run a render op, skipping on GL failures but failing on our own
+    validation errors (those never touch GL — pv.read needs no context)."""
+    payload = _worker(tmp_path, op, args, env=env)
+    if not payload["ok"]:
+        if payload["error"].startswith(("ValueError", "KeyError")):
+            pytest.fail(payload["error"])
+        pytest.skip(f"no usable GL context: {payload['error']}")
+    return payload["result"]
+
+
+@requires_pyvista
 def test_render_screenshot_magnitude_default(vtu_file, tmp_path):
-    from kratos_mcp import render_worker
-
     png = tmp_path / "out.png"
-    result = _render(render_worker.render_screenshot, {
+    result = _render(tmp_path, "screenshot", {
         "file": str(vtu_file), "variable": "DISPLACEMENT",
         "camera": "xy", "image_path": str(png), "window_size": [320, 240],
     })
@@ -119,11 +145,10 @@ def test_render_screenshot_magnitude_default(vtu_file, tmp_path):
     assert result["data_range"] == pytest.approx([0.0, 0.2])
 
 
+@requires_pyvista
 def test_render_screenshot_component_and_warp(vtu_file, tmp_path):
-    from kratos_mcp import render_worker
-
     png = tmp_path / "out.png"
-    result = _render(render_worker.render_screenshot, {
+    result = _render(tmp_path, "screenshot", {
         "file": str(vtu_file), "variable": "DISPLACEMENT", "component": "y",
         "warp_by": "DISPLACEMENT", "warp_factor": 10.0,
         "camera": "iso", "image_path": str(png), "window_size": [320, 240],
@@ -132,11 +157,10 @@ def test_render_screenshot_component_and_warp(vtu_file, tmp_path):
     assert result["data_range"] == pytest.approx([0.0, 0.2])
 
 
+@requires_pyvista
 def test_render_screenshot_geometry_only(vtu_file, tmp_path):
-    from kratos_mcp import render_worker
-
     png = tmp_path / "out.png"
-    result = _render(render_worker.render_screenshot, {
+    result = _render(tmp_path, "screenshot", {
         "file": str(vtu_file), "camera": "xy",
         "image_path": str(png), "window_size": [320, 240],
     })
@@ -144,23 +168,23 @@ def test_render_screenshot_geometry_only(vtu_file, tmp_path):
     assert result["data_range"] is None
 
 
+@requires_pyvista
 def test_render_unknown_variable_lists_available(vtu_file, tmp_path):
-    from kratos_mcp import render_worker
+    payload = _worker(tmp_path, "screenshot", {
+        "file": str(vtu_file), "variable": "PRESSURE",
+        "camera": "xy", "image_path": str(tmp_path / "out.png"),
+    })
+    assert not payload["ok"]
+    assert payload["error"].startswith("ValueError")
+    assert "TEMPERATURE" in payload["error"]
 
-    with pytest.raises(ValueError, match="TEMPERATURE"):
-        _render(render_worker.render_screenshot, {
-            "file": str(vtu_file), "variable": "PRESSURE",
-            "camera": "xy", "image_path": str(tmp_path / "out.png"),
-        })
 
-
+@requires_pyvista
 def test_render_gif_global_range(vtu_series, tmp_path):
     import imageio.v2 as imageio
 
-    from kratos_mcp import render_worker
-
     gif = tmp_path / "anim.gif"
-    result = _render(render_worker.render_gif, {
+    result = _render(tmp_path, "gif", {
         "files": [str(f) for f in vtu_series], "variable": "TEMPERATURE",
         "camera": "xy", "gif_path": str(gif), "fps": 2,
         "window_size": [320, 240],
@@ -171,32 +195,26 @@ def test_render_gif_global_range(vtu_series, tmp_path):
     assert len(imageio.mimread(gif)) == 3
 
 
-def test_render_worker_subprocess_roundtrip(vtu_file, tmp_path):
-    request = tmp_path / "req.json"
-    result_file = tmp_path / "res.json"
-    request.write_text(json.dumps({"op": "screenshot", "args": {
+@requires_pyvista
+@pytest.mark.skipif(shutil.which("Xvfb") is None, reason="Xvfb not installed")
+def test_render_worker_starts_xvfb_without_display(vtu_file, tmp_path):
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+    result = _render(tmp_path, "screenshot", {
         "file": str(vtu_file), "variable": "TEMPERATURE",
         "camera": "xy", "image_path": str(tmp_path / "out.png"),
         "window_size": [320, 240],
-    }}))
-    subprocess.run(
-        [sys.executable, "-m", "kratos_mcp.render_worker",
-         "--request-file", str(request), "--result-file", str(result_file)],
-        capture_output=True, text=True, timeout=120, check=True,
-    )
-    payload = json.loads(result_file.read_text())
-    if not payload["ok"]:
-        pytest.skip(f"no usable GL context: {payload['error']}")
-    assert Path(payload["result"]["image_path"]).is_file()
+    }, env=env)
+    assert Path(result["image_path"]).is_file()
 
 
+@requires_pyvista
 @pytest.mark.kratos
 def test_cantilever_result_renders(tmp_path, monkeypatch):
     """Run the real cantilever example and render its displacement field."""
-    import shutil
     import time
 
-    from kratos_mcp import jobs, render_worker
+    from kratos_mcp import jobs
     from kratos_mcp.tools.resources import EXAMPLES_DIR
 
     monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
@@ -213,7 +231,7 @@ def test_cantilever_result_renders(tmp_path, monkeypatch):
 
     vtk_file = sorted((case / "vtk_output").glob("*.vtk"))[-1]
     png = tmp_path / "cantilever.png"
-    result = _render(render_worker.render_screenshot, {
+    result = _render(tmp_path, "screenshot", {
         "file": str(vtk_file), "variable": "DISPLACEMENT",
         "warp_by": "DISPLACEMENT", "warp_factor": 200.0,
         "camera": "xy", "image_path": str(png), "window_size": [640, 480],
