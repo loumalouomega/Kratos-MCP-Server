@@ -5,7 +5,7 @@ description = "MCP server for Kratos Multiphysics: scaffold, run and post-proces
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Vicente" }]
+authors = [{ name = "Vicente Mataix Ferrándiz" }]
 dependencies = [
     "mcp>=1.2",
     "meshio>=5.3",
