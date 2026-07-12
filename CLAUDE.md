@@ -98,3 +98,7 @@ only run inside subprocesses with the env vars injected.
   `applications/StructuralMechanicsApplication/tests/LinearTruss2D/2D2N/` and
   `applications/ConvectionDiffusionApplication/tests/basic_conv_diffusion_test/`
   in the Kratos tree.
+
+## Keep docs in sync
+
+Every time you change code in this repo, check whether doc/, README.md, and this file need updating too — and update them if they do. Treat doc drift as part of the change, not a follow-up.
