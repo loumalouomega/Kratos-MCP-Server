@@ -1,6 +1,5 @@
 """Manual stdio smoke test: spawn the server as an MCP client would and
-exercise a few tools end-to-end. Run with: uv run python tests/smoke_client.py
-"""
+exercise a few tools end-to-end. Run with: uv run python tests/smoke_client.py"""
 
 from __future__ import annotations
 
