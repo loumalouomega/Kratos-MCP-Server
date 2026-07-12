@@ -1,0 +1,211 @@
+{
+  "structural_static": {
+    "description": "Linear static structural analysis (small displacement solids)",
+    "analysis_type": "structural",
+    "model_part_name": "Structure",
+    "required_applications": [
+      "StructuralMechanicsApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.StructuralMechanicsApplication.structural_mechanics_static_solver",
+    "default_element": "SmallDisplacementElement2D4N",
+    "default_condition": "LineLoadCondition2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "end_time": 1.0,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "fix_model_part": "Structure.left",
+      "material_model_part": "Structure.domain",
+      "constitutive_law": "LinearElasticPlaneStrain2DLaw",
+      "young_modulus": 210000000000.0,
+      "poisson_ratio": 0.3,
+      "density": 7850.0,
+      "output_path": "vtk_output",
+      "nodal_results": [
+        "DISPLACEMENT",
+        "REACTION"
+      ]
+    }
+  },
+  "structural_dynamic": {
+    "description": "Implicit dynamic structural analysis (Newmark time integration)",
+    "analysis_type": "structural",
+    "model_part_name": "Structure",
+    "required_applications": [
+      "StructuralMechanicsApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.StructuralMechanicsApplication.structural_mechanics_implicit_dynamic_solver",
+    "default_element": "SmallDisplacementElement2D4N",
+    "default_condition": "LineLoadCondition2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "end_time": 1.0,
+      "time_step": 0.01,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "fix_model_part": "Structure.left",
+      "material_model_part": "Structure.domain",
+      "constitutive_law": "LinearElasticPlaneStrain2DLaw",
+      "young_modulus": 210000000000.0,
+      "poisson_ratio": 0.3,
+      "density": 7850.0,
+      "output_path": "vtk_output",
+      "nodal_results": [
+        "DISPLACEMENT",
+        "VELOCITY",
+        "ACCELERATION",
+        "REACTION"
+      ]
+    }
+  },
+  "structural_modal": {
+    "description": "Modal / eigenvalue analysis (natural frequencies and mode shapes)",
+    "analysis_type": "structural",
+    "model_part_name": "Structure",
+    "required_applications": [
+      "StructuralMechanicsApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.StructuralMechanicsApplication.structural_mechanics_eigensolver",
+    "default_element": "SmallDisplacementElement2D4N",
+    "default_condition": "LineLoadCondition2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "fix_model_part": "Structure.left",
+      "material_model_part": "Structure.domain",
+      "constitutive_law": "LinearElasticPlaneStrain2DLaw",
+      "young_modulus": 210000000000.0,
+      "poisson_ratio": 0.3,
+      "density": 7850.0,
+      "num_eigenvalues": 4
+    }
+  },
+  "thermal_transient": {
+    "description": "Transient heat conduction / convection-diffusion analysis",
+    "analysis_type": "thermal",
+    "model_part_name": "ThermalModelPart",
+    "required_applications": [
+      "ConvectionDiffusionApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.ConvectionDiffusionApplication.convection_diffusion_transient_solver",
+    "default_element": "Element2D3N",
+    "default_condition": "ThermalFace2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "end_time": 1.0,
+      "time_step": 0.1,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "domain_parts": [
+        "domain"
+      ],
+      "boundary_parts": [
+        "left",
+        "right"
+      ],
+      "fix_model_part": "ThermalModelPart.left",
+      "fixed_temperature": 100.0,
+      "material_model_part": "ThermalModelPart.domain",
+      "density": 7850.0,
+      "conductivity": 15.0,
+      "specific_heat": 500.0,
+      "output_path": "vtk_output",
+      "nodal_results": [
+        "TEMPERATURE",
+        "REACTION_FLUX"
+      ]
+    }
+  },
+  "thermal_stationary": {
+    "description": "Stationary (steady-state) heat conduction analysis",
+    "analysis_type": "thermal",
+    "model_part_name": "ThermalModelPart",
+    "required_applications": [
+      "ConvectionDiffusionApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.ConvectionDiffusionApplication.convection_diffusion_stationary_solver",
+    "default_element": "Element2D3N",
+    "default_condition": "ThermalFace2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "domain_parts": [
+        "domain"
+      ],
+      "boundary_parts": [
+        "left",
+        "right"
+      ],
+      "fix_model_part": "ThermalModelPart.left",
+      "fixed_temperature": 100.0,
+      "material_model_part": "ThermalModelPart.domain",
+      "density": 7850.0,
+      "conductivity": 15.0,
+      "specific_heat": 500.0,
+      "output_path": "vtk_output",
+      "nodal_results": [
+        "TEMPERATURE",
+        "REACTION_FLUX"
+      ]
+    }
+  },
+  "fluid_transient": {
+    "description": "Transient incompressible flow (monolithic Navier-Stokes, VMS)",
+    "analysis_type": "fluid",
+    "model_part_name": "FluidModelPart",
+    "required_applications": [
+      "FluidDynamicsApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.FluidDynamicsApplication.navier_stokes_monolithic_solver",
+    "default_element": "Element2D3N",
+    "default_condition": "WallCondition2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "end_time": 1.0,
+      "time_step": 0.01,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "volume_part": "domain",
+      "skin_parts": [
+        "left",
+        "right",
+        "top",
+        "bottom"
+      ],
+      "inlet_model_part": "FluidModelPart.left",
+      "inlet_velocity": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "outlet_model_part": "FluidModelPart.right",
+      "noslip_model_parts": [
+        "FluidModelPart.top",
+        "FluidModelPart.bottom"
+      ],
+      "material_model_part": "FluidModelPart.domain",
+      "constitutive_law": "Newtonian2DLaw",
+      "density": 1000.0,
+      "dynamic_viscosity": 0.001,
+      "output_path": "vtk_output",
+      "nodal_results": [
+        "VELOCITY",
+        "PRESSURE"
+      ]
+    }
+  }
+}
