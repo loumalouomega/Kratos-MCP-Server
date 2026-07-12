@@ -1,5 +1,12 @@
 # Kratos MCP Server
 
+[![CI](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/ci.yml/badge.svg)](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/ci.yml)
+[![Deploy docs](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/docs.yml/badge.svg)](https://loumalouomega.github.io/Kratos-MCP-Server/)
+[![Release](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/release.yml/badge.svg)](https://github.com/loumalouomega/Kratos-MCP-Server/releases)
+[![PyPI](https://img.shields.io/pypi/v/kratos-mcp.svg)](https://pypi.org/project/kratos-mcp/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/github/license/loumalouomega/Kratos-MCP-Server)](LICENSE)
+
 An [MCP](https://modelcontextprotocol.io) server that lets AI assistants drive
 [Kratos Multiphysics](https://github.com/KratosMultiphysics/Kratos) finite
 element simulations end to end:
