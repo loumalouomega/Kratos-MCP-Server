@@ -8,6 +8,8 @@ IMPORTANT: Kratos must NEVER be imported in the MCP server process.
 It prints an ASCII banner on import (which would corrupt the stdio
 JSON-RPC stream) and its C++ core can abort the whole process. All
 Kratos access goes through subprocesses built with `build_env()`.
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations

@@ -17,6 +17,8 @@ The mdpa format is line/block based:
       Begin SubModelPartNodes / SubModelPartElements / SubModelPartConditions
       Begin SubModelPart <nested> ...
     End SubModelPart
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations

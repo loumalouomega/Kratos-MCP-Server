@@ -1,4 +1,7 @@
-"""MCP resources: templates, format guides, worked examples, job logs."""
+"""MCP resources: templates, format guides, worked examples, job logs.
+
+Author: Vicente Mataix Ferrándiz
+"""
 
 from __future__ import annotations
 

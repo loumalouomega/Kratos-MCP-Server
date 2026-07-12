@@ -9,6 +9,8 @@ and returned for diagnostics on failure.
 Results are cached on disk keyed by (op, args, build fingerprint):
 spawning a Kratos interpreter costs ~1-3 s and introspection results
 only change when the build changes.
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations

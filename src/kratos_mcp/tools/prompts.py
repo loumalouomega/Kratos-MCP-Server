@@ -1,4 +1,7 @@
-"""MCP prompts: guided workflows for common Kratos tasks."""
+"""MCP prompts: guided workflows for common Kratos tasks.
+
+Author: Vicente Mataix Ferrándiz
+"""
 
 from __future__ import annotations
 

@@ -10,6 +10,8 @@ macros straight from the C++ sources:
 
 Python processes are discovered by scanning python_scripts/*_process.py.
 Results are cached in-process; parsing the whole tree takes < 1 s.
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations

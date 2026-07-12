@@ -1,4 +1,7 @@
-"""MDPA mesh tools: inspect, validate and generate meshes."""
+"""MDPA mesh tools: inspect, validate and generate meshes.
+
+Author: Vicente Mataix Ferrándiz
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""Introspection tools: what does this Kratos installation provide?"""
+"""Introspection tools: what does this Kratos installation provide?
+
+Author: Vicente Mataix Ferrándiz
+"""
 
 from __future__ import annotations
 

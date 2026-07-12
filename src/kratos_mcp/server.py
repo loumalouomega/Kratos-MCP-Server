@@ -3,6 +3,8 @@
 Exposes Kratos Multiphysics to MCP clients over stdio. Kratos itself is
 never imported here (see kratos_env module docstring); everything runs
 through worker/runner subprocesses.
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations

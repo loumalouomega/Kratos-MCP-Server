@@ -2,6 +2,8 @@
 
 VTK/VTU files (the default output of our templates) are read with meshio;
 statistics use numpy. Convergence information is parsed from job logs.
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations

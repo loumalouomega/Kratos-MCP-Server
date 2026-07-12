@@ -5,6 +5,8 @@ markers; templates/registry.json holds per-template metadata and defaults.
 Substitution rules: a quoted "{{key}}" is replaced by the JSON encoding of
 the value (so numbers/arrays stay typed); a bare {{key}} inside a longer
 string is replaced textually.
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations

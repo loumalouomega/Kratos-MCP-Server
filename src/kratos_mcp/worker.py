@@ -5,6 +5,8 @@ req.json --result-file out.json` with PYTHONPATH/LD_LIBRARY_PATH already
 pointing at a Kratos build. The result is written to --result-file as
 {"ok": true, "result": ...} or {"ok": false, "error": "..."}; stdout is
 never used for data because Kratos prints a banner on import.
+
+Author: Vicente Mataix Ferrándiz
 """
 
 from __future__ import annotations
