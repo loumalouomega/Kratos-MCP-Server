@@ -15,33 +15,46 @@ element simulations end to end:
 - **Post-process** VTK results: summaries, point probes, convergence
   analysis.
 
-30 tools, 7 resources and 4 guided prompts. See the full documentation in
+31 tools, 7 resources and 4 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start
 
+A local Kratos build is **not required** — the server can pip-install
+Kratos itself on first use.
+
+**Once published to PyPI**, no clone needed — `uvx` fetches and runs it:
+
 ```bash
-# 1. Install dependencies
+claude mcp add kratos -- uvx kratos-mcp
+```
+
+**From a local checkout** (current state, before the first PyPI release):
+
+```bash
+git clone https://github.com/loumalouomega/Kratos-MCP-Server
+cd Kratos-MCP-Server
 uv sync
-
-# 2. Point the server at your Kratos build (contains bin/Release)
-export KRATOS_ROOT=/path/to/Kratos
-
-# 3. Register with Claude Code
-claude mcp add kratos -e KRATOS_ROOT=$KRATOS_ROOT -- \
-    uv --directory /path/to/Kratos-MCP-Server run kratos-mcp
+claude mcp add kratos -- uv --directory "$PWD" run kratos-mcp
 ```
 
 Then ask your assistant something like:
 
-> Set up a cantilever plate 1 m × 0.2 m fixed on the left with a 1 MN/m
-> downward load on the right edge, run it, and report the tip deflection.
+> Check the Kratos installation — install it if it's missing — then set up
+> a cantilever plate 1 m × 0.2 m fixed on the left with a 1 MN/m downward
+> load on the right edge, run it, and report the tip deflection.
+
+The assistant calls `kratos_install` the first time and reuses it afterwards.
+If you already have a compiled Kratos checkout, skip that and point
+`KRATOS_ROOT` at it instead (`-e KRATOS_ROOT=/path/to/Kratos` on the `claude
+mcp add` line) — see [Installation](docs/guide/installation.md).
 
 ## Requirements
 
 - Python ≥ 3.10, [uv](https://docs.astral.sh/uv/)
-- A compiled Kratos Multiphysics build (tested with 10.4,
-  StructuralMechanics / ConvectionDiffusion / FluidDynamics /
+- Kratos Multiphysics, either pip-installed via `kratos_install`
+  (Linux/Windows x86_64 only — no macOS wheels) or a compiled build (tested
+  with 10.4, StructuralMechanics / ConvectionDiffusion / FluidDynamics /
   LinearSolvers applications)
 
 ## Architecture in one paragraph
