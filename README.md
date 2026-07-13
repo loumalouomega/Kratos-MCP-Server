@@ -59,6 +59,17 @@ If you already have a compiled Kratos checkout, skip that and point
 `KRATOS_ROOT` at it instead (`-e KRATOS_ROOT=/path/to/Kratos` on the `claude
 mcp add` line) — see [Installation](docs/guide/installation.md).
 
+## Notebook
+
+[`notebooks/cantilever.ipynb`](notebooks/cantilever.ipynb) drives the same
+cantilever case interactively as an MCP *client* — no AI assistant involved —
+touching most of the server's tools, resources and prompts in one sitting:
+installation introspection, mesh generation, scaffolding, a background job
+you poll while it runs, VTK post-processing, a rendered PNG and an animated
+GIF, and cancelling a job in flight. Run it with `uv sync --extra viz --group
+dev` (adds `ipykernel` + pyvista) and open it in Jupyter/VS Code against that
+`.venv`.
+
 ## Requirements
 
 - Python ≥ 3.10, [uv](https://docs.astral.sh/uv/)

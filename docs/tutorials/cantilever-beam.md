@@ -29,6 +29,12 @@ and a pre-verified result baked in — ask either assistant to *"read the
 kratos cantilever example resource"*, or fetch it yourself with an MCP
 inspector.
 
+Prefer to drive the tools yourself instead of through an assistant?
+[`notebooks/cantilever.ipynb`](https://github.com/loumalouomega/Kratos-MCP-Server/blob/master/notebooks/cantilever.ipynb)
+is an MCP *client* notebook that runs this same case cell by cell — plus a
+dynamic variant with live job-progress polling, an animated GIF, and a
+job-cancel demo — with every output baked in from a real run.
+
 What follows is the tool-by-tool walkthrough for the full 20×4 case.
 
 ## 1. Check the environment

@@ -59,7 +59,8 @@ installed) via `-displayfd`.
 
 ## Commands
 
-- `uv sync` — install deps (`mcp`, `meshio`, `numpy`; dev: pytest)
+- `uv sync` — install deps (`mcp`, `meshio`, `numpy`; dev: pytest, ipykernel,
+  nbclient, nbformat)
 - `uv sync --extra viz` — adds pyvista + imageio for `results_render`/
   `results_animate` (optional; without it those tools return an install hint)
 - `uv run kratos-mcp` — run the server (stdio)
@@ -95,6 +96,22 @@ installed) via `-displayfd`.
   and re-verify the numbers with a real run (recipe in
   `tests/test_examples.py` and the cantilever-beam.md tutorial).
   `thermal-bar` stays dynamically rendered via `_example_bundle()`.
+- `notebooks/cantilever.ipynb` — MCP *client* notebook (uses `mcp.client.stdio`
+  directly, not the server code) walking through most tools/resources/prompts
+  against the real cantilever case; all outputs are baked in from a real run,
+  not placeholders. Regenerate after a workflow-affecting change by rebuilding
+  it with `nbformat` and re-executing with `nbclient`/`jupyter nbconvert
+  --execute` against a kernel that has this project's `.venv` (`uv sync --extra
+  viz --group dev`, then `python -m ipykernel install --user --name <name>`)
+  — same "re-verify with a real run" rule as the cantilever example resource.
+  Gotcha: don't hold the `stdio_client`/`ClientSession` context managers open
+  across cells with a bare `AsyncExitStack` — each Jupyter cell's top-level
+  `await` runs in a new asyncio Task, and anyio's cancel scopes require
+  entering and exiting in the *same* Task, so closing in a later cell raises
+  "Attempted to exit cancel scope in a different task" and leaks the server
+  subprocess. Fix: run connect-through-disconnect inside one persistent
+  background task (`asyncio.create_task`) that stays alive on an
+  `asyncio.Event`, signalled (not re-entered) from whichever cell closes it.
 
 ## Kratos gotchas learned the hard way
 
