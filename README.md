@@ -12,20 +12,27 @@ An [MCP](https://modelcontextprotocol.io) server that lets AI assistants drive
 element simulations end to end:
 
 - **Introspect** the installation: applications, elements, conditions,
-  constitutive laws, variables, solvers and their default parameters.
+  constitutive laws, variables, solvers and processes and their default
+  parameters (process defaults are parsed from the Kratos source, no build
+  needed).
 - **Scaffold** simulation cases from templates: structural
-  (static/dynamic/modal), thermal (transient/stationary) and fluid
-  (transient incompressible) — ProjectParameters.json, Materials.json and
-  structured MDPA meshes with named boundary regions.
-- **Run** simulations as managed background jobs (status, live logs,
-  progress, cancel) that survive server restarts.
+  (static/dynamic/modal), thermal (transient/stationary), fluid (monolithic
+  or fractional-step incompressible) and potential flow — plus **multi-stage
+  orchestrated** cases that chain analyses. Curated material and linear-solver
+  presets included. ProjectParameters.json, Materials.json and structured MDPA
+  meshes with named boundary regions.
+- **Run** simulations (single- or multi-stage) as managed background jobs
+  (status, live logs, progress, cancel) that survive server restarts.
 - **Post-process** VTK results: summaries, point probes, convergence
   analysis.
 - **Preview** results without ParaView: PNG screenshots and GIF animations
   (deformed shapes, field contours) rendered with pyvista and shown inline
   in the conversation — optional `viz` extra.
+- **Interoperate**: explain an existing ProjectParameters.json, and convert
+  cases to/from the [Kratos FlowGraph](https://github.com/loumalouomega/Flowgraph)
+  visual node editor (lossless round-trip).
 
-33 tools, 8 resources and 5 guided prompts. See the full documentation in
+40 tools, 8 resources and 5 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start

@@ -46,6 +46,10 @@ abort the process. All Kratos access goes through subprocesses:
 - `jobs.py` → spawns `runner.py` detached for simulations. Job state persists
   in `~/.kratos-mcp/jobs/<id>/` (`meta.json` + `stdout.log`) and survives
   server restarts; orphaned jobs are re-evaluated from pid liveness + log tail.
+  `runner.py` runs a single `AnalysisStage` by default, but detects a
+  multi-stage case (`orchestrator` + `stages` keys) and drives it via Kratos'
+  `Project` + registry-resolved orchestrator class instead (the entry point
+  Kratos' own `test_sequential_orchestrator` uses) — no `jobs.py` change.
 
 `worker.py` and `runner.py` are the ONLY modules that import Kratos, and they
 only run inside subprocesses with the env vars injected.
@@ -82,11 +86,38 @@ installed) via `-displayfd`.
   structured mesh generators (line/rectangle/box with named boundary parts)
 - `src/kratos_mcp/source_catalog.py` — parses `KRATOS_REGISTER_ELEMENT/
   CONDITION/CONSTITUTIVE_LAW` macros from the Kratos C++ sources (there is no
-  runtime registry for these)
+  runtime registry for these); also enumerates `*_process.py` / `*_solver.py`
+  files (`python_process_files()` is the path index `process_catalog` reuses)
+- `src/kratos_mcp/process_catalog.py` — recovers a Kratos process' default
+  settings by AST-parsing its `*_process.py` (`ValidateAndAssignDefaults`
+  block, or a `GetDefaultParameters` classmethod). Pure `ast`/text, no Kratos
+  import — same trust model as `source_catalog`. Ported from Flowgraph's
+  `parse-processes.py`. Backs `kratos_get_process_defaults`,
+  `kratos_list_processes(with_defaults=True)` and the auto-filled defaults in
+  `add_boundary_condition`/`add_output_process`. Output processes validated in
+  C++ (e.g. `vtk_output_process`) have no Python defaults → returns None (the
+  enrichment then no-ops, keeping the hand-authored block).
+- `src/kratos_mcp/project_explain.py` — pure-JSON structured summary of a
+  ProjectParameters.json (analysis type, solver, processes, per-stage for
+  multistage); backs `explain_project_parameters` and feeds `flowgraph.py`.
+- `src/kratos_mcp/flowgraph.py` — lossless ProjectParameters ↔ Flowgraph
+  (litegraph) `graph.json` conversion. Each node carries a Flowgraph-compatible
+  type/position for visual loadability AND its exact JSON fragment under a
+  `_role` marker; `graph_to_project` reconstructs from the markers (not the
+  links), so `import(export(p)) == p`. Backs `tools/interop.py`.
 - `src/kratos_mcp/templates/` — case templates as data: `registry.json`
   (metadata + placeholder defaults) + `<name>/ProjectParameters.json.tpl` +
   `Materials.json.tpl`. Substitution: quoted `"{{key}}"` → JSON-typed value,
-  bare `{{key}}` → text.
+  bare `{{key}}` → text. Templates: `structural_static/dynamic/modal`,
+  `thermal_transient/stationary`, `fluid_transient` (monolithic),
+  `fluid_fractional_step`, `potential_flow` (needs
+  CompressiblePotentialFlowApplication — modelled on the Kratos NACA0012
+  perturbation test; not always compiled, so run-unverified in CI). Plus two
+  preset data files (not per-case dirs): `material_presets.json` (constitutive
+  laws + default variables, seeded from Flowgraph's material nodes) and
+  `linear_solvers.json` (drop-in `linear_solver_settings` blocks). Both are
+  surfaced by `list_material_presets`/`list_linear_solver_presets`;
+  `create_materials` accepts a `preset=` per entry.
 - `src/kratos_mcp/logparse.py` — step/convergence extraction from job logs
 - `src/kratos_mcp/examples/cantilever/` — real `mesh.mdpa` +
   ProjectParameters.json + Materials.json files (a coarse 4x1 case), read
@@ -146,6 +177,13 @@ installed) via `-displayfd`.
   "LaplacianElement", ...}` (our `thermal_stationary` template does this).
 - Static analyses run exactly one step via `time_step: 1.1 > end_time: 1.0`
   (standard Kratos test convention).
+- Multi-stage: the orchestrator shares ONE `Model` across stages, so a later
+  stage that re-imports the mesh into a model part an earlier stage already
+  populated aborts with "a node with the same Id already exists". Stages that
+  share a mesh must set `model_import_settings.input_type:
+  "use_input_model_part"` (reuse) after the first stage's `mdpa` import — this
+  is exactly what `create_multistage_project` does when a later stage's
+  `model_part_name` matches an earlier one's.
 - `Kernel.Get*VariableNames()` return one newline-separated string, not lists.
 - `KM.Parameters` tolerates `//` comments; plain `json.loads` on Kratos test
   files may fail.
