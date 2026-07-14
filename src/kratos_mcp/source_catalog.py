@@ -112,22 +112,28 @@ def list_source_applications() -> list[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def list_python_processes() -> list[dict[str, str]]:
-    """Process modules discoverable under python_scripts/ (core + apps)."""
+def python_process_files() -> list[tuple[str, Path]]:
+    """(application_name, path) for every *_process.py under python_scripts/."""
     source = _kratos_source()
     if source is None:
         return []
-    results: list[dict[str, str]] = []
     roots: list[tuple[str, Path]] = [("Core", source / "kratos" / "python_scripts")]
     apps_dir = source / "applications"
     if apps_dir.is_dir():
         roots += [(d.name, d / "python_scripts") for d in sorted(apps_dir.iterdir()) if d.is_dir()]
+    files: list[tuple[str, Path]] = []
     for app_name, scripts in roots:
         if not scripts.is_dir():
             continue
         for f in sorted(scripts.glob("*_process.py")):
-            results.append({"module": f.stem, "application": app_name})
-    return results
+            files.append((app_name, f))
+    return files
+
+
+@functools.lru_cache(maxsize=1)
+def list_python_processes() -> list[dict[str, str]]:
+    """Process modules discoverable under python_scripts/ (core + apps)."""
+    return [{"module": f.stem, "application": app} for app, f in python_process_files()]
 
 
 def list_solver_modules(application: str) -> list[str]:

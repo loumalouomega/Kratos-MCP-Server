@@ -10,7 +10,14 @@ List available case templates with descriptions, required applications and
 every placeholder with its default.
 
 **Templates**: `structural_static`, `structural_dynamic`, `structural_modal`,
-`thermal_transient`, `thermal_stationary`, `fluid_transient`.
+`thermal_transient`, `thermal_stationary`, `fluid_transient`,
+`fluid_fractional_step`, `potential_flow`.
+
+::: tip
+`potential_flow` requires `CompressiblePotentialFlowApplication` (not always
+compiled). `fluid_fractional_step` uses the cheaper pressure-splitting scheme
+(good for large meshes) instead of the monolithic solver.
+:::
 
 ## create_project
 
@@ -37,6 +44,38 @@ Scaffold a complete case directory from a template.
 }
 ```
 
+## create_multistage_project
+
+Scaffold a **multi-stage (orchestrated) case** that chains several analyses in
+sequence, run with Kratos' native `SequentialOrchestrator`. Use it for a
+continuation run (e.g. two load steps) or a coupled workflow where a later
+physics reads fields the earlier one wrote on the same mesh.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `directory` | string | case directory (created if missing) |
+| `stages` | array | one entry per stage: `{"name": "<id>", "template": "<template>", "overrides": {...}}` |
+| `name` | string | base problem name (default `case`) |
+| `stage_checkpoints` | bool | write per-stage checkpoints (default false) |
+| `create_demo_mesh` | bool | also write a small rectangle mesh (from the first stage's template) so the case runs out of the box (default false) |
+
+**Mesh sharing**: the first stage imports its mesh; a later stage whose solver
+`model_part_name` matches an earlier stage's **reuses** that already-populated
+model part (`input_type: "use_input_model_part"`) — this is how state flows
+between stages. A later stage with a distinct `model_part_name` imports its own
+mesh instead.
+
+The composed file uses the `orchestrator` + `stages` + `execution_list`
+structure; `run_simulation` and `validate_case` handle it transparently.
+
+```json
+// create_multistage_project("/tmp/ms", [
+//   {"name": "load_1", "template": "structural_static", "overrides": {"end_time": 1.0}},
+//   {"name": "load_2", "template": "structural_static", "overrides": {"end_time": 2.0}}])
+{ "case_dir": "/tmp/ms", "execution_list": ["load_1", "load_2"],
+  "created": ["/tmp/ms/ProjectParameters.json", "/tmp/ms/Materials.json"], "next_steps": ["..."] }
+```
+
 ## create_project_parameters
 
 Render only a ProjectParameters.json (returned, and optionally written to
@@ -51,9 +90,27 @@ Write a Materials.json from a list of material specs.
 | `output_file` | string | where to write |
 | `materials` | array | one entry per model part (below) |
 
-Each entry: `model_part_name` (e.g. `Structure.domain`), optional
-`constitutive_law` (thermal problems have none), `variables` (e.g.
-`{"YOUNG_MODULUS": 2.1e11, "POISSON_RATIO": 0.3}`), optional `properties_id`.
+Each entry: `model_part_name` (e.g. `Structure.domain`); then either a
+`preset` (a name from `list_material_presets`, which fills `constitutive_law`
+and default `variables`) **or** an explicit `constitutive_law` (thermal
+problems have none) plus `variables` (e.g. `{"YOUNG_MODULUS": 2.1e11,
+"POISSON_RATIO": 0.3}`); optional `properties_id`. With a preset, any
+`variables` you pass override the preset's defaults.
+
+## list_material_presets
+
+List the curated material presets (constitutive law + default variables) usable
+as `preset` in `create_materials`: linear elastic (3D / plane strain / plane
+stress), small- and finite-strain Von Mises plasticity, isotropic damage, and
+Newtonian fluids. Cross-check the law names with `kratos_list_constitutive_laws`
+for your compiled build. These are seeded from the sibling
+[Flowgraph](https://github.com/loumalouomega/Flowgraph) material node library.
+
+## list_linear_solver_presets
+
+List curated `linear_solver_settings` presets — drop-in blocks for
+`solver_settings.linear_solver_settings`. Serial: `sparse_lu`, `skyline_lu`,
+`amgcl`, `cg`, `bicgstab`. MPI/Trilinos: `amgcl_mpi`, `amesos`, `aztec`, `ml`.
 
 ## add_boundary_condition
 
@@ -94,6 +151,14 @@ Condition-based loads (`point/line/surface_load`, `pressure_load`,
 region — see [the MDPA guide](/guide/mdpa-format#naming-conventions).
 :::
 
+::: tip
+When the Kratos source tree is available, the inserted block's `Parameters`
+are auto-completed with the process' real `default_settings` (via
+[`kratos_get_process_defaults`](/tools/environment#kratos-get-process-defaults))
+for any key you did not set, so blocks stay correct even as Kratos evolves.
+Without a source tree it falls back to the built-in defaults.
+:::
+
 ## add_output_process
 
 Add an output process to a ProjectParameters.json.
@@ -120,5 +185,9 @@ Validate a ProjectParameters.json without running anything:
    submodelpart,
 4. (`deep: true`, default) `solver_settings` validated against the solver's
    `GetDefaultParameters()` inside a Kratos worker.
+
+Multi-stage (`orchestrator`/`stages`) cases are recognised automatically and
+validated per stage (structure, execution list, per-stage mesh/material refs);
+per-stage Kratos-side solver validation is deferred to run time.
 
 **Returns**: `{valid, issues: [...], warnings: [...]}`.

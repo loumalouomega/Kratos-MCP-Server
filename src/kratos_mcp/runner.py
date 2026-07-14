@@ -93,6 +93,19 @@ def main() -> int:
     with open(ns.parameters) as f:
         parameters = KM.Parameters(f.read())
 
+    # Multi-stage case: an 'orchestrator' + 'stages' pair is driven by Kratos'
+    # native orchestrator (Project + registry-resolved orchestrator class),
+    # not by a single AnalysisStage. This is the entry point Kratos' own
+    # sequential-orchestrator test uses.
+    if parameters.Has("orchestrator") and parameters.Has("stages"):
+        from KratosMultiphysics.project import Project
+        project = Project(parameters)
+        reg_entry = KM.Registry[project.GetSettings()["orchestrator"]["name"].GetString()]
+        orch_module = importlib.import_module(reg_entry["ModuleName"])
+        orch_class = getattr(orch_module, reg_entry["ClassName"])
+        orch_class(project).Run()
+        return 0
+
     if ns.analysis_class:
         module_path, _, class_name = ns.analysis_class.partition(":")
         if not class_name:

@@ -1,0 +1,235 @@
+{
+    "orchestrator": {
+        "name": "Orchestrators.KratosMultiphysics.SequentialOrchestrator",
+        "settings": {
+            "echo_level": 0,
+            "execution_list": [
+                "load_step_1",
+                "load_step_2"
+            ],
+            "load_from_checkpoint": null,
+            "stage_checkpoints": false
+        }
+    },
+    "stages": {
+        "load_step_1": {
+            "stage_settings": {
+                "problem_data": {
+                    "problem_name": "cantilever_ms_load_step_1",
+                    "parallel_type": "OpenMP",
+                    "echo_level": 1,
+                    "start_time": 0.0,
+                    "end_time": 1.0
+                },
+                "solver_settings": {
+                    "solver_type": "Static",
+                    "model_part_name": "Structure",
+                    "domain_size": 2,
+                    "echo_level": 1,
+                    "analysis_type": "linear",
+                    "model_import_settings": {
+                        "input_type": "mdpa",
+                        "input_filename": "mesh"
+                    },
+                    "material_import_settings": {
+                        "materials_filename": "Materials.json"
+                    },
+                    "time_stepping": {
+                        "time_step": 1.1
+                    },
+                    "linear_solver_settings": {
+                        "solver_type": "LinearSolversApplication.sparse_lu"
+                    },
+                    "rotation_dofs": false
+                },
+                "processes": {
+                    "constraints_process_list": [
+                        {
+                            "python_module": "assign_vector_variable_process",
+                            "kratos_module": "KratosMultiphysics",
+                            "process_name": "AssignVectorVariableProcess",
+                            "Parameters": {
+                                "model_part_name": "Structure.left",
+                                "variable_name": "DISPLACEMENT",
+                                "interval": [
+                                    0.0,
+                                    "End"
+                                ],
+                                "constrained": [
+                                    true,
+                                    true,
+                                    true
+                                ],
+                                "value": [
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ]
+                            }
+                        }
+                    ],
+                    "loads_process_list": [
+                        {
+                            "python_module": "assign_vector_by_direction_to_condition_process",
+                            "kratos_module": "KratosMultiphysics",
+                            "check": "DirectorVectorNonZero direction",
+                            "process_name": "AssignVectorByDirectionToConditionProcess",
+                            "Parameters": {
+                                "model_part_name": "Structure.right",
+                                "variable_name": "LINE_LOAD",
+                                "interval": [
+                                    0.0,
+                                    "End"
+                                ],
+                                "modulus": 1000000.0,
+                                "direction": [
+                                    0.0,
+                                    -1.0,
+                                    0.0
+                                ]
+                            }
+                        }
+                    ],
+                    "list_other_processes": []
+                },
+                "output_processes": {
+                    "gid_output": [],
+                    "vtk_output": [
+                        {
+                            "python_module": "vtk_output_process",
+                            "kratos_module": "KratosMultiphysics",
+                            "process_name": "VtkOutputProcess",
+                            "Parameters": {
+                                "model_part_name": "Structure",
+                                "output_control_type": "step",
+                                "output_interval": 1,
+                                "file_format": "ascii",
+                                "output_precision": 7,
+                                "output_sub_model_parts": false,
+                                "output_path": "vtk_stage_1",
+                                "save_output_files_in_folder": true,
+                                "nodal_solution_step_data_variables": [
+                                    "DISPLACEMENT",
+                                    "REACTION"
+                                ],
+                                "nodal_data_value_variables": [],
+                                "element_data_value_variables": [],
+                                "condition_data_value_variables": []
+                            }
+                        }
+                    ]
+                },
+                "analysis_stage": "KratosMultiphysics.StructuralMechanicsApplication.structural_mechanics_analysis"
+            }
+        },
+        "load_step_2": {
+            "stage_settings": {
+                "problem_data": {
+                    "problem_name": "cantilever_ms_load_step_2",
+                    "parallel_type": "OpenMP",
+                    "echo_level": 1,
+                    "start_time": 0.0,
+                    "end_time": 1.0
+                },
+                "solver_settings": {
+                    "solver_type": "Static",
+                    "model_part_name": "Structure",
+                    "domain_size": 2,
+                    "echo_level": 1,
+                    "analysis_type": "linear",
+                    "model_import_settings": {
+                        "input_type": "use_input_model_part"
+                    },
+                    "material_import_settings": {
+                        "materials_filename": "Materials.json"
+                    },
+                    "time_stepping": {
+                        "time_step": 1.1
+                    },
+                    "linear_solver_settings": {
+                        "solver_type": "LinearSolversApplication.sparse_lu"
+                    },
+                    "rotation_dofs": false
+                },
+                "processes": {
+                    "constraints_process_list": [
+                        {
+                            "python_module": "assign_vector_variable_process",
+                            "kratos_module": "KratosMultiphysics",
+                            "process_name": "AssignVectorVariableProcess",
+                            "Parameters": {
+                                "model_part_name": "Structure.left",
+                                "variable_name": "DISPLACEMENT",
+                                "interval": [
+                                    0.0,
+                                    "End"
+                                ],
+                                "constrained": [
+                                    true,
+                                    true,
+                                    true
+                                ],
+                                "value": [
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ]
+                            }
+                        }
+                    ],
+                    "loads_process_list": [
+                        {
+                            "python_module": "assign_vector_by_direction_to_condition_process",
+                            "kratos_module": "KratosMultiphysics",
+                            "check": "DirectorVectorNonZero direction",
+                            "process_name": "AssignVectorByDirectionToConditionProcess",
+                            "Parameters": {
+                                "model_part_name": "Structure.right",
+                                "variable_name": "LINE_LOAD",
+                                "interval": [
+                                    0.0,
+                                    "End"
+                                ],
+                                "modulus": 2000000.0,
+                                "direction": [
+                                    0.0,
+                                    -1.0,
+                                    0.0
+                                ]
+                            }
+                        }
+                    ],
+                    "list_other_processes": []
+                },
+                "output_processes": {
+                    "gid_output": [],
+                    "vtk_output": [
+                        {
+                            "python_module": "vtk_output_process",
+                            "kratos_module": "KratosMultiphysics",
+                            "process_name": "VtkOutputProcess",
+                            "Parameters": {
+                                "model_part_name": "Structure",
+                                "output_control_type": "step",
+                                "output_interval": 1,
+                                "file_format": "ascii",
+                                "output_precision": 7,
+                                "output_sub_model_parts": false,
+                                "output_path": "vtk_stage_2",
+                                "save_output_files_in_folder": true,
+                                "nodal_solution_step_data_variables": [
+                                    "DISPLACEMENT",
+                                    "REACTION"
+                                ],
+                                "nodal_data_value_variables": [],
+                                "element_data_value_variables": [],
+                                "condition_data_value_variables": []
+                            }
+                        }
+                    ]
+                },
+                "analysis_stage": "KratosMultiphysics.StructuralMechanicsApplication.structural_mechanics_analysis"
+            }
+        }
+    }
+}

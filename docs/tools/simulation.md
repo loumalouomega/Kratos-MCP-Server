@@ -20,7 +20,11 @@ Start a simulation job.
 
 The analysis class is normally resolved from the `analysis_stage` key that
 our templates write into ProjectParameters.json, falling back to inference
-from `solver_type`.
+from `solver_type`. **Multi-stage** cases (an `orchestrator` + `stages`
+ProjectParameters, e.g. from
+[`create_multistage_project`](/tools/scaffolding#create-multistage-project))
+are detected automatically and driven through Kratos' `SequentialOrchestrator`
+— same tool, same job lifecycle.
 
 **Returns**: the job status (below). For quick cases pass
 `wait_seconds: 60`–`120` and get the terminal state in one call; failed jobs

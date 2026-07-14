@@ -18,6 +18,59 @@ def test_registry_templates_render_to_valid_json():
         assert "properties" in mats, name
 
 
+def test_material_presets_load_and_shape():
+    presets = scaffold.load_material_presets()
+    assert "linear_elastic_3d" in presets
+    for name, preset in presets.items():
+        assert "constitutive_law" in preset, name
+        assert isinstance(preset.get("variables"), dict) and preset["variables"], name
+
+
+def test_linear_solver_presets_load_and_shape():
+    presets = scaffold.load_linear_solver_presets()
+    assert {"sparse_lu", "amgcl", "cg", "bicgstab"} <= set(presets)
+    for name, preset in presets.items():
+        assert "solver_type" in preset.get("settings", {}), name
+
+
+def test_create_materials_with_preset(tmp_path):
+    tools = {}
+
+    class FakeMCP:
+        def tool(self, *a, **k):
+            def deco(fn):
+                tools[fn.__name__] = fn
+                return fn
+            return deco
+
+    scaffold.register(FakeMCP())
+    out = tools["create_materials"](
+        str(tmp_path / "Materials.json"),
+        [{"model_part_name": "Structure.domain", "preset": "linear_elastic_3d",
+          "variables": {"DENSITY": 2700.0}}])
+    mat = out["materials"]["properties"][0]["Material"]
+    assert mat["constitutive_law"]["name"] == "LinearElastic3DLaw"
+    assert mat["Variables"]["DENSITY"] == 2700.0        # caller override wins
+    assert mat["Variables"]["YOUNG_MODULUS"] == 210000000000.0  # from preset
+
+
+def test_create_materials_unknown_preset(tmp_path):
+    tools = {}
+
+    class FakeMCP:
+        def tool(self, *a, **k):
+            def deco(fn):
+                tools[fn.__name__] = fn
+                return fn
+            return deco
+
+    scaffold.register(FakeMCP())
+    out = tools["create_materials"](
+        str(tmp_path / "Materials.json"),
+        [{"model_part_name": "Structure.domain", "preset": "nope"}])
+    assert "error" in out
+
+
 def test_render_typed_substitution():
     out = scaffold.render(
         '{"a": "{{num}}", "b": "{{arr}}", "c": "pre-{{word}}-post"}',

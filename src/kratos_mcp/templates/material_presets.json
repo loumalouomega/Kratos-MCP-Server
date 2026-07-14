@@ -1,0 +1,89 @@
+{
+  "linear_elastic_3d": {
+    "description": "Linear elastic isotropic solid (3D). Small-strain Hooke's law.",
+    "application": "StructuralMechanicsApplication",
+    "constitutive_law": "LinearElastic3DLaw",
+    "variables": {
+      "YOUNG_MODULUS": 210000000000.0,
+      "POISSON_RATIO": 0.3,
+      "DENSITY": 7850.0
+    }
+  },
+  "linear_elastic_plane_strain": {
+    "description": "Linear elastic isotropic solid, 2D plane-strain assumption.",
+    "application": "StructuralMechanicsApplication",
+    "constitutive_law": "LinearElasticPlaneStrain2DLaw",
+    "variables": {
+      "YOUNG_MODULUS": 210000000000.0,
+      "POISSON_RATIO": 0.3,
+      "DENSITY": 7850.0
+    }
+  },
+  "linear_elastic_plane_stress": {
+    "description": "Linear elastic isotropic solid, 2D plane-stress assumption (thin sheets).",
+    "application": "StructuralMechanicsApplication",
+    "constitutive_law": "LinearElasticPlaneStress2DLaw",
+    "variables": {
+      "YOUNG_MODULUS": 210000000000.0,
+      "POISSON_RATIO": 0.3,
+      "DENSITY": 7850.0
+    }
+  },
+  "small_strain_plasticity_von_mises_3d": {
+    "description": "Small-strain isotropic J2 (Von Mises) plasticity, 3D. Metals below finite-strain regime. Needs ConstitutiveLawsApplication.",
+    "application": "ConstitutiveLawsApplication",
+    "constitutive_law": "SmallStrainIsotropicPlasticity3DVonMisesVonMises",
+    "variables": {
+      "YOUNG_MODULUS": 210000000000.0,
+      "POISSON_RATIO": 0.3,
+      "DENSITY": 7850.0,
+      "YIELD_STRESS": 250000000.0,
+      "FRACTURE_ENERGY": 1000000.0,
+      "HARDENING_CURVE": 3
+    }
+  },
+  "finite_strain_plasticity_von_mises_3d": {
+    "description": "Finite-strain isotropic Von Mises plasticity, 3D. Large plastic deformation of metals. Needs ConstitutiveLawsApplication.",
+    "application": "ConstitutiveLawsApplication",
+    "constitutive_law": "FiniteStrainIsotropicPlasticity3DVonMisesVonMises",
+    "variables": {
+      "YOUNG_MODULUS": 210000000000.0,
+      "POISSON_RATIO": 0.3,
+      "DENSITY": 7850.0,
+      "YIELD_STRESS": 250000000.0,
+      "FRACTURE_ENERGY": 1000000.0,
+      "HARDENING_CURVE": 3
+    }
+  },
+  "small_strain_damage_von_mises_3d": {
+    "description": "Small-strain isotropic Von Mises damage, 3D. Stiffness degradation / softening. Needs ConstitutiveLawsApplication.",
+    "application": "ConstitutiveLawsApplication",
+    "constitutive_law": "SmallStrainIsotropicDamage3DVonMises",
+    "variables": {
+      "YOUNG_MODULUS": 30000000000.0,
+      "POISSON_RATIO": 0.2,
+      "DENSITY": 2400.0,
+      "YIELD_STRESS": 3000000.0,
+      "FRACTURE_ENERGY": 10000.0,
+      "SOFTENING_TYPE": 1
+    }
+  },
+  "newtonian_fluid_2d": {
+    "description": "Newtonian incompressible fluid (2D). Constant dynamic viscosity.",
+    "application": "FluidDynamicsApplication",
+    "constitutive_law": "Newtonian2DLaw",
+    "variables": {
+      "DENSITY": 1000.0,
+      "DYNAMIC_VISCOSITY": 0.001
+    }
+  },
+  "newtonian_fluid_3d": {
+    "description": "Newtonian incompressible fluid (3D). Constant dynamic viscosity.",
+    "application": "FluidDynamicsApplication",
+    "constitutive_law": "Newtonian3DLaw",
+    "variables": {
+      "DENSITY": 1000.0,
+      "DYNAMIC_VISCOSITY": 0.001
+    }
+  }
+}

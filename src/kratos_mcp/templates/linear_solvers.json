@@ -1,0 +1,104 @@
+{
+  "sparse_lu": {
+    "description": "Direct sparse LU factorization (Eigen, LinearSolversApplication). Robust default for small/medium serial problems; no tuning.",
+    "parallelism": "serial",
+    "settings": {
+      "solver_type": "LinearSolversApplication.sparse_lu"
+    }
+  },
+  "skyline_lu": {
+    "description": "Built-in direct skyline LU factorization (core, no LinearSolversApplication needed).",
+    "parallelism": "serial",
+    "settings": {
+      "solver_type": "skyline_lu_factorization"
+    }
+  },
+  "amgcl": {
+    "description": "AMGCL algebraic-multigrid preconditioned Krylov solver. Scales to large serial problems; good general-purpose iterative choice.",
+    "parallelism": "serial",
+    "settings": {
+      "solver_type": "amgcl",
+      "smoother_type": "ilu0",
+      "krylov_type": "gmres",
+      "coarsening_type": "aggregation",
+      "max_iteration": 100,
+      "provide_coordinates": false,
+      "gmres_krylov_space_dimension": 100,
+      "verbosity": 0,
+      "tolerance": 1e-6,
+      "scaling": false,
+      "block_size": 1,
+      "use_block_matrices_if_possible": true,
+      "coarse_enough": 1000,
+      "max_levels": -1,
+      "pre_sweeps": 1,
+      "post_sweeps": 1
+    }
+  },
+  "cg": {
+    "description": "Conjugate Gradient iterative solver. For symmetric positive-definite systems (e.g. Laplacian/heat conduction).",
+    "parallelism": "serial",
+    "settings": {
+      "solver_type": "cg",
+      "tolerance": 1e-6,
+      "max_iteration": 1000,
+      "preconditioner_type": "diagonal"
+    }
+  },
+  "bicgstab": {
+    "description": "BiCGSTAB iterative solver. For general non-symmetric systems (e.g. convection-dominated flow).",
+    "parallelism": "serial",
+    "settings": {
+      "solver_type": "bicgstab",
+      "tolerance": 1e-6,
+      "max_iteration": 1000,
+      "preconditioner_type": "ilu0"
+    }
+  },
+  "amgcl_mpi": {
+    "description": "Distributed AMGCL (MPI). Large parallel runs. Needs TrilinosApplication and an MPI launch (parallel_type: MPI).",
+    "parallelism": "MPI",
+    "settings": {
+      "solver_type": "amgcl",
+      "smoother_type": "ilu0",
+      "krylov_type": "bicgstab",
+      "coarsening_type": "aggregation",
+      "max_iteration": 100,
+      "tolerance": 1e-6,
+      "scaling": false,
+      "verbosity": 0
+    }
+  },
+  "amesos": {
+    "description": "Trilinos Amesos direct solver (MPI). Robust distributed direct solve. Needs TrilinosApplication.",
+    "parallelism": "MPI",
+    "settings": {
+      "solver_type": "amesos",
+      "amesos_solver_type": "Amesos_Klu"
+    }
+  },
+  "aztec": {
+    "description": "Trilinos AztecOO iterative solver (MPI). Needs TrilinosApplication.",
+    "parallelism": "MPI",
+    "settings": {
+      "solver_type": "aztec",
+      "tolerance": 1e-6,
+      "max_iteration": 1000,
+      "preconditioner_type": "ILU",
+      "overlap_level": 1
+    }
+  },
+  "ml": {
+    "description": "Trilinos ML multigrid-preconditioned solver (MPI). Needs TrilinosApplication.",
+    "parallelism": "MPI",
+    "settings": {
+      "solver_type": "multi_level",
+      "tolerance": 1e-6,
+      "max_iteration": 200,
+      "max_levels": 3,
+      "scaling": false,
+      "reform_preconditioner_at_each_step": true,
+      "symmetric": false
+    }
+  }
+}

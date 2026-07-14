@@ -43,6 +43,46 @@ async def main() -> int:
                 info = json.loads(result.content[0].text)
                 print("MESH:", info["num_nodes"], "nodes,", info["num_elements"], "elements")
 
+                # Knowledge-layer tools (Flowgraph-inspired).
+                result = await session.call_tool("list_material_presets", {})
+                presets = json.loads(result.content[0].text)
+                print("MATERIAL PRESETS:", sorted(presets))
+
+                result = await session.call_tool("list_linear_solver_presets", {})
+                print("LINEAR SOLVER PRESETS:", sorted(json.loads(result.content[0].text)))
+
+                result = await session.call_tool("kratos_get_process_defaults", {
+                    "python_module": "assign_scalar_variable_process"})
+                pd = json.loads(result.content[0].text)
+                print("PROCESS DEFAULTS:", "error" if "error" in pd
+                      else sorted(pd.get("default_settings", {})))
+
+                # Multi-stage scaffold + explain + Flowgraph round-trip.
+                ms_dir = str(Path(tmp) / "ms")
+                result = await session.call_tool("create_multistage_project", {
+                    "directory": ms_dir,
+                    "stages": [
+                        {"name": "s1", "template": "structural_static"},
+                        {"name": "s2", "template": "structural_static"},
+                    ],
+                })
+                ms = json.loads(result.content[0].text)
+                print("MULTISTAGE:", ms.get("execution_list", ms.get("error")))
+
+                pp_file = str(Path(ms_dir) / "ProjectParameters.json")
+                result = await session.call_tool("explain_project_parameters",
+                                                 {"parameters_file": pp_file})
+                summary = json.loads(result.content[0].text)
+                print("EXPLAIN:", summary.get("kind"), summary.get("execution_list"))
+
+                graph_file = str(Path(tmp) / "graph.json")
+                await session.call_tool("export_case_to_flowgraph",
+                                        {"parameters_file": pp_file, "output_file": graph_file})
+                result = await session.call_tool("import_flowgraph_to_case",
+                                                 {"graph_file": graph_file})
+                back = json.loads(result.content[0].text)
+                print("FLOWGRAPH ROUND-TRIP:", "ok" if "parameters" in back else back)
+
             return 0
 
 

@@ -7,7 +7,7 @@ from typing import Any
 
 import anyio
 
-from .. import bridge, kratos_env, source_catalog
+from .. import bridge, kratos_env, process_catalog, source_catalog
 
 # Curated map of solver_type values per analysis type. Grounded in the
 # python_solvers_wrapper_* factories of each application; extended
@@ -227,17 +227,54 @@ def register(mcp) -> None:
 
     @mcp.tool()
     def kratos_list_processes(
-        application: str | None = None, name_filter: str | None = None
-    ) -> list[dict[str, str]]:
+        application: str | None = None,
+        name_filter: str | None = None,
+        with_defaults: bool = False,
+    ) -> list[dict[str, Any]]:
         """List Python process modules (boundary conditions, loads, output,
         utilities) discoverable in the Kratos source tree. These are the
-        values usable as 'python_module' in ProjectParameters process lists."""
+        values usable as 'python_module' in ProjectParameters process lists.
+        With with_defaults=true, each entry also carries the process'
+        default_settings and param_types parsed from its source (best effort;
+        modules whose defaults cannot be parsed are still listed without
+        them). Use kratos_get_process_defaults for a single module's full
+        schema."""
         procs = source_catalog.list_python_processes()
         if application:
             procs = [p for p in procs if p["application"].lower() == application.lower()]
         if name_filter:
             procs = [p for p in procs if name_filter.lower() in p["module"].lower()]
+        if with_defaults:
+            enriched: list[dict[str, Any]] = []
+            for p in procs:
+                info = process_catalog.get_process_defaults(p["module"])
+                entry = dict(p)
+                if info is not None:
+                    entry["default_settings"] = info["default_settings"]
+                    entry["param_types"] = info["param_types"]
+                enriched.append(entry)
+            return enriched
         return procs
+
+    @mcp.tool()
+    def kratos_get_process_defaults(python_module: str) -> dict[str, Any]:
+        """Return a Kratos process' default settings -- parameter names,
+        default values, coarse types (bool/number/string/array/json/null) and
+        which parameters are model-part references -- parsed from its Python
+        source' ValidateAndAssignDefaults block. This is the schema you need to
+        author a process block in a ProjectParameters process list.
+        python_module is a value from kratos_list_processes (e.g.
+        'assign_scalar_variable_process', 'vtk_output_process'). Returns
+        {"error": ...} when the Kratos source is unavailable, the module is not
+        found, or its defaults use a non-standard declaration."""
+        info = process_catalog.get_process_defaults(python_module)
+        if info is None:
+            return {"error": f"No parseable default settings for process module "
+                             f"'{python_module}'. The Kratos source tree may be "
+                             f"unavailable, the module name may be wrong (see "
+                             f"kratos_list_processes), or it declares defaults "
+                             f"in a non-standard way."}
+        return info
 
     @mcp.tool()
     async def kratos_get_solver_defaults(
