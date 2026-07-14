@@ -36,6 +36,7 @@ export default defineConfig({
             { text: 'Simulation & jobs', link: '/tools/simulation' },
             { text: 'Post-processing', link: '/tools/postprocessing' },
             { text: 'Visualization', link: '/tools/visualization' },
+            { text: 'Interoperability', link: '/tools/interop' },
             { text: 'Resources', link: '/tools/resources' },
             { text: 'Prompts', link: '/tools/prompts' },
           ],

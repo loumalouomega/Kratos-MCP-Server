@@ -126,6 +126,42 @@ process lists.
 | --- | --- | --- |
 | `application` | string? | filter by owning application (or `Core`) |
 | `name_filter` | string? | substring, e.g. `assign_vector` |
+| `with_defaults` | bool | also attach each module's `default_settings` and `param_types`, parsed from source (best effort; default `false`) |
+
+## kratos_get_process_defaults
+
+Return a process' **default settings** — the parameter names, default
+values, coarse types (`bool`/`number`/`string`/`array`/`json`/`null`) and
+which parameters are model-part references — parsed straight from the process'
+Python source (its `ValidateAndAssignDefaults` block, or a
+`GetDefaultParameters` classmethod). This is the schema you need to author a
+process block in a process list, the same way `kratos_get_solver_defaults`
+gives you a solver's schema.
+
+This is pure AST parsing of the Kratos source (no live build needed), ported
+from the sibling [Flowgraph](https://github.com/loumalouomega/Flowgraph)
+project's `parse-processes.py`. It also backs the auto-filled defaults in
+`add_boundary_condition` / `add_output_process`.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `python_module` | string | a value from `kratos_list_processes`, e.g. `assign_scalar_variable_process`, `vtk_output_process` |
+
+**Returns**: `{python_module, default_settings, param_types,
+input_model_parts, output_params, help}`, or `{"error": ...}` when the source
+is unavailable, the module is unknown, or it declares defaults in a
+non-standard way (e.g. C++-validated output processes such as
+`vtk_output_process`, whose defaults live in C++).
+
+```json
+// kratos_get_process_defaults("assign_scalar_variable_process") → (excerpt)
+{
+  "default_settings": { "model_part_name": "please_specify", "variable_name": "SPECIFY_VARIABLE",
+                        "value": 0.0, "constrained": true, "interval": [0.0, 1e30] },
+  "param_types": { "variable_name": "string", "value": "number", "constrained": "bool" },
+  "input_model_parts": ["model_part_name"]
+}
+```
 
 ## kratos_get_solver_defaults
 
