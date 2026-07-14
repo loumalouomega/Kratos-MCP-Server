@@ -4,9 +4,9 @@ from __future__ import annotations
 
 
 def register_all(mcp) -> None:
-    from . import (environment, mesh, postprocess, prompts, resources, scaffold,
-                   simulation, visualize)
+    from . import (environment, interop, mesh, postprocess, prompts, resources,
+                   scaffold, simulation, visualize)
 
     for module in (environment, scaffold, mesh, simulation, postprocess, visualize,
-                   resources, prompts):
+                   interop, resources, prompts):
         module.register(mcp)
