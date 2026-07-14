@@ -1,7 +1,7 @@
 """Convert a Kratos ProjectParameters.json to/from a Flowgraph (litegraph)
 graph.json and back, losslessly.
 
-Flowgraph (github.com/loumalouomega/Flowgraph) is a browser node-graph editor
+Flowgraph (github.com/KratosMultiphysics/Flowgraph) is a browser node-graph editor
 for Kratos cases; it saves the canvas as a litegraph ``graph.serialize()``
 object: ``{nodes, links, version, last_node_id, last_link_id}``. Each node here
 is emitted with a Flowgraph-compatible ``type`` string and column position (so

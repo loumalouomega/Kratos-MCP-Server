@@ -81,7 +81,7 @@ explain_project_parameters({ "parameters_file": "/tmp/ms/ProjectParameters.json"
     "execution_list": ["load_step_1", "load_step_2"], "stages": [ ... ] }
 ```
 
-And the case round-trips through the [Kratos FlowGraph](https://github.com/loumalouomega/Flowgraph)
+And the case round-trips through the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
 visual editor losslessly:
 
 ```json

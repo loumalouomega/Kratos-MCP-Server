@@ -104,7 +104,7 @@ as `preset` in `create_materials`: linear elastic (3D / plane strain / plane
 stress), small- and finite-strain Von Mises plasticity, isotropic damage, and
 Newtonian fluids. Cross-check the law names with `kratos_list_constitutive_laws`
 for your compiled build. These are seeded from the sibling
-[Flowgraph](https://github.com/loumalouomega/Flowgraph) material node library.
+[Flowgraph](https://github.com/KratosMultiphysics/Flowgraph) material node library.
 
 ## list_linear_solver_presets
 

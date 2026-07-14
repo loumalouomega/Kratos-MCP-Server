@@ -29,7 +29,7 @@ element simulations end to end:
   (deformed shapes, field contours) rendered with pyvista and shown inline
   in the conversation — optional `viz` extra.
 - **Interoperate**: explain an existing ProjectParameters.json, and convert
-  cases to/from the [Kratos FlowGraph](https://github.com/loumalouomega/Flowgraph)
+  cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
 40 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
@@ -96,7 +96,7 @@ that `.venv`.
 - [`notebooks/multistage.ipynb`](notebooks/multistage.ipynb): multi-stage
   orchestration — `create_multistage_project` chaining two load steps,
   `explain_project_parameters`, and a lossless round-trip to/from a
-  [Kratos FlowGraph](https://github.com/loumalouomega/Flowgraph) node graph.
+  [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph) node graph.
 
 ## Requirements
 

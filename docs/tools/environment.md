@@ -139,7 +139,7 @@ process block in a process list, the same way `kratos_get_solver_defaults`
 gives you a solver's schema.
 
 This is pure AST parsing of the Kratos source (no live build needed), ported
-from the sibling [Flowgraph](https://github.com/loumalouomega/Flowgraph)
+from the sibling [Flowgraph](https://github.com/KratosMultiphysics/Flowgraph)
 project's `parse-processes.py`. It also backs the auto-filled defaults in
 `add_boundary_condition` / `add_output_process`.
 

@@ -1,7 +1,7 @@
 # Interoperability
 
 Understand an existing case, and move cases between this server and the
-[Kratos FlowGraph](https://github.com/loumalouomega/Flowgraph) visual node
+[Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph) visual node
 editor. All three tools are pure JSON — no Kratos build required.
 
 ## explain_project_parameters
@@ -37,7 +37,7 @@ per-stage summary.
 
 ## export_case_to_flowgraph
 
-Convert a `ProjectParameters.json` into a [FlowGraph](https://github.com/loumalouomega/Flowgraph)
+Convert a `ProjectParameters.json` into a [FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
 (litegraph) `graph.json` that opens in the visual node editor — so an
 AI-built case can be inspected and hand-edited on a canvas.
 
