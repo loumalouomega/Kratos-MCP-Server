@@ -10,6 +10,13 @@ MCP resources are read-only documents an assistant can pull into context.
 | `kratos://examples/cantilever` | complete worked structural case: literal, verified mesh.mdpa + ProjectParameters.json + Materials.json + result, hardcoded (not rendered from templates at request time) |
 | `kratos://examples/thermal-bar` | complete worked thermal case (mesh recipe + rendered ProjectParameters + Materials) |
 | `kratos://examples/naca-airfoil` | complete worked fluid case: NACA0012 airfoil, real ~21k-node mesh (summarised, not embedded — too large) + ProjectParameters.json + Materials.json + verified Cd/Cl result |
+| `kratos://examples/lid-driven-cavity` | complete worked incompressible-flow case: lid-driven cavity (Re=100, monolithic), literal files + verified recirculation result |
+| `kratos://examples/plasticity-cube` | complete worked nonlinear-structural case: single-element von Mises plasticity (material preset), literal files + verified elastic→plastic result |
+| `kratos://examples/multistage-load-steps` | complete worked multi-stage case: cantilever solved in two orchestrated load steps sharing a mesh, literal files + verified per-stage result |
+| `kratos://examples/channel-flow` | fractional-step incompressible channel flow (mesh recipe + rendered ProjectParameters) |
+| `kratos://examples/modal-box` | modal / eigenvalue analysis of a 3D block (mesh recipe + rendered ProjectParameters) |
+| `kratos://examples/dynamic-cantilever` | transient (implicit dynamic) cantilever (mesh recipe + rendered ProjectParameters) |
+| `kratos://examples/potential-flow` | potential flow around a body (mesh recipe + rendered ProjectParameters; needs CompressiblePotentialFlowApplication) |
 | `kratos://templates/{name}` | the raw template files for any template from `list_templates` |
 | `kratos://jobs/{job_id}/log` | live stdout/stderr of a simulation job |
 

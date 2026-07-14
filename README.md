@@ -32,7 +32,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/loumalouomega/Flowgraph)
   visual node editor (lossless round-trip).
 
-40 tools, 8 resources and 5 guided prompts. See the full documentation in
+40 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start
@@ -68,9 +68,9 @@ mcp add` line) — see [Installation](docs/guide/installation.md).
 
 ## Notebooks
 
-Two notebooks drive the server interactively as an MCP *client* — no AI
+Five notebooks drive the server interactively as an MCP *client* — no AI
 assistant involved — each touching most of the relevant tools, resources
-and prompts in one sitting. Run either with `uv sync --extra viz --group
+and prompts in one sitting. Run any with `uv sync --extra viz --group
 dev` (adds `ipykernel` + pyvista) and open it in Jupyter/VS Code against
 that `.venv`.
 
@@ -85,6 +85,18 @@ that `.venv`.
   notebook/tutorial for what and why), computes lift/drag by summing
   `REACTION` over the airfoil surface, and renders/animates the pressure
   field cropped to the airfoil with the newer `crop_bounds` option.
+- [`notebooks/fluid_cavity.ipynb`](notebooks/fluid_cavity.ipynb): the
+  lid-driven cavity CFD benchmark — introspect the fluid solver, run the
+  shipped example, probe the velocity field, and render an inline PNG and GIF
+  of the recirculating vortex.
+- [`notebooks/materials.ipynb`](notebooks/materials.ipynb): the materials
+  surface — material & linear-solver presets, process-defaults introspection,
+  and a single-element von Mises plasticity run showing the elastic→plastic
+  transition.
+- [`notebooks/multistage.ipynb`](notebooks/multistage.ipynb): multi-stage
+  orchestration — `create_multistage_project` chaining two load steps,
+  `explain_project_parameters`, and a lossless round-trip to/from a
+  [Kratos FlowGraph](https://github.com/loumalouomega/Flowgraph) node graph.
 
 ## Requirements
 

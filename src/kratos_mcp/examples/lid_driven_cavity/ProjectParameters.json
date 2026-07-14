@@ -1,0 +1,193 @@
+{
+    "problem_data": {
+        "problem_name": "lid_driven_cavity",
+        "parallel_type": "OpenMP",
+        "echo_level": 1,
+        "start_time": 0.0,
+        "end_time": 30.0
+    },
+    "solver_settings": {
+        "solver_type": "Monolithic",
+        "model_part_name": "FluidModelPart",
+        "domain_size": 2,
+        "echo_level": 0,
+        "model_import_settings": {
+            "input_type": "mdpa",
+            "input_filename": "mesh"
+        },
+        "material_import_settings": {
+            "materials_filename": "Materials.json"
+        },
+        "maximum_iterations": 10,
+        "compute_reactions": false,
+        "reform_dofs_at_each_step": false,
+        "relative_velocity_tolerance": 1e-05,
+        "absolute_velocity_tolerance": 1e-07,
+        "relative_pressure_tolerance": 1e-05,
+        "absolute_pressure_tolerance": 1e-07,
+        "linear_solver_settings": {
+            "solver_type": "LinearSolversApplication.sparse_lu"
+        },
+        "volume_model_part_name": "domain",
+        "skin_parts": [
+            "left",
+            "right",
+            "bottom",
+            "top"
+        ],
+        "no_skin_parts": [
+            "corner"
+        ],
+        "time_stepping": {
+            "automatic_time_step": false,
+            "time_step": 1.0
+        },
+        "formulation": {
+            "element_type": "vms",
+            "use_orthogonal_subscales": false,
+            "dynamic_tau": 1.0
+        }
+    },
+    "processes": {
+        "initial_conditions_process_list": [],
+        "boundary_conditions_process_list": [
+            {
+                "python_module": "assign_vector_variable_process",
+                "kratos_module": "KratosMultiphysics",
+                "process_name": "AssignVectorVariableProcess",
+                "Parameters": {
+                    "model_part_name": "FluidModelPart.left",
+                    "variable_name": "VELOCITY",
+                    "value": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "constrained": [
+                        true,
+                        true,
+                        true
+                    ],
+                    "interval": [
+                        0.0,
+                        "End"
+                    ]
+                }
+            },
+            {
+                "python_module": "assign_vector_variable_process",
+                "kratos_module": "KratosMultiphysics",
+                "process_name": "AssignVectorVariableProcess",
+                "Parameters": {
+                    "model_part_name": "FluidModelPart.right",
+                    "variable_name": "VELOCITY",
+                    "value": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "constrained": [
+                        true,
+                        true,
+                        true
+                    ],
+                    "interval": [
+                        0.0,
+                        "End"
+                    ]
+                }
+            },
+            {
+                "python_module": "assign_vector_variable_process",
+                "kratos_module": "KratosMultiphysics",
+                "process_name": "AssignVectorVariableProcess",
+                "Parameters": {
+                    "model_part_name": "FluidModelPart.bottom",
+                    "variable_name": "VELOCITY",
+                    "value": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "constrained": [
+                        true,
+                        true,
+                        true
+                    ],
+                    "interval": [
+                        0.0,
+                        "End"
+                    ]
+                }
+            },
+            {
+                "python_module": "assign_vector_variable_process",
+                "kratos_module": "KratosMultiphysics",
+                "process_name": "AssignVectorVariableProcess",
+                "Parameters": {
+                    "model_part_name": "FluidModelPart.top",
+                    "variable_name": "VELOCITY",
+                    "value": [
+                        1.0,
+                        0.0,
+                        0.0
+                    ],
+                    "constrained": [
+                        true,
+                        true,
+                        true
+                    ],
+                    "interval": [
+                        0.0,
+                        "End"
+                    ]
+                }
+            },
+            {
+                "python_module": "assign_scalar_variable_process",
+                "kratos_module": "KratosMultiphysics",
+                "process_name": "AssignScalarVariableProcess",
+                "Parameters": {
+                    "model_part_name": "FluidModelPart.corner",
+                    "variable_name": "PRESSURE",
+                    "value": 0.0,
+                    "constrained": true,
+                    "interval": [
+                        0.0,
+                        "End"
+                    ]
+                }
+            }
+        ],
+        "gravity": [],
+        "auxiliar_process_list": []
+    },
+    "output_processes": {
+        "gid_output": [],
+        "vtk_output": [
+            {
+                "python_module": "vtk_output_process",
+                "kratos_module": "KratosMultiphysics",
+                "process_name": "VtkOutputProcess",
+                "Parameters": {
+                    "model_part_name": "FluidModelPart",
+                    "output_control_type": "step",
+                    "output_interval": 10,
+                    "file_format": "ascii",
+                    "output_precision": 7,
+                    "output_sub_model_parts": false,
+                    "output_path": "vtk_output",
+                    "save_output_files_in_folder": true,
+                    "nodal_solution_step_data_variables": [
+                        "VELOCITY",
+                        "PRESSURE"
+                    ],
+                    "nodal_data_value_variables": [],
+                    "element_data_value_variables": [],
+                    "condition_data_value_variables": []
+                }
+            }
+        ]
+    },
+    "analysis_stage": "KratosMultiphysics.FluidDynamicsApplication.fluid_dynamics_analysis"
+}

@@ -1,7 +1,7 @@
 # Tool reference
 
-The server exposes **40 tools**, **8 resources** and **5 prompts**, grouped
-by workflow stage:
+The server exposes **40 tools**, **15 resources** (10 worked examples) and
+**5 prompts**, grouped by workflow stage:
 
 | Category | Tools |
 | --- | --- |
