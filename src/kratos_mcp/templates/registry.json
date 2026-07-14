@@ -161,6 +161,86 @@
       ]
     }
   },
+  "fluid_fractional_step": {
+    "description": "Transient incompressible flow (fractional-step / pressure-splitting scheme; cheaper per step than monolithic for large meshes)",
+    "analysis_type": "fluid",
+    "model_part_name": "FluidModelPart",
+    "required_applications": [
+      "FluidDynamicsApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.FluidDynamicsApplication.navier_stokes_solver_fractionalstep",
+    "default_element": "Element2D3N",
+    "default_condition": "WallCondition2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "end_time": 1.0,
+      "time_step": 0.01,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "volume_part": "domain",
+      "skin_parts": [
+        "left",
+        "right",
+        "top",
+        "bottom"
+      ],
+      "inlet_model_part": "FluidModelPart.left",
+      "inlet_velocity": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "outlet_model_part": "FluidModelPart.right",
+      "noslip_model_parts": [
+        "FluidModelPart.top",
+        "FluidModelPart.bottom"
+      ],
+      "material_model_part": "FluidModelPart.domain",
+      "constitutive_law": "Newtonian2DLaw",
+      "density": 1000.0,
+      "dynamic_viscosity": 0.001,
+      "output_path": "vtk_output",
+      "nodal_results": [
+        "VELOCITY",
+        "PRESSURE"
+      ]
+    }
+  },
+  "potential_flow": {
+    "description": "Steady potential (inviscid, irrotational) flow around a 2D body, e.g. an airfoil. Requires CompressiblePotentialFlowApplication (not always compiled). Modelled on the Kratos NACA0012 perturbation test; needs a far-field boundary and a body/wake sub-model-part.",
+    "analysis_type": "potential_flow",
+    "model_part_name": "FluidModelPart",
+    "required_applications": [
+      "CompressiblePotentialFlowApplication",
+      "LinearSolversApplication"
+    ],
+    "solver_module": "KratosMultiphysics.CompressiblePotentialFlowApplication.potential_flow_solver",
+    "default_element": "Element2D3N",
+    "default_condition": "LineCondition2D2N",
+    "placeholders": {
+      "problem_name": "case",
+      "domain_size": 2,
+      "end_time": 1.0,
+      "mdpa_basename": "mesh",
+      "materials_filename": "Materials.json",
+      "volume_part": "FluidModelPart.Parts_Fluid",
+      "skin_parts": [
+        "PotentialWallCondition2D_Far_field",
+        "Body2D_Body"
+      ],
+      "far_field_model_part": "FluidModelPart.PotentialWallCondition2D_Far_field",
+      "body_model_part": "FluidModelPart.Body2D_Body",
+      "mach_infinity": 0.6,
+      "free_stream_density": 1.225,
+      "output_path": "vtk_output",
+      "nodal_results": [
+        "VELOCITY_POTENTIAL",
+        "AUXILIARY_VELOCITY_POTENTIAL"
+      ]
+    }
+  },
   "fluid_transient": {
     "description": "Transient incompressible flow (monolithic Navier-Stokes, VMS)",
     "analysis_type": "fluid",
