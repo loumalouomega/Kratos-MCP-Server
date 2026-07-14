@@ -126,14 +126,18 @@ def register(mcp) -> None:
         image_path: str | None = None,
         window_size: list[int] | None = None,
         show_edges: bool = True,
+        crop_bounds: list[float] | None = None,
     ) -> Any:
         """Render a VTK/VTU result file to a PNG screenshot, returned inline
         (requires the optional pyvista 'viz' extra). Colors the mesh by
         'variable' (point or cell data; vector fields default to magnitude,
         or pick component 'x'/'y'/'z'), optionally warps the geometry by a
         vector field such as DISPLACEMENT scaled by warp_factor. Camera
-        presets: xy, xz, yz, iso. The PNG is saved next to the input file
-        unless image_path is given."""
+        presets: xy, xz, yz, iso. crop_bounds clips to a region of interest
+        before framing the camera -- [xmin,xmax,ymin,ymax] or
+        [xmin,xmax,ymin,ymax,zmin,zmax] -- essential for e.g. a small body in
+        a huge far-field CFD domain, otherwise invisible at full-domain zoom.
+        The PNG is saved next to the input file unless image_path is given."""
         missing = _pyvista_missing()
         if missing:
             return missing
@@ -149,7 +153,7 @@ def register(mcp) -> None:
             "file": str(p), "variable": variable, "component": component,
             "warp_by": warp_by, "warp_factor": warp_factor, "camera": camera,
             "image_path": str(out), "window_size": window_size or [1024, 768],
-            "show_edges": show_edges,
+            "show_edges": show_edges, "crop_bounds": crop_bounds,
         }
         result = await anyio.to_thread.run_sync(
             lambda: _run_render("screenshot", args, timeout=120.0))
@@ -157,7 +161,7 @@ def register(mcp) -> None:
             return result
         meta = {"file": str(p), "variable": variable, "component": component,
                 "camera": camera, "warp_by": warp_by, "warp_factor": warp_factor,
-                "window_size": args["window_size"], **result}
+                "window_size": args["window_size"], "crop_bounds": crop_bounds, **result}
         return [meta, Image(path=result["image_path"])]
 
     @mcp.tool(structured_output=False)
@@ -173,13 +177,15 @@ def register(mcp) -> None:
         window_size: list[int] | None = None,
         show_edges: bool = True,
         max_frames: int = 50,
+        crop_bounds: list[float] | None = None,
     ) -> Any:
         """Render a time series of VTK/VTU results into an animated GIF
         (requires the optional pyvista 'viz' extra). 'files' is a directory
         (e.g. the case's vtk_output/) or a glob; frames are ordered by the
-        numbers in their names. Coloring/warping options as in
-        results_render, with one color range and camera across all frames.
-        Small GIFs are returned inline; the file path is always returned."""
+        numbers in their names. Coloring/warping/crop_bounds options as in
+        results_render, with one color range, crop and camera across all
+        frames. Small GIFs are returned inline; the file path is always
+        returned."""
         missing = _pyvista_missing()
         if missing:
             return missing
@@ -201,6 +207,7 @@ def register(mcp) -> None:
             "component": component, "warp_by": warp_by, "warp_factor": warp_factor,
             "camera": camera, "gif_path": str(out), "fps": fps,
             "window_size": window_size or [800, 600], "show_edges": show_edges,
+            "crop_bounds": crop_bounds,
         }
         timeout = min(60.0 + 10.0 * len(frames), 600.0)
         result = await anyio.to_thread.run_sync(
@@ -209,7 +216,7 @@ def register(mcp) -> None:
             return result
         meta = {"files": files, "variable": variable, "component": component,
                 "camera": camera, "warp_by": warp_by, "warp_factor": warp_factor,
-                "window_size": args["window_size"], **result}
+                "window_size": args["window_size"], "crop_bounds": crop_bounds, **result}
         if truncated:
             meta["note"] = (f"{len(_expand_frames(files))} files matched; only the "
                             f"first {max_frames} frames were rendered (max_frames)")

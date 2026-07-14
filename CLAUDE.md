@@ -66,7 +66,7 @@ installed) via `-displayfd`.
 - `uv run kratos-mcp` — run the server (stdio)
 - `uv run pytest -m "not kratos"` — unit tests, no Kratos needed
 - `uv run pytest -m kratos` — integration tests against the real build
-  (cantilever + thermal bar end-to-end with physics assertions)
+  (cantilever + thermal bar + naca airfoil end-to-end with physics assertions)
 - `uv run python tests/smoke_client.py` — scripted stdio MCP client smoke test
 - `npm run docs:dev` / `npm run docs:build` — VitePress docs
 
@@ -96,14 +96,31 @@ installed) via `-displayfd`.
   and re-verify the numbers with a real run (recipe in
   `tests/test_examples.py` and the cantilever-beam.md tutorial).
   `thermal-bar` stays dynamically rendered via `_example_bundle()`.
-- `notebooks/cantilever.ipynb` — MCP *client* notebook (uses `mcp.client.stdio`
-  directly, not the server code) walking through most tools/resources/prompts
-  against the real cantilever case; all outputs are baked in from a real run,
-  not placeholders. Regenerate after a workflow-affecting change by rebuilding
-  it with `nbformat` and re-executing with `nbclient`/`jupyter nbconvert
-  --execute` against a kernel that has this project's `.venv` (`uv sync --extra
-  viz --group dev`, then `python -m ipykernel install --user --name <name>`)
-  — same "re-verify with a real run" rule as the cantilever example resource.
+- `src/kratos_mcp/examples/naca_airfoil/` — real `mesh.mdpa` (~21k nodes, 3.6
+  MB — a genuine externally-authored/GiD unstructured mesh reused from
+  Kratos' own examples repo, `fluid_dynamics/validation/
+  compressible_naca_0012_Ma_0.8`) + ProjectParameters.json + Materials.json,
+  read by the `kratos://examples/naca-airfoil` resource. Unlike cantilever,
+  the resource does **not** embed the raw mesh text (too large to be useful
+  in a response) — it gives a `mdpa_inspect`-style summary instead. This is a
+  DELIBERATE SIMPLIFICATION of the literal reference case (which is
+  transonic/compressible/multi-stage, unsupported by this server): only the
+  airfoil geometry is reused, driven as incompressible laminar flow through
+  the existing `fluid_transient` template. If that template changes,
+  regenerate `ProjectParameters.json`/`Materials.json` by hand and re-verify
+  the Cd/Cl numbers with a real run (recipe in `tests/test_examples.py` and
+  the naca-airfoil.md tutorial).
+- `notebooks/cantilever.ipynb`, `notebooks/naca_airfoil.ipynb` — MCP
+  *client* notebooks (use `mcp.client.stdio` directly, not the server code)
+  walking through most tools/resources/prompts against the real example
+  cases; all outputs are baked in from a real run, not placeholders.
+  Regenerate after a workflow-affecting change by rebuilding with `nbformat`
+  and re-executing with `nbclient`/`jupyter nbconvert --execute` against a
+  kernel that has this project's `.venv` (`uv sync --extra viz --group dev`,
+  then `python -m ipykernel install --user --name <name>`) — same
+  "re-verify with a real run" rule as the example resources. `naca_airfoil.
+  ipynb` takes ~5 minutes to execute (the 21k-node mesh's 40-step run is
+  ~4 minutes of that) — budget accordingly when regenerating it.
   Gotcha: don't hold the `stdio_client`/`ClientSession` context managers open
   across cells with a bare `AsyncExitStack` — each Jupyter cell's top-level
   `await` runs in a new asyncio Task, and anyio's cancel scopes require
@@ -134,6 +151,13 @@ installed) via `-displayfd`.
   files may fail.
 - Kratos resolves mdpa/materials paths relative to the CWD → `runner.py`
   chdirs into the case directory.
+- Fluid solvers (`fluid_solver.py`'s `_ReplaceElementsAndConditions`) replace
+  ALL elements/conditions unconditionally via `ReplaceElementsAndConditionsProcess`
+  — matched purely by node count + `domain_size`, not by the original type
+  name. An externally-authored mesh with generic/unrelated element or
+  condition names (e.g. `naca_airfoil`'s `LineCondition2D2N`, not the
+  registry's informational `WallCondition2D2N` default) works fine as-is;
+  there's no need to rename anything before import.
 
 ## MCP / pyvista gotchas
 
@@ -149,6 +173,11 @@ installed) via `-displayfd`.
   useless. Never render in-process, not even in tests: tests go through the
   `render_worker` subprocess too (a crash becomes a skippable nonzero exit),
   and CI runs them under `xvfb-run`.
+- `results_render`/`results_animate` take a `crop_bounds` ([xmin,xmax,ymin,ymax]
+  or +zmin,zmax) applied via `mesh.clip_box()` before the camera fits the
+  view — essential for a small body in a huge far-field CFD domain (e.g. a
+  unit-chord airfoil in a 12.5-20 unit far field), otherwise an invisible
+  speck at full-domain zoom.
 
 ## Conventions
 
@@ -160,7 +189,10 @@ installed) via `-displayfd`.
 - Reference cases used for templates/tests:
   `applications/StructuralMechanicsApplication/tests/LinearTruss2D/2D2N/` and
   `applications/ConvectionDiffusionApplication/tests/basic_conv_diffusion_test/`
-  in the Kratos tree.
+  in the Kratos tree. The `naca_airfoil` example instead reuses a mesh from
+  the external KratosMultiphysics-Examples repo (`fluid_dynamics/validation/
+  compressible_naca_0012_Ma_0.8`) — see that example's note in Layout above
+  for what was simplified and why.
 
 ## Keep docs in sync
 

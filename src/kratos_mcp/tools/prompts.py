@@ -54,6 +54,38 @@ Follow this workflow with the kratos MCP tools:
 """
 
     @mcp.prompt()
+    def setup_fluid_analysis(
+        description: str = "flow past a body with an inlet velocity, an outlet, and no-slip walls",
+    ) -> str:
+        """Guided workflow to set up and run an incompressible flow analysis."""
+        return f"""Set up and run a Kratos incompressible flow analysis for: {description}
+
+Follow this workflow with the kratos MCP tools:
+1. kratos_check_installation — confirm FluidDynamicsApplication is compiled.
+2. list_templates — fluid_transient is the only fluid template today
+   (transient incompressible Navier-Stokes, Monolithic/VMS solver).
+3. Get a mesh: mdpa_create_structured_mesh (kind='rectangle' or 'box') for a
+   simple channel, or point at an externally-authored mesh.mdpa for a
+   curved/unstructured boundary (e.g. an airfoil) — mdpa_inspect/mdpa_validate
+   work on either since the parser is shape-agnostic; only the structured
+   generator is limited to line/rectangle/box.
+4. create_project with template fluid_transient, setting volume_part,
+   skin_parts, inlet_model_part/inlet_velocity and outlet_model_part in
+   overrides to match the mesh's actual submodelpart names.
+5. add_boundary_condition — kind='fix_velocity' with value=[0,0,0] on every
+   no-slip wall submodelpart not already covered by the template's built-in
+   inlet/outlet processes (walls, an immersed body's surface, ...).
+6. validate_case — fix any reported issues before running.
+7. run_simulation with wait_seconds=60 for small cases; otherwise poll
+   job_status and inspect job_logs. Element/condition types in the raw mesh
+   don't need to match the solver's expected names — Kratos replaces them
+   unconditionally by node count and domain_size at import.
+8. results_list + results_summary + results_probe — report velocity/pressure
+   ranges; if compute_reactions was enabled, sum REACTION over a wall's nodes
+   for a body-force (drag/lift) estimate.
+"""
+
+    @mcp.prompt()
     def debug_failed_simulation(job_id: str) -> str:
         """Diagnose why a simulation job failed."""
         return f"""Diagnose the failed Kratos job '{job_id}':

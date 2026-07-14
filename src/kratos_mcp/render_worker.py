@@ -43,6 +43,22 @@ def _maybe_warp(mesh, args: dict[str, Any]):
     return mesh.warp_by_vector(warp_by, factor=float(args.get("warp_factor", 1.0)))
 
 
+def _maybe_crop(mesh, args: dict[str, Any]):
+    """Clip to a region of interest — e.g. a small airfoil in a huge far-field
+    domain is otherwise an invisible speck once the camera fits the whole mesh."""
+    bounds = args.get("crop_bounds")
+    if not bounds:
+        return mesh
+    if len(bounds) == 4:
+        xmin, xmax, ymin, ymax = bounds
+        zmin, zmax = mesh.bounds[4], mesh.bounds[5]
+        bounds = [xmin, xmax, ymin, ymax, zmin, zmax]
+    if len(bounds) != 6:
+        raise ValueError("crop_bounds must have 4 [xmin,xmax,ymin,ymax] or "
+                         "6 [xmin,xmax,ymin,ymax,zmin,zmax] entries")
+    return mesh.clip_box(bounds, invert=False)
+
+
 def _resolve_scalars(mesh, variable: str | None, component: str | None):
     """Return (scalar array name to color by, [min, max]). Vector variables
     get a derived scalar array: one component, or the magnitude by default."""
@@ -79,6 +95,7 @@ def _prepare(file: str, args: dict[str, Any]):
 
     mesh = pv.read(file)
     mesh = _maybe_warp(mesh, args)
+    mesh = _maybe_crop(mesh, args)
     name, data_range = _resolve_scalars(mesh, args.get("variable"), args.get("component"))
     return mesh, name, data_range
 

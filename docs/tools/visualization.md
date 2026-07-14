@@ -32,6 +32,7 @@ Render one VTK/VTU result file to a PNG screenshot.
 | `image_path` | string? | output PNG (default: next to the input file) |
 | `window_size` | int[2]? | pixels, default `[1024, 768]` |
 | `show_edges` | boolean | draw element edges (default true) |
+| `crop_bounds` | number[4\|6]? | `[xmin,xmax,ymin,ymax]` or `[...,zmin,zmax]` — clip to a region of interest before framing the camera |
 
 **Returns**: the PNG as inline image content, plus a JSON metadata block:
 
@@ -49,6 +50,12 @@ Render one VTK/VTU result file to a PNG screenshot.
 Static analyses barely move at true scale — pass a `warp_factor` large
 enough to make the deformation visible (the `data_range` from a first
 render or `results_summary` tells you the magnitude).
+
+A small body in a huge domain (e.g. a unit-chord airfoil in a far-field CFD
+mesh extending tens of units in every direction) is an invisible speck once
+the camera fits the whole mesh — pass `crop_bounds` to clip to the region
+you actually care about first; the camera then fits to what's left. See the
+[NACA airfoil tutorial](/tutorials/naca-airfoil) for a worked example.
 
 ## results_animate
 
@@ -68,6 +75,7 @@ and camera across all frames so the animation is stable.
 | `window_size` | int[2]? | pixels, default `[800, 600]` |
 | `show_edges` | boolean | draw element edges (default true) |
 | `max_frames` | int | cap on rendered frames (default 50) |
+| `crop_bounds` | number[4\|6]? | as in `results_render`, applied to every frame |
 
 Frames are ordered by the numbers in their file names (`Structure_0_2.vtk`
 before `Structure_0_10.vtk`), matching Kratos' `<ModelPart>_<rank>_<step>`

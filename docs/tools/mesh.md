@@ -4,6 +4,12 @@ Generate, inspect and validate Kratos `.mdpa` meshes. All of this is pure
 Python — no Kratos needed — except deep validation. See the
 [MDPA format guide](/guide/mdpa-format) for the file format itself.
 
+Only `mdpa_create_structured_mesh` is limited to line/rectangle/box grids —
+`mdpa_inspect`/`mdpa_validate`/`mdpa_get_nodes` work on **any** valid
+`.mdpa` file, including externally-authored unstructured meshes with curved
+boundaries (e.g. the [NACA airfoil example](/tutorials/naca-airfoil)'s real
+~21k-node GiD mesh) that this server has no way to generate itself.
+
 ## mdpa_create_structured_mesh
 
 Generate a structured mesh with named boundary submodelparts and write it as

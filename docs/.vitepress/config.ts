@@ -47,6 +47,7 @@ export default defineConfig({
           items: [
             { text: 'Cantilever beam', link: '/tutorials/cantilever-beam' },
             { text: 'Thermal bar', link: '/tutorials/thermal-bar' },
+            { text: 'NACA airfoil', link: '/tutorials/naca-airfoil' },
           ],
         },
       ],

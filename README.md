@@ -25,7 +25,7 @@ element simulations end to end:
   (deformed shapes, field contours) rendered with pyvista and shown inline
   in the conversation — optional `viz` extra.
 
-33 tools, 7 resources and 4 guided prompts. See the full documentation in
+33 tools, 8 resources and 5 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start
@@ -59,16 +59,25 @@ If you already have a compiled Kratos checkout, skip that and point
 `KRATOS_ROOT` at it instead (`-e KRATOS_ROOT=/path/to/Kratos` on the `claude
 mcp add` line) — see [Installation](docs/guide/installation.md).
 
-## Notebook
+## Notebooks
 
-[`notebooks/cantilever.ipynb`](notebooks/cantilever.ipynb) drives the same
-cantilever case interactively as an MCP *client* — no AI assistant involved —
-touching most of the server's tools, resources and prompts in one sitting:
-installation introspection, mesh generation, scaffolding, a background job
-you poll while it runs, VTK post-processing, a rendered PNG and an animated
-GIF, and cancelling a job in flight. Run it with `uv sync --extra viz --group
-dev` (adds `ipykernel` + pyvista) and open it in Jupyter/VS Code against that
-`.venv`.
+Two notebooks drive the server interactively as an MCP *client* — no AI
+assistant involved — each touching most of the relevant tools, resources
+and prompts in one sitting. Run either with `uv sync --extra viz --group
+dev` (adds `ipykernel` + pyvista) and open it in Jupyter/VS Code against
+that `.venv`.
+
+- [`notebooks/cantilever.ipynb`](notebooks/cantilever.ipynb): the structural
+  cantilever case — installation introspection, mesh generation,
+  scaffolding, a background job you poll while it runs, VTK
+  post-processing, a rendered PNG and an animated GIF, and cancelling a job
+  in flight.
+- [`notebooks/naca_airfoil.ipynb`](notebooks/naca_airfoil.ipynb): a NACA0012
+  airfoil in incompressible laminar flow — reuses a real ~21k-node airfoil
+  mesh from Kratos's own examples repo (simplified physics; see the
+  notebook/tutorial for what and why), computes lift/drag by summing
+  `REACTION` over the airfoil surface, and renders/animates the pressure
+  field cropped to the airfoil with the newer `crop_bounds` option.
 
 ## Requirements
 

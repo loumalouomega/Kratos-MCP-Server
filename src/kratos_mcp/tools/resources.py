@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from .. import jobs
+from .. import mdpa as mdpa_mod
 from .scaffold import TEMPLATES_DIR, load_registry, render_template_file
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
@@ -200,6 +201,86 @@ run_simulation(case_dir='case', wait_seconds=60)
 """
 
 
+NACA_AIRFOIL_INTRO = """\
+# Worked example: NACA0012 airfoil, incompressible viscous flow (fluid_transient)
+
+A 2D NACA0012 airfoil (unit chord, leading edge near the origin) in a large
+semicircular-inlet / rectangular-outlet far-field domain, incompressible
+laminar flow (DENSITY=1, DYNAMIC_VISCOSITY=0.001 -> chord Reynolds number
+~1000), freestream applied at a small ~4 degree angle of attack via the
+inlet velocity vector -- the mesh itself is built at 0 degree geometric
+incidence (NACA0012 is symmetric), so an angle of attack in the velocity
+direction is the only way to get a non-trivial lift-generating case out of
+it without a second mesh.
+
+mesh.mdpa is a real, externally-authored (GiD) unstructured triangular mesh
+reused from Kratos' own examples repository
+(fluid_dynamics/validation/compressible_naca_0012_Ma_0.8), not rendered
+from templates/ at request time -- there is no structured-mesh generator in
+this server that can produce a curved airfoil boundary (mdpa_create_structured_mesh
+only does line/rectangle/box). This is a DELIBERATE SIMPLIFICATION of that
+literal reference case, which is transonic (Ma=0.8), compressible, and uses
+a potential-flow bootstrap stage -- boundary conditions on conservative
+variables and multi-stage orchestration this server doesn't expose. Only
+the airfoil geometry is reused; the physics is an incompressible Monolithic
+(VMS) run through the existing fluid_transient template.
+
+The mesh is too large (~21k nodes, 3.6 MB) to usefully embed verbatim in an
+MCP resource response, unlike the tiny cantilever mesh -- a mdpa_inspect-style
+summary is given instead. It ships on disk in this package
+(src/kratos_mcp/examples/naca_airfoil/) and works with mdpa_inspect /
+mdpa_validate / create_project / run_simulation exactly like any other mesh."""
+
+NACA_AIRFOIL_RESULT = """\
+## Verified result
+
+Running this exact case (40 time steps, end_time=2.0s, time_step=0.05s,
+~4 minutes wall-clock) and summing REACTION over the NoSlip2D_Aerofoil
+nodes of the final VTK snapshot (Newton's third law: force on the wall =
+-REACTION) gives:
+
+    drag coefficient  Cd = F_x / (0.5 * DENSITY * U^2 * chord) ~= 0.124
+    lift coefficient  Cl = F_y / (0.5 * DENSITY * U^2 * chord) ~= 0.122
+
+Both had settled to a quasi-steady value by step 40 (Cd started at 0.24 at
+step 5 and decayed monotonically; Cl rose from 0.11 and plateaued around
+0.12-0.13) -- a converged laminar solution, not a mid-transient snapshot.
+
+Cross-check against thin-airfoil theory, Cl ~= 2*pi*sin(alpha) ~= 0.44 for
+alpha=4 degrees: our Cl is about 3.6x lower. Expected, not a bug -- thin-
+airfoil theory is inviscid potential flow around an infinitely thin plate;
+this is a viscous (Re~1000) run around a real 12%-thick section, both of
+which reduce effective circulation relative to the idealised theory.
+
+## Reproducing this with the tools
+
+The mesh can't be regenerated with mdpa_create_structured_mesh (curved,
+unstructured boundary) -- copy the shipped mesh.mdpa into the case
+directory and point the other tools at it:
+
+```
+create_project(directory='case', template='fluid_transient', name='naca_airfoil',
+                overrides={
+                    'volume_part': 'FluidParts_Fluid',
+                    'skin_parts': ['AutomaticInlet2D_Left', 'Outlet2D_Right',
+                                   'NoSlip2D_Top', 'NoSlip2D_Bottom', 'NoSlip2D_Aerofoil'],
+                    'inlet_model_part': 'FluidModelPart.AutomaticInlet2D_Left',
+                    'inlet_velocity': [0.9976, 0.0698, 0.0],   # U=1, alpha=4 deg
+                    'outlet_model_part': 'FluidModelPart.Outlet2D_Right',
+                    'material_model_part': 'FluidModelPart.FluidParts_Fluid',
+                    'density': 1.0, 'dynamic_viscosity': 0.001,
+                    'end_time': 2.0, 'time_step': 0.05,
+                    'nodal_results': ['VELOCITY', 'PRESSURE', 'REACTION'],
+                })
+add_boundary_condition(parameters_file='case/ProjectParameters.json',
+                        kind='fix_velocity', model_part='FluidModelPart.NoSlip2D_Top',
+                        value=[0.0, 0.0, 0.0])
+# ...repeat for NoSlip2D_Bottom and NoSlip2D_Aerofoil
+run_simulation(case_dir='case', wait_seconds=300)
+```
+"""
+
+
 def _example_bundle(template: str, mesh_hint: str) -> str:
     registry = load_registry()
     values = dict(registry[template]["placeholders"])
@@ -272,6 +353,25 @@ def register(mcp) -> None:
             "convection-diffusion solver replaces the generic elements at import "
             "(use triangles: its mesh checks require simplex meshes). "
             "Fix TEMPERATURE on 'left' and 'right' with add_boundary_condition.")
+
+    @mcp.resource("kratos://examples/naca-airfoil")
+    def naca_airfoil_example() -> str:
+        """Worked example: NACA0012 airfoil, incompressible viscous flow.
+        Unlike cantilever_example(), the ~21k-node mesh is too large to
+        embed verbatim -- a mdpa_inspect-style summary is given instead of
+        the raw mesh.mdpa text."""
+        case_dir = EXAMPLES_DIR / "naca_airfoil"
+        mesh_summary = mdpa_mod.read(case_dir / "mesh.mdpa").inspect()
+        pp = (case_dir / "ProjectParameters.json").read_text()
+        mats = (case_dir / "Materials.json").read_text()
+        return (
+            f"{NACA_AIRFOIL_INTRO}\n\n"
+            f"## mesh.mdpa summary (mdpa_inspect)\n\n```json\n"
+            f"{json.dumps(mesh_summary, indent=2)}\n```\n\n"
+            f"## ProjectParameters.json\n\n```json\n{pp}```\n\n"
+            f"## Materials.json\n\n```json\n{mats}```\n\n"
+            f"{NACA_AIRFOIL_RESULT}"
+        )
 
     @mcp.resource("kratos://jobs/{job_id}/log")
     def job_log_resource(job_id: str) -> str:

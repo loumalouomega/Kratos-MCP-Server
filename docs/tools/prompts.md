@@ -23,6 +23,19 @@ with plausibility checks.
 Same shape for heat conduction, including the thermal-specific mesh rules
 (simplex elements, `ThermalFace2D2N` conditions).
 
+## setup_fluid_analysis
+
+| Argument | Default |
+| --- | --- |
+| `description` | "flow past a body with an inlet velocity, an outlet, and no-slip walls" |
+
+Same shape for incompressible flow (`fluid_transient`, Monolithic/VMS):
+check installation → get a mesh (structured or an externally-authored one
+for curved boundaries) → scaffold project, overriding submodelpart
+placeholders to match the mesh → add no-slip walls → validate → run →
+post-process, including summing `REACTION` for a drag/lift estimate if
+`compute_reactions` was enabled.
+
 ## debug_failed_simulation
 
 | Argument | |

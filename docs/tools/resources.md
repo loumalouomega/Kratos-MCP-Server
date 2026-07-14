@@ -9,6 +9,7 @@ MCP resources are read-only documents an assistant can pull into context.
 | `kratos://docs/materials` | Materials.json structure + common constitutive laws |
 | `kratos://examples/cantilever` | complete worked structural case: literal, verified mesh.mdpa + ProjectParameters.json + Materials.json + result, hardcoded (not rendered from templates at request time) |
 | `kratos://examples/thermal-bar` | complete worked thermal case (mesh recipe + rendered ProjectParameters + Materials) |
+| `kratos://examples/naca-airfoil` | complete worked fluid case: NACA0012 airfoil, real ~21k-node mesh (summarised, not embedded — too large) + ProjectParameters.json + Materials.json + verified Cd/Cl result |
 | `kratos://templates/{name}` | the raw template files for any template from `list_templates` |
 | `kratos://jobs/{job_id}/log` | live stdout/stderr of a simulation job |
 
