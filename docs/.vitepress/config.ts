@@ -35,6 +35,7 @@ export default defineConfig({
             { text: 'Project scaffolding', link: '/tools/scaffolding' },
             { text: 'Meshes (MDPA)', link: '/tools/mesh' },
             { text: 'Simulation & jobs', link: '/tools/simulation' },
+            { text: 'Parameter & mesh studies', link: '/tools/studies' },
             { text: 'Post-processing', link: '/tools/postprocessing' },
             { text: 'Visualization', link: '/tools/visualization' },
             { text: 'Interoperability', link: '/tools/interop' },
@@ -48,6 +49,7 @@ export default defineConfig({
           text: 'Tutorials',
           items: [
             { text: 'Cantilever beam', link: '/tutorials/cantilever-beam' },
+            { text: 'Cantilever studies', link: '/tutorials/studies' },
             { text: 'Thermal bar', link: '/tutorials/thermal-bar' },
             { text: 'NACA airfoil', link: '/tutorials/naca-airfoil' },
             { text: 'NACA0012 potential flow', link: '/tutorials/potential-flow' },

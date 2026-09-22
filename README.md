@@ -21,6 +21,9 @@ element simulations end to end:
   orchestrated** cases that chain analyses. Curated material and linear-solver
   presets included. ProjectParameters.json, Materials.json and structured MDPA
   meshes with named boundary regions.
+- **Study** parameter sweeps and structured mesh convergence with isolated
+  variants, a bounded background queue, and physical-location probe responses
+  ([tools](docs/tools/studies.md), [tutorial](docs/tutorials/studies.md)).
 - **Run** simulations (single- or multi-stage) as managed background jobs
   (status, live logs, progress, cancel) that survive server restarts, with
   optional immutable input snapshots, reproducible reruns, and checkpoint resume
@@ -34,7 +37,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-46 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
+52 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start

@@ -267,7 +267,7 @@ def _validate_multistage(case: Path, params: dict[str, Any]) -> dict[str, Any]:
             if not input_filename:
                 issues.append(f"stage '{stage_name}': model_import_settings.input_filename missing")
             else:
-                mdpa_path = case / f"{input_filename}.mdpa"
+                mdpa_path = case / (input_filename if input_filename.endswith(".mdpa") else f"{input_filename}.mdpa")
                 if not mdpa_path.is_file():
                     issues.append(f"stage '{stage_name}': mesh file {mdpa_path.name} not found")
                 else:
@@ -381,7 +381,7 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
         if not input_filename:
             issues.append("solver_settings.model_import_settings.input_filename is missing")
         else:
-            mdpa_path = case / f"{input_filename}.mdpa"
+            mdpa_path = case / (input_filename if input_filename.endswith(".mdpa") else f"{input_filename}.mdpa")
             if not mdpa_path.is_file():
                 issues.append(f"Mesh file {mdpa_path.name} not found in {case}")
             else:

@@ -20,12 +20,6 @@ These proposals were checked against server 0.4.0 and the local Kratos source at
 
 Extend the managed-job workflow before introducing new application families.
 
-### Parameter sweeps and mesh-convergence studies — L
-
-Build on case snapshots and time-history comparisons to vary explicit JSON parameter paths or mesh resolutions. Queue independent jobs with bounded concurrency, collect response quantities, and retain each run's provenance. This is separate from the existing sequential multi-stage workflow, which can share a model between stages.
-
-**Probe:** a three-value stiffness sweep creates independent cases and the expected displacement trend; one failed run does not discard other results.
-
 ### MPI launch and resource controls — L
 
 MPI linear-solver presets already exist, but the job launcher starts a single Python process. Add explicit rank and thread counts, launcher capability checks, rank-aware logs, and cancellation of the entire process group. Start with one small distributed structural or fluid reference case; scheduler integration can follow once local MPI lifecycle handling is reliable.
@@ -50,7 +44,7 @@ Structured mesh generation and mesh conversion already exist. Add an optional Me
 
 ### Optimization and reduced-order studies — XL
 
-Treat these as separate experiments after sweeps and response extraction work. Kratos provides `applications/OptimizationApplication/python_scripts/optimization_analysis.py` and `applications/RomApplication/python_scripts/rom_manager.py`. The former already has a `(model, parameters)` constructor compatible with generic dispatch; the missing work is scaffolding, validation, response histories, and examples. ROM needs a separate lifecycle for training, validation, and online runs.
+Build these separate experiments on the existing sweeps and response extraction. Kratos provides `applications/OptimizationApplication/python_scripts/optimization_analysis.py` and `applications/RomApplication/python_scripts/rom_manager.py`. The former already has a `(model, parameters)` constructor compatible with generic dispatch; the missing work is scaffolding, validation, response histories, and examples. ROM needs a separate lifecycle for training, validation, and online runs.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
@@ -67,6 +61,6 @@ Recorded so they are not re-proposed as gaps.
 
 ## Suggested sequencing
 
-1. Build sweeps on isolated runs; add local MPI support with lifecycle tests.
+1. Add local MPI support with lifecycle tests, building on isolated runs and studies.
 2. Introduce CoSimulation and remeshing as independently optional workflows.
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

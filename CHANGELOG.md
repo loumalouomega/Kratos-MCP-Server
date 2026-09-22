@@ -7,6 +7,14 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ### Added
 
+- Persistent parameter sweeps (JSON Pointer product/zip axes) and structured
+  mesh-convergence studies, with six MCP tools, isolated provenance, bounded
+  detached execution, verified coordinator recovery, probe responses and CSV.
+- Durable queued study jobs with exclusive supervisor ownership, process-group
+  cancellation, and recorded exit status independent of the MCP server lifetime.
+- Cantilever study tutorial and numerical stiffness/refinement acceptance tests;
+  the completed study item is removed from the roadmap, leaving MPI next.
+
 - Managed checkpoint configuration, discovery, and verified resume into a new
   isolated serial single-stage job, with a structural dynamics acceptance test.
 - Physical-time VTK indexes, point/cell time histories, CSV export, and

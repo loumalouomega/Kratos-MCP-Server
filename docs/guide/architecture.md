@@ -151,3 +151,25 @@ MCP wrappers run this work in worker threads. Neither module imports Kratos or
 PyVista. Resume is distinct from rerun: resume restores serialized model state,
 whereas rerun repeats the preserved starting inputs (including a checkpoint if
 that job was itself resumed).
+
+## Persistent studies
+
+`studies.py` prepares a frozen base and statically validates all parameter or
+structured-mesh variants before creating launchable child jobs. Study state lives
+under `KRATOS_MCP_HOME/studies/<id>/`; child snapshots, manifests and executions
+remain under the ordinary jobs directory. Inputs, overrides, mesh summaries,
+response histories and errors remain independently inspectable.
+
+`study_coordinator.py` runs detached from the MCP server and bounds active children
+per study. Each prepared job has a durable identity before launch. A detached
+`job_supervisor.py` claims that identity under a POSIX file lock, runs the existing
+Kratos runner in its process group, and records its actual exit status. Ownership
+locks and atomic metadata writes prevent duplicate execution after coordinator
+recovery. Neither module imports Kratos or PyVista.
+
+Cancellation uses durable requests and process-group termination, including jobs
+that are still queued. Coordinator recovery verifies hashes and build identity,
+adopts active children, and schedules remaining work. A claimed job whose
+supervisor dies is failed and its remaining process group is terminated, rather
+than being silently repeated. Response extraction uses the existing meshio/numpy
+time-history code. See [study semantics](/tools/studies) for limits and defaults.

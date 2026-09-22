@@ -67,7 +67,7 @@ def _read_meta(job_dir: Path) -> JobMeta:
 
 
 def _write_meta(job_dir: Path, meta: JobMeta) -> None:
-    tmp = job_dir / "meta.json.tmp"
+    tmp = job_dir / f"meta.{uuid.uuid4().hex}.tmp"
     tmp.write_text(json.dumps(asdict(meta), indent=1))
     tmp.replace(job_dir / "meta.json")
 
@@ -322,6 +322,14 @@ def _manifest(env: kratos_env.KratosEnv, *, case: Path, execution: Path,
 
 def _pid_alive(pid: int) -> bool:
     try:
+        # Orphaned detached children can remain zombies until their new parent
+        # reaps them. kill(pid, 0) alone incorrectly calls those jobs alive.
+        stat = Path(f"/proc/{pid}/stat")
+        try:
+            if stat.read_text().rsplit(")", 1)[1].split()[0] == "Z":
+                return False
+        except (OSError, IndexError):
+            pass
         os.kill(pid, 0)
         return True
     except ProcessLookupError:
@@ -337,6 +345,9 @@ def start(
     analysis_class: str | None = None,
     isolate: bool = False,
     external_inputs: dict[str, str] | None = None,
+    *,
+    _job_id: str | None = None,
+    _defer_launch: bool = False,
 ) -> JobMeta:
     """Spawn a detached runner and return the initial job metadata."""
     env = kratos_env.resolve()
@@ -350,7 +361,7 @@ def start(
     if external_inputs and not isolate:
         raise ValueError("external_inputs requires isolate=True")
 
-    job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    job_id = _job_id or time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     job_dir = jobs_root() / job_id
     job_dir.mkdir(parents=True)
 
@@ -394,6 +405,21 @@ def start(
         )
         _write_meta(job_dir, meta)
         raise RuntimeError(f"Could not prepare simulation case: {exc}") from exc
+
+    if _defer_launch:
+        launch_env = env.build_env()
+        manifest["launch_environment"] = {key: launch_env.get(key) for key in _MANIFEST_ENV_KEYS}
+        (job_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        meta = JobMeta(
+            job_id=job_id, case_dir=str(execution), parameters_file=parameters_file,
+            created_at=time.time(), analysis_type=analysis_type,
+            extra={"supervised": True, "original_case_dir": str(case),
+                   "execution_case_dir": str(execution),
+                   "snapshot_dir": str(snapshot) if snapshot else None,
+                   "analysis_class": analysis_class,
+                   "manifest": str(job_dir / "manifest.json")})
+        _write_meta(job_dir, meta)
+        return meta
 
     own_pkg_root = str(Path(__file__).resolve().parent.parent)
     run_env = env.build_env()
@@ -440,10 +466,41 @@ def start(
 _live_procs: dict[str, subprocess.Popen] = {}
 
 
+def launch_prepared(job_id: str) -> None:
+    """Launch a durable study job; the supervisor exclusively claims queued work."""
+    directory = _job_dir(job_id)
+    meta = _read_meta(directory)
+    if not meta.extra.get("supervised") or meta.state != "queued":
+        return
+    env = kratos_env.resolve()
+    manifest = json.loads((directory / "manifest.json").read_text())
+    if env.fingerprint() != manifest["kratos_fingerprint"]:
+        raise RuntimeError("Kratos build fingerprint changed")
+    run_env = env.build_env()
+    for key, value in manifest.get("launch_environment", {}).items():
+        if value is None:
+            run_env.pop(key, None)
+        else:
+            run_env[key] = value
+    run_env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + run_env.get("PYTHONPATH", "")
+    with (directory / "stdout.log").open("ab") as log:
+        proc = subprocess.Popen(
+            [env.python, "-u", "-m", "kratos_mcp.job_supervisor", job_id],
+            env=run_env, stdin=subprocess.DEVNULL, stdout=log,
+            stderr=subprocess.STDOUT, start_new_session=True)
+    _live_procs[job_id] = proc
+
+
 def refresh(job_id: str) -> JobMeta:
     """Re-evaluate and persist the job state from process liveness."""
     job_dir = _job_dir(job_id)
     meta = _read_meta(job_dir)
+    if meta.extra.get("supervised"):
+        from .job_supervisor import reconcile
+        proc = _live_procs.get(job_id)
+        if proc is not None and proc.poll() is not None:
+            _live_procs.pop(job_id, None)
+        return reconcile(job_dir)
     if meta.state in TERMINAL_STATES:
         return meta
 
@@ -570,6 +627,13 @@ def cancel(job_id: str, grace_seconds: float = 5.0) -> dict[str, Any]:
     meta = refresh(job_id)
     if meta.state in TERMINAL_STATES:
         return asdict(meta)
+    if meta.extra.get("supervised"):
+        (job_dir / "cancel.request").touch()
+        # Re-read after publishing the request: a supervisor claiming queued
+        # work either observes the request or has published its process group.
+        meta = refresh(job_id)
+        if meta.state in TERMINAL_STATES:
+            return asdict(meta)
     if meta.pid is not None:
         try:
             # The runner leads its own session; signal the whole group.

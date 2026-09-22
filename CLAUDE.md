@@ -276,3 +276,25 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   interpolates. External results require explicit physical-time records.
 - `tests/test_restart_integration.py` compares resumed structural dynamics
   displacement against an uninterrupted run, and exercises rerun/re-resume.
+
+
+## Parameter and mesh studies
+
+- `studies.py` backs six `study_*` tools in `tools/studies.py`: frozen inputs,
+  product/zip JSON Pointer axes, structured resolution levels, probe responses,
+  convergence differences and exclusive CSV export. Study state persists in
+  `~/.kratos-mcp/studies/<id>/`. Serial single-stage POSIX cases only.
+- `study_coordinator.py` owns an exclusive study lock and schedules bounded
+  independent children. `jobs.start(..., _defer_launch=True, _job_id=...)` prepares
+  durable queued identities; `jobs.launch_prepared` starts `job_supervisor.py`.
+  The supervisor claims a queued job exactly once under its ownership lock and
+  records the actual runner exit status. The supervisor and runner share a
+  process group. No native imports occur in the coordinator or supervisor.
+- Resume applies only to interrupted coordinators, verifies base/child inventories
+  and build fingerprint, adopts active children and continues queued work.
+  Cancellation preserves results; it cannot be resumed. Job reruns remain separate
+  from their original study. Probe errors never change a successful job's state.
+- `tests/test_studies.py` covers validation and lifecycle races with real dummy
+  subprocesses; `tests/test_studies_integration.py` verifies inverse stiffness
+  response, mesh refinement, failure isolation and detached recovery. The numerical
+  cases require StructuralMechanicsApplication and LinearSolversApplication.

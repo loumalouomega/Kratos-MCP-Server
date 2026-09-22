@@ -137,3 +137,10 @@ Other solvers/processes must themselves support Kratos restart semantics;
 missing applications and deserialization failures appear in the new job's log.
 External checkpoint imports, non-isolated source jobs, MPI checkpoints, and
 orchestrator stage checkpoints are not supported by this managed workflow.
+
+## Independent studies
+
+Use [parameter and mesh studies](/tools/studies) to run an isolated, bounded
+queue of independent variants and collect responses. Study children have normal
+job IDs and support the job tools on this page. `job_rerun` creates a separate
+job; it does not replace a study's recorded child result.
