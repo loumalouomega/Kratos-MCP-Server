@@ -58,6 +58,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install server dependencies
         run: uv sync
+      - name: Install Kratos build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev
       - name: Cache the pinned Kratos build
         uses: actions/cache@v4
         with:
