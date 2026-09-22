@@ -153,6 +153,15 @@ def test_isolated_start_rejects_escaping_output_path(tmp_path, snapshot_environm
         jobs.start(str(case), isolate=True)
 
 
+def test_isolated_start_rejects_escaping_parameters_file(tmp_path, snapshot_environment):
+    case = tmp_path / "case"
+    case.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+    with pytest.raises(RuntimeError, match="parameters_file"):
+        jobs.start(str(case), parameters_file="../outside.json", isolate=True)
+
+
 def test_isolated_start_rejects_directory_symlink(tmp_path, snapshot_environment):
     case = tmp_path / "case"
     case.mkdir()
@@ -172,6 +181,30 @@ def test_isolated_snapshot_can_be_rerun_and_detects_tampering(tmp_path, snapshot
     snapshot = Path(meta.extra["snapshot_dir"])
     (snapshot / "ProjectParameters.json").write_text('{"changed": true}')
     with pytest.raises(RuntimeError, match="Snapshot input changed"):
+        jobs.rerun(meta.job_id)
+
+
+def test_isolated_snapshot_rerun_rejects_added_file(tmp_path, snapshot_environment):
+    case = tmp_path / "case"
+    case.mkdir()
+    (case / "ProjectParameters.json").write_text("{}")
+    meta = jobs.start(str(case), isolate=True)
+    snapshot = Path(meta.extra["snapshot_dir"])
+    (snapshot / "unexpected.txt").write_text("tampered")
+    with pytest.raises(RuntimeError, match="inventory changed"):
+        jobs.rerun(meta.job_id)
+
+
+def test_isolated_snapshot_rerun_rejects_symlink_tampering(tmp_path, snapshot_environment):
+    case = tmp_path / "case"
+    case.mkdir()
+    (case / "ProjectParameters.json").write_text("{}")
+    meta = jobs.start(str(case), isolate=True)
+    snapshot = Path(meta.extra["snapshot_dir"])
+    parameters = snapshot / "ProjectParameters.json"
+    parameters.unlink()
+    parameters.symlink_to(case / "ProjectParameters.json")
+    with pytest.raises(RuntimeError, match="symlinks are not allowed"):
         jobs.rerun(meta.job_id)
 
 

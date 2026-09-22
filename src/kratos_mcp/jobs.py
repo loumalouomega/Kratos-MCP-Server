@@ -100,6 +100,14 @@ def _relative_destination(value: str, *, key: str) -> str:
     return path.as_posix()
 
 
+def _assert_inside(path: Path, root: Path, *, key: str) -> None:
+    """Reject lexical or symlink-based paths that escape a case root."""
+    try:
+        path.resolve(strict=False).relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError(f"{key} must stay inside an isolated case: {path}") from exc
+
+
 def _rewrite_references(value: Any, case: Path, external: dict[Path, str],
                         copied_external: dict[str, Path], key: str = "") -> Any:
     """Rewrite mesh/material references while preserving all other JSON."""
@@ -221,6 +229,7 @@ def _read_case_parameters(case: Path, parameters_file: str) -> Any | None:
 
 def _prepare_isolated_case(case: Path, parameters_file: str, job_dir: Path,
                            external_inputs: dict[str, str] | None) -> tuple[Path, Path, dict[str, str]]:
+    parameters_relative = _relative_destination(parameters_file, key="parameters_file")
     external: dict[Path, str] = {}
     for src, dest in (external_inputs or {}).items():
         source = Path(src).expanduser()
@@ -231,10 +240,7 @@ def _prepare_isolated_case(case: Path, parameters_file: str, job_dir: Path,
             raise ValueError(f"external input is not a regular file: {source}")
         destination = _relative_destination(dest, key="external_inputs destination")
         target = case / destination
-        try:
-            target.relative_to(case)
-        except ValueError as exc:  # defensive: _relative_destination already checks this
-            raise ValueError(f"external_inputs destination escapes the case: {dest!r}") from exc
+        _assert_inside(target, case, key="external_inputs destination")
         if target.exists() or target.is_symlink():
             raise ValueError(f"external input destination collides with case file: {destination}")
         if destination in external.values():
@@ -244,7 +250,7 @@ def _prepare_isolated_case(case: Path, parameters_file: str, job_dir: Path,
     execution = job_dir / "execution"
     snapshot.mkdir()
     copied_external: dict[str, Path] = {}
-    parameter_path = case / parameters_file
+    parameter_path = case / parameters_relative
     try:
         params = json.loads(parameter_path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
@@ -271,7 +277,7 @@ def _prepare_isolated_case(case: Path, parameters_file: str, job_dir: Path,
         shutil.copyfile(source, target)
         if _sha256(source) != _sha256(target):
             raise RuntimeError(f"input changed while creating snapshot: {source}")
-    (snapshot / parameters_file).write_text(json.dumps(rewritten, indent=2) + "\n")
+    (snapshot / parameters_relative).write_text(json.dumps(rewritten, indent=2) + "\n")
     shutil.copytree(snapshot, execution)
     hashes = {str(p.relative_to(snapshot)): _sha256(p) for p in snapshot.rglob("*") if p.is_file()}
     return snapshot, execution, hashes
@@ -481,17 +487,28 @@ def rerun(job_id: str) -> JobMeta:
         raise RuntimeError(f"Job '{job_id}' has no preserved input snapshot")
     snapshot = Path(snapshot_name)
     manifest_path = old_dir / "manifest.json"
-    if not snapshot.is_dir() or not manifest_path.is_file():
+    expected_snapshot = old_dir / "snapshot"
+    if (snapshot.resolve(strict=False) != expected_snapshot.resolve(strict=False)
+            or not snapshot.is_dir() or not manifest_path.is_file()):
         raise RuntimeError(f"Job '{job_id}' snapshot is incomplete")
     manifest = json.loads(manifest_path.read_text())
     env = kratos_env.resolve()
     if manifest.get("kratos_fingerprint") != env.fingerprint():
         raise RuntimeError("Kratos build fingerprint changed; refusing to rerun the snapshot")
-    for relative, expected in manifest.get("input_hashes", {}).items():
-        path = snapshot / relative
-        if not path.is_file() or _sha256(path) != expected:
+    expected_hashes = manifest.get("input_hashes", {})
+    actual_hashes: dict[str, str] = {}
+    for path in snapshot.rglob("*"):
+        if path.is_symlink():
+            raise RuntimeError("Snapshot input inventory changed; symlinks are not allowed")
+        if path.is_file():
+            actual_hashes[str(path.relative_to(snapshot))] = _sha256(path)
+    if set(actual_hashes) != set(expected_hashes):
+        raise RuntimeError("Snapshot input inventory changed; refusing to rerun")
+    for relative, expected in expected_hashes.items():
+        if actual_hashes[relative] != expected:
             raise RuntimeError(f"Snapshot input changed or is missing: {relative}")
-    new = start(str(snapshot), old.parameters_file,
+    parameters_file = manifest.get("parameters_file", old.parameters_file)
+    new = start(str(snapshot), parameters_file,
                 old.analysis_type or manifest.get("analysis_type"),
                 old.extra.get("analysis_class") or manifest.get("analysis_class"),
                 isolate=True)

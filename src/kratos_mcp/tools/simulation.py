@@ -103,7 +103,7 @@ def register(mcp) -> None:
         """Rerun a job from its preserved isolated input snapshot."""
         try:
             meta = jobs.rerun(job_id)
-        except (KeyError, RuntimeError, ValueError) as exc:
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
             return {"error": str(exc)}
         status = jobs.status(meta.job_id)
         waited = 0.0
