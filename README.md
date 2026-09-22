@@ -121,6 +121,9 @@ directories under `~/.kratos-mcp/jobs/`. See
 
 ## Development
 
+See the [roadmap](docs/roadmap.md) for planned work and the
+[changelog](CHANGELOG.md) for release history.
+
 ```bash
 uv run pytest -m "not kratos"   # unit tests (no Kratos needed)
 uv run pytest -m kratos          # integration tests against the real build

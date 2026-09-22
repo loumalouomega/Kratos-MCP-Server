@@ -10,6 +10,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Tools', link: '/tools/' },
       { text: 'Tutorials', link: '/tutorials/cantilever-beam' },
+      { text: 'Roadmap', link: '/roadmap' },
     ],
     sidebar: {
       '/guide/': [
