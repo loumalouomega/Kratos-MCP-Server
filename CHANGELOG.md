@@ -10,6 +10,12 @@ from repository tags and diffs; dates are the tagged commits' dates.
 - This changelog and a prioritized roadmap with implementation gaps,
   Kratos source references, and acceptance probes.
 - Roadmap links in the README and documentation navigation.
+- Per-stage deep validation for orchestrated cases, with stage-qualified
+  errors and explicit warnings when an optional solver application is absent.
+- Versioned job manifests, SHA-256 input inventories, opt-in isolated case
+  snapshots, explicit external-input mappings, and verified snapshot reruns.
+- A runnable NACA0012 perturbation potential-flow fixture with upstream
+  reference data, a resource, tutorial, and capability-gated integration test.
 
 ## 0.4.0 — 2026-09-19
 

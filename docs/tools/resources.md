@@ -16,7 +16,7 @@ MCP resources are read-only documents an assistant can pull into context.
 | `kratos://examples/channel-flow` | fractional-step incompressible channel flow (mesh recipe + rendered ProjectParameters) |
 | `kratos://examples/modal-box` | modal / eigenvalue analysis of a 3D block (mesh recipe + rendered ProjectParameters) |
 | `kratos://examples/dynamic-cantilever` | transient (implicit dynamic) cantilever (mesh recipe + rendered ProjectParameters) |
-| `kratos://examples/potential-flow` | potential flow around a body (mesh recipe + rendered ProjectParameters; needs CompressiblePotentialFlowApplication) |
+| `kratos://examples/potential-flow` | runnable NACA0012 perturbation potential-flow benchmark with bundled mesh, ProjectParameters, reference field, and verified lift/potential-jump values; needs CompressiblePotentialFlowApplication and LinearSolversApplication |
 | `kratos://templates/{name}` | the raw template files for any template from `list_templates` |
 | `kratos://jobs/{job_id}/log` | live stdout/stderr of a simulation job |
 

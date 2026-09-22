@@ -80,6 +80,9 @@ detached (own session), with everything persisted under
 ```
 20260712-101530-a1b2c3/
 ├── meta.json     # state machine: queued → running → succeeded|failed|cancelled
+├── manifest.json # command, build fingerprint, environment, and input hashes
+├── snapshot/     # immutable inputs for isolated jobs
+├── execution/    # isolated solver working directory (isolated jobs only)
 └── stdout.log    # combined solver output
 ```
 
@@ -95,6 +98,14 @@ The runner picks the analysis class from the `analysis_stage` key in
 ProjectParameters.json (the convention used by Kratos itself and by all our
 templates), from an explicit `analysis_type`/`analysis_class` argument, or by
 inferring it from `solver_type`.
+
+`jobs.start(..., isolate=True)` copies the case into the job directory before
+launching Kratos. It records hashes for the copied inputs and keeps the
+snapshot separate from the execution directory, so a solver can write output
+without changing the inputs used by `job_rerun`. External files must be mapped
+explicitly to relative snapshot destinations; absolute paths and paths that
+escape the isolated case are rejected. Existing callers keep the original
+in-place behavior when isolation is omitted.
 
 ## Hybrid introspection
 

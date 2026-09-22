@@ -331,7 +331,7 @@ def _validate_solver_settings(pfile: Path, params: dict[str, Any],
         return False
     result["issues"].extend(prefix + issue for issue in checked.get("issues", []))
     result["warnings"].extend(prefix + "solver_settings: " + warning for warning in checked.get("warnings", []))
-    result["valid"] = not result["issues"]
+    result["valid"] = result["valid"] and checked.get("valid", not checked.get("issues"))
     return checked.get("deep_validated", False)
 
 

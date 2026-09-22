@@ -73,6 +73,102 @@ def test_validate_multistage_case(tmp_path):
     assert result["valid"], result["issues"]
 
 
+def test_validate_multistage_deep_reports_stage(monkeypatch, tmp_path):
+    tools = _tools()
+    tools["create_multistage_project"](
+        directory=str(tmp_path),
+        stages=[{"name": "a", "template": "structural_static"},
+                {"name": "b", "template": "structural_static"}],
+        name="ms")
+    mdpa.create_rectangle_mesh(1.0, 0.2, 4, 2).write(tmp_path / "mesh.mdpa")
+
+    def fake_validate(op, args):
+        assert op == "validate_parameters"
+        if args.get("stage_name") == "b":
+            return {"valid": False, "issues": ["solver_settings validation failed: bad value"],
+                    "warnings": [], "deep_validated": True}
+        return {"valid": True, "issues": [], "warnings": [], "deep_validated": True}
+
+    monkeypatch.setattr(scaffold.bridge, "run_op", fake_validate)
+    result = scaffold.validate_case_files(tmp_path, deep=True)
+    assert not result["valid"]
+    assert result["deep_validated"] is True
+    assert result["issues"] == [
+        "stages.b.stage_settings.solver_settings validation failed: bad value"]
+
+
+def test_validate_multistage_deep_unavailable_is_warning(monkeypatch, tmp_path):
+    tools = _tools()
+    tools["create_multistage_project"](
+        directory=str(tmp_path),
+        stages=[{"name": "a", "template": "structural_static"}], name="ms")
+    mdpa.create_rectangle_mesh(1.0, 0.2, 4, 2).write(tmp_path / "mesh.mdpa")
+
+    def unavailable(*args, **kwargs):
+        raise scaffold.bridge.BridgeError("application unavailable")
+
+    monkeypatch.setattr(scaffold.bridge, "run_op", unavailable)
+    result = scaffold.validate_case_files(tmp_path, deep=True)
+    assert result["valid"]
+    assert result["deep_validated"] is False
+    assert "stages.a.stage_settings.solver_settings" in result["warnings"][0]
+
+
+def test_validate_multistage_unknown_solver_is_static_only(tmp_path):
+    tools = _tools()
+    tools["create_multistage_project"](
+        directory=str(tmp_path), stages=[{"name": "a", "template": "structural_static"}], name="ms")
+    mdpa.create_rectangle_mesh(1.0, 0.2, 4, 2).write(tmp_path / "mesh.mdpa")
+    pp_path = tmp_path / "ProjectParameters.json"
+    params = json.loads(pp_path.read_text())
+    params["stages"]["a"]["stage_settings"]["solver_settings"]["solver_type"] = "unknown_solver"
+    pp_path.write_text(json.dumps(params))
+    result = scaffold.validate_case_files(tmp_path, deep=True)
+    assert result["valid"]
+    assert result["deep_validated"] is False
+    assert "stages.a.stage_settings.solver_settings" in result["warnings"][0]
+
+
+def test_validate_multistage_skips_inactive_stage_deep_check(monkeypatch, tmp_path):
+    tools = _tools()
+    tools["create_multistage_project"](
+        directory=str(tmp_path),
+        stages=[{"name": "active", "template": "structural_static"},
+                {"name": "inactive", "template": "structural_static"}], name="ms")
+    mdpa.create_rectangle_mesh(1.0, 0.2, 4, 2).write(tmp_path / "mesh.mdpa")
+    pp_path = tmp_path / "ProjectParameters.json"
+    params = json.loads(pp_path.read_text())
+    params["orchestrator"]["settings"]["execution_list"] = ["active"]
+    params["stages"]["inactive"]["stage_settings"]["solver_settings"]["solver_type"] = "unknown_solver"
+    pp_path.write_text(json.dumps(params))
+    checked = []
+
+    def fake_validate(op, args):
+        checked.append(args.get("stage_name"))
+        return {"valid": True, "issues": [], "warnings": [], "deep_validated": True}
+
+    monkeypatch.setattr(scaffold.bridge, "run_op", fake_validate)
+    result = scaffold.validate_case_files(tmp_path, deep=True)
+    assert result["valid"] and result["deep_validated"]
+    assert checked == ["active"]
+    assert any("inactive" in warning for warning in result["warnings"])
+
+
+def test_validate_single_stage_keeps_solver_check_shape(monkeypatch, tmp_path):
+    tools = _tools()
+    tools["create_project"](
+        directory=str(tmp_path), template="structural_static", name="single", create_demo_mesh=True)
+
+    def fake_validate(op, args):
+        assert op == "validate_parameters"
+        assert "stage_name" not in args
+        return {"valid": True, "issues": [], "warnings": [], "deep_validated": True}
+
+    monkeypatch.setattr(scaffold.bridge, "run_op", fake_validate)
+    result = scaffold.validate_case_files(tmp_path, deep=True)
+    assert result["valid"] and result["deep_validated"]
+
+
 # --- Integration: run a multi-stage case with real Kratos -------------------
 
 @pytest.mark.kratos

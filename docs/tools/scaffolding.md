@@ -187,7 +187,9 @@ Validate a ProjectParameters.json without running anything:
    `GetDefaultParameters()` inside a Kratos worker.
 
 Multi-stage (`orchestrator`/`stages`) cases are recognised automatically and
-validated per stage (structure, execution list, per-stage mesh/material refs);
-per-stage Kratos-side solver validation is deferred to run time.
+validated per stage (structure, execution list, per-stage mesh/material refs).
+Deep mode validates every executed stage against its solver defaults and
+prefixes failures with the stage settings path. If an optional application is
+unavailable, validation remains static and reports a warning.
 
-**Returns**: `{valid, issues: [...], warnings: [...]}`.
+**Returns**: `{valid, issues: [...], warnings: [...], deep_validated}`.

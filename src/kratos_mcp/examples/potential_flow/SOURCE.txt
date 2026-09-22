@@ -1,0 +1,14 @@
+This fixture is copied from Kratos Multiphysics,
+https://github.com/KratosMultiphysics/Kratos/tree/e740da832999e4da58dd9457f35143274edb4992/applications/CompressiblePotentialFlowApplication/tests.
+
+Source files:
+- naca0012_small_mdpa/naca0012_small.mdpa
+- naca0012_small_perturbation_compressible_test/compressible_perturbation_velocity_potential_flow_field_test_results.json
+- naca0012_small_perturbation_compressible_test/naca0012_small_perturbation_compressible_parameters.json
+
+The ProjectParameters.json in this directory makes the mesh and reference
+paths self-contained, gives the case a descriptive problem name, and uses a
+1e-6 check tolerance for the bundled nodal reference. It is generated from
+the server's potential-flow template with the fixture's sub-model-part names;
+the VTK output model part is fully qualified because Kratos requires a root
+model-part path for that process.

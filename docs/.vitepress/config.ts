@@ -50,6 +50,7 @@ export default defineConfig({
             { text: 'Cantilever beam', link: '/tutorials/cantilever-beam' },
             { text: 'Thermal bar', link: '/tutorials/thermal-bar' },
             { text: 'NACA airfoil', link: '/tutorials/naca-airfoil' },
+            { text: 'NACA0012 potential flow', link: '/tutorials/potential-flow' },
             { text: 'Lid-driven cavity', link: '/tutorials/lid-driven-cavity' },
             { text: 'Plasticity cube', link: '/tutorials/plasticity-cube' },
             { text: 'Multi-stage load steps', link: '/tutorials/multistage' },

@@ -17,6 +17,8 @@ Start a simulation job.
 | `analysis_type` | string? | `structural` / `fluid` / `thermal` / `potential_flow` override |
 | `analysis_class` | string? | fully qualified `module.path:ClassName` override |
 | `wait_seconds` | number | poll up to this long and return the final status if the job finishes in time (default 0 = return immediately) |
+| `isolate` | boolean | copy inputs to a private snapshot and execution directory before launch (default `false`) |
+| `external_inputs` | object? | when isolating, map absolute source files to relative destinations inside the snapshot |
 
 The analysis class is normally resolved from the `analysis_stage` key that
 our templates write into ProjectParameters.json, falling back to inference
@@ -33,6 +35,14 @@ include a `log_tail`.
 ```json
 { "job_id": "20260712-101530-a1b2c3", "state": "succeeded", "returncode": 0, "elapsed_seconds": 2.0 }
 ```
+
+Isolated jobs return the execution directory in `case_dir` and store
+`manifest.json`, an immutable `snapshot/`, and the solver working copy under
+the job directory. The manifest records input SHA-256 hashes, the Kratos build
+fingerprint, launch command, and relevant environment settings. External mesh
+or material files must be supplied explicitly, for example
+`external_inputs={"/data/mesh.mdpa": "inputs/mesh.mdpa"}`. Output paths must
+remain relative to the isolated case.
 
 ## validate_case
 
@@ -73,3 +83,10 @@ The complete live log is also available as the resource
 Cancel a running job: SIGTERM to the job's process group, escalating to
 SIGKILL after a 5 s grace period. Cancelling a finished job is a no-op and
 returns its final state.
+
+## job_rerun
+
+Rerun an isolated job from its preserved snapshot after verifying every input
+hash and the Kratos build fingerprint. The new job receives its own execution
+directory and manifest. In-place jobs cannot be rerun because they do not keep
+an immutable input snapshot.

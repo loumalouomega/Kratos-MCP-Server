@@ -22,7 +22,8 @@ element simulations end to end:
   presets included. ProjectParameters.json, Materials.json and structured MDPA
   meshes with named boundary regions.
 - **Run** simulations (single- or multi-stage) as managed background jobs
-  (status, live logs, progress, cancel) that survive server restarts.
+  (status, live logs, progress, cancel) that survive server restarts, with
+  optional immutable input snapshots and reproducible reruns.
 - **Post-process** VTK results: summaries, point probes, convergence
   analysis.
 - **Preview** results without ParaView: PNG screenshots and GIF animations
@@ -97,6 +98,9 @@ that `.venv`.
   orchestration — `create_multistage_project` chaining two load steps,
   `explain_project_parameters`, and a lossless round-trip to/from a
   [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph) node graph.
+- [`docs/tutorials/potential-flow.md`](docs/tutorials/potential-flow.md): a
+  runnable NACA0012 perturbation potential-flow benchmark with upstream
+  reference values.
 
 ## Requirements
 

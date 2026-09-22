@@ -50,6 +50,9 @@ abort the process. All Kratos access goes through subprocesses:
   multi-stage case (`orchestrator` + `stages` keys) and drives it via Kratos'
   `Project` + registry-resolved orchestrator class instead (the entry point
   Kratos' own `test_sequential_orchestrator` uses) — no `jobs.py` change.
+  Isolated runs additionally keep `manifest.json`, an immutable `snapshot/`,
+  and a separate `execution/` directory; `job_rerun` verifies snapshot hashes
+  and the Kratos build fingerprint before launching a fresh job.
 
 `worker.py` and `runner.py` are the ONLY modules that import Kratos, and they
 only run inside subprocesses with the env vars injected.
@@ -70,7 +73,8 @@ installed) via `-displayfd`.
 - `uv run kratos-mcp` — run the server (stdio)
 - `uv run pytest -m "not kratos"` — unit tests, no Kratos needed
 - `uv run pytest -m kratos` — integration tests against the real build
-  (cantilever + thermal bar + naca airfoil end-to-end with physics assertions)
+  (cantilever, thermal bar, naca airfoil, and capability-gated potential flow
+  end-to-end with physics assertions)
 - `uv run python tests/smoke_client.py` — scripted stdio MCP client smoke test
 - `npm run docs:dev` / `npm run docs:build` — VitePress docs
 
@@ -112,7 +116,7 @@ installed) via `-displayfd`.
   `thermal_transient/stationary`, `fluid_transient` (monolithic),
   `fluid_fractional_step`, `potential_flow` (needs
   CompressiblePotentialFlowApplication — modelled on the Kratos NACA0012
-  perturbation test; not always compiled, so run-unverified in CI). Plus two
+  perturbation test; not always compiled in local builds). Plus two
   preset data files (not per-case dirs): `material_presets.json` (constitutive
   laws + default variables, seeded from Flowgraph's material nodes) and
   `linear_solvers.json` (drop-in `linear_solver_settings` blocks). Both are
@@ -153,11 +157,13 @@ installed) via `-displayfd`.
   the mesh). Each has an INTRO/RESULT prose pair + `@mcp.resource` in
   `resources.py`, verified numbers baked in, and structural + `@pytest.mark.kratos`
   tests in `tests/test_examples.py`. Same "re-verify with a real run if a
-  template changes" rule. The four cheap dynamic bundles (`channel-flow`,
-  `modal-box`, `dynamic-cantilever`, `potential-flow`) are just
-  `_example_bundle("<template>", "<hint>")` resources with no on-disk dir;
-  `potential-flow` needs CompressiblePotentialFlowApplication (often uncompiled,
-  so run-unverified).
+  template changes" rule. The three cheap dynamic bundles (`channel-flow`,
+  `modal-box`, and `dynamic-cantilever`) are just `_example_bundle("<template>",
+  "<hint>")` resources. `potential_flow/` is a verbatim NACA0012
+  perturbation-compressible fixture copied from Kratos revision
+  `e740da832999e4da58dd9457f35143274edb4992`, with runnable parameters and
+  upstream reference data; it needs CompressiblePotentialFlowApplication and
+  LinearSolversApplication.
 - `notebooks/{cantilever,naca_airfoil,fluid_cavity,materials,multistage}.ipynb`
   — MCP
   *client* notebooks (use `mcp.client.stdio` directly, not the server code)

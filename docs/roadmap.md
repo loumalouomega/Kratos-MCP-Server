@@ -16,29 +16,7 @@ These proposals were checked against server 0.4.0 and the local Kratos source at
 
 ---
 
-## 1. Validation and reproducibility
-
-Prioritize changes that make existing workflows easier to trust and reproduce.
-
-### Per-stage solver validation — M
-
-Single-stage cases already support validation against solver defaults; `_validate_multistage` explicitly skips that Kratos-side check. Validate each stage in a worker and report the stage name and settings path on failure. Keep static shared-model-part checks and distinguish an unavailable application from invalid input. Reuse `worker.op_validate_parameters` rather than starting a solution loop.
-
-**Probe:** a two-stage case with an invalid solver setting only in stage two fails deep validation with that stage identified; a valid case passes.
-
-### Immutable run manifests and case snapshots — M
-
-Jobs already persist metadata and logs, but launching against a mutable case directory does not preserve the exact input set. Record hashes of parameters, materials, meshes and custom scripts, the Kratos build fingerprint, environment overrides, and the launch command. Offer an isolated case copy for reruns and output separation; define how external file references are collected.
-
-**Probe:** edit the original materials after launch; an isolated rerun still uses the recorded inputs and produces outputs in its own directory.
-
-### Potential-flow reference run — S
-
-The potential-flow template and resource already exist. Add a small executed reference with physics assertions and a CI job with CompressiblePotentialFlowApplication available. The existing incompressible NACA example does not validate this solver. Start from `applications/CompressiblePotentialFlowApplication/tests/` in Kratos.
-
-**Probe:** validate and run the template on a small airfoil mesh, checking finite pressure coefficients and symmetry at zero incidence within a stated tolerance.
-
-## 2. Simulation lifecycle and result analysis
+## 1. Simulation lifecycle and result analysis
 
 Extend the managed-job workflow before introducing new application families.
 
@@ -66,7 +44,7 @@ MPI linear-solver presets already exist, but the job launcher starts a single Py
 
 **Probe:** a two-rank run agrees with its serial reference within tolerance, and cancellation leaves no worker ranks running. A missing MPI build fails before launch.
 
-## 3. Additional Kratos workflows
+## 2. Additional Kratos workflows
 
 These depend on optional applications and need small verified examples before being presented as supported templates.
 
@@ -101,8 +79,7 @@ Recorded so they are not re-proposed as gaps.
 
 ## Suggested sequencing
 
-1. Add per-stage validation, run snapshots, and the potential-flow reference.
-2. Deliver checkpoint/resume and time-history comparisons.
-3. Build sweeps on isolated runs; add local MPI support with lifecycle tests.
-4. Introduce CoSimulation and remeshing as independently optional workflows.
-5. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.
+1. Deliver checkpoint/resume and time-history comparisons.
+2. Build sweeps on isolated runs; add local MPI support with lifecycle tests.
+3. Introduce CoSimulation and remeshing as independently optional workflows.
+4. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

@@ -35,8 +35,8 @@ features:
     title: Managed simulation jobs
     details: >-
       Simulations run as detached background jobs with status, live logs,
-      progress parsing and cancellation. Jobs survive server restarts, and a
-      solver crash can never take the server down.
+      progress parsing and cancellation. Optional immutable snapshots support
+      reproducible reruns; a solver crash can never take the server down.
   - icon: 📊
     title: Post-processing built in
     details: >-
@@ -57,6 +57,7 @@ features:
     title: Validation before you run
     details: >-
       Dry-run case validation cross-checks parameters, mesh submodelparts,
-      materials and solver settings against Kratos defaults — catching
-      mistakes before the time loop starts.
+      materials and solver settings against Kratos defaults, including every
+      executed stage in an orchestrated case — catching mistakes before the
+      time loop starts.
 ---
