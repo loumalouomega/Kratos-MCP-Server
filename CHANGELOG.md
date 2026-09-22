@@ -5,6 +5,8 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ## Unreleased
 
+## 0.5.0 — 2026-09-23
+
 ### Added
 
 - Persistent parameter sweeps (JSON Pointer product/zip axes) and structured
