@@ -368,6 +368,14 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
 
     solver = params.get("solver_settings", {})
     mesh = None
+    if solver.get("model_import_settings", {}).get("input_type") == "rest":
+        from ..checkpoints import restart_file
+        try:
+            restart = restart_file(solver["model_import_settings"], case)
+            if not restart.is_file():
+                issues.append(f"Restart file not found: {restart}")
+        except (KeyError, ValueError, TypeError) as exc:
+            issues.append(f"Invalid restart settings: {exc}")
     input_filename = solver.get("model_import_settings", {}).get("input_filename")
     if solver.get("model_import_settings", {}).get("input_type", "mdpa") == "mdpa":
         if not input_filename:

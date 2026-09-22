@@ -133,3 +133,21 @@ Case templates live in `src/kratos_mcp/templates/` as JSON files with
 required applications and solver modules. Substitution is typed: a quoted
 `"{{key}}"` becomes the JSON encoding of the value (numbers stay numbers,
 arrays stay arrays); a bare `{{key}}` inside a longer string is textual.
+
+
+### Checkpoints and physical-time output indexes
+
+For serial single-stage runs, `runner.py` observes native restart and VTK
+process output calls and atomically publishes `checkpoint-index.json` and
+`result-index.json` in the execution directory after successful writes. Time
+and step come from the process model part, never the filename. Checkpoint
+records include SHA-256 hashes and remain discoverable after retention deletes
+the binary file. Indexes are reset when a new run starts in a working directory.
+
+`checkpoints.py` configures restart output and verifies isolated source jobs
+before preparing a new snapshot with a dedicated `restart_input/` directory.
+`result_series.py` reads meshes one time pair at a time through meshio/numpy;
+MCP wrappers run this work in worker threads. Neither module imports Kratos or
+PyVista. Resume is distinct from rerun: resume restores serialized model state,
+whereas rerun repeats the preserved starting inputs (including a checkpoint if
+that job was itself resumed).

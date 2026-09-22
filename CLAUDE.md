@@ -259,3 +259,20 @@ installed) via `-displayfd`.
 ## Keep docs in sync
 
 Every time you change code in this repo, check whether doc/, README.md, and this file need updating too — and update them if they do. Treat doc drift as part of the change, not a follow-up.
+
+
+## Checkpoints and time-series analysis
+
+- `checkpoints.py` backs `configure_checkpoints`, `job_checkpoints`, and
+  `job_resume`. Resume requires a terminal isolated serial single-stage job;
+  it verifies snapshot/build/checkpoint hashes and copies the checkpoint into
+  `restart_input/` in a new snapshot. Native save output remains separate.
+- `runner.py` instruments native restart/VTK output calls for serial single-stage
+  runs, publishing completed-file metadata atomically in `checkpoint-index.json`
+  and `result-index.json`. These indexes record actual model-part time/step.
+- `result_series.py` backs `results_time_history` and `results_compare` with
+  meshio/numpy, including point/cell associations and exclusive-create CSV
+  export. Full fields require identical exported meshes; time matching never
+  interpolates. External results require explicit physical-time records.
+- `tests/test_restart_integration.py` compares resumed structural dynamics
+  displacement against an uninterrupted run, and exercises rerun/re-resume.

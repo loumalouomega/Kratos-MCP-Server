@@ -90,3 +90,50 @@ Rerun an isolated job from its preserved snapshot after verifying every input
 hash and the Kratos build fingerprint. The new job receives its own execution
 directory and manifest. In-place jobs cannot be rerun because they do not keep
 an immutable input snapshot.
+
+## configure_checkpoints
+
+Configure native restart output before calling `run_simulation(isolate=true)`.
+Pass `case_dir`, a positive `frequency`, and optionally `control_type` (`time`
+or `step`, default `time`), `max_files_to_keep` (`-1` for all, or a positive
+integer), and `parameters_file`. Step frequencies must be integers. Repeated
+calls update the matching model-part process. Output stays inside the case;
+the default directory is `checkpoints`.
+
+## job_checkpoints
+
+Pass `job_id` to list completed checkpoints in numeric label order. Each record
+includes `path`, `file`, `label`, physical `time`, `step`, `size`, `sha256`, and
+`available`. Deleted checkpoints remain visible with `available=false` after
+retention cleanup. An interrupted write is never published as a new checkpoint.
+
+## job_resume
+
+Pass `job_id` and an explicit `checkpoint` path from `job_checkpoints`.
+The source must be a terminal, isolated, serial, single-stage job. The optional
+`end_time` defaults to the original end time and must exceed checkpoint time;
+`wait_seconds` behaves as in `run_simulation`.
+
+The server verifies snapshot hashes, the build fingerprint, and checkpoint
+checksum, then copies inputs and the checkpoint into a **new** job. Its snapshot
+contains `restart_input/`, separate from subsequent checkpoint output. The
+source remains unchanged. Metadata and the manifest retain `resume_of` and the
+selected checkpoint's provenance. Resumed jobs support `job_rerun` and further
+`job_resume` calls.
+
+```python
+configure_checkpoints(case_dir="/tmp/beam", frequency=10, control_type="step")
+run_simulation(case_dir="/tmp/beam", isolate=True)
+job_checkpoints(job_id="<source-job>")
+job_cancel(job_id="<source-job>")
+# Refresh the list after cancellation, since retention may have removed files.
+job_checkpoints(job_id="<source-job>")
+job_resume(job_id="<source-job>", checkpoint="<available-absolute-path>",
+           end_time=1.0, wait_seconds=60)
+```
+
+Native serial structural dynamics is covered by a numerical restart test.
+Other solvers/processes must themselves support Kratos restart semantics;
+missing applications and deserialization failures appear in the new job's log.
+External checkpoint imports, non-isolated source jobs, MPI checkpoints, and
+orchestrator stage checkpoints are not supported by this managed workflow.

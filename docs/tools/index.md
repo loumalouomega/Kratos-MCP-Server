@@ -1,6 +1,6 @@
 # Tool reference
 
-The server exposes **40 tools**, **15 resources** (10 worked examples) and
+The server exposes **46 tools**, **15 resources** (10 worked examples) and
 **5 prompts**, grouped by workflow stage:
 
 | Category | Tools |
@@ -8,8 +8,8 @@ The server exposes **40 tools**, **15 resources** (10 worked examples) and
 | [Environment & introspection](/tools/environment) | `kratos_check_installation`, `kratos_install`, `kratos_list_applications`, `kratos_list_elements`, `kratos_list_conditions`, `kratos_list_constitutive_laws`, `kratos_list_variables`, `kratos_list_solvers`, `kratos_list_processes`, `kratos_get_solver_defaults`, `kratos_get_process_defaults` |
 | [Project scaffolding](/tools/scaffolding) | `list_templates`, `create_project`, `create_multistage_project`, `create_project_parameters`, `create_materials`, `list_material_presets`, `list_linear_solver_presets`, `add_boundary_condition`, `add_output_process`, `validate_project_parameters` |
 | [Meshes](/tools/mesh) | `mdpa_create_structured_mesh`, `mdpa_inspect`, `mdpa_validate`, `mdpa_get_nodes` |
-| [Simulation & jobs](/tools/simulation) | `run_simulation`, `validate_case`, `job_status`, `job_list`, `job_logs`, `job_cancel` |
-| [Post-processing](/tools/postprocessing) | `results_list`, `results_summary`, `results_probe`, `results_convergence` |
+| [Simulation & jobs](/tools/simulation) | `run_simulation`, `validate_case`, `job_status`, `job_list`, `job_logs`, `job_cancel`, `job_rerun`, `configure_checkpoints`, `job_checkpoints`, `job_resume` |
+| [Post-processing](/tools/postprocessing) | `results_list`, `results_summary`, `results_probe`, `results_convergence`, `results_time_history`, `results_compare` |
 | [Visualization](/tools/visualization) | `results_render`, `results_animate` (optional `viz` extra) |
 | [Interoperability](/tools/interop) | `explain_project_parameters`, `export_case_to_flowgraph`, `import_flowgraph_to_case` |
 

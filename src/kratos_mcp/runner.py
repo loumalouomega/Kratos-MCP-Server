@@ -75,6 +75,63 @@ def detect_analysis_type(parameters) -> str:
     )
 
 
+def install_output_indexes(KM):
+    """Observe completed native output calls; never publish in-progress files."""
+    import hashlib
+    import json
+    from pathlib import Path
+    from KratosMultiphysics.save_restart_process import SaveRestartProcess
+    from KratosMultiphysics.vtk_output_process import VtkOutputProcess
+
+    def instrument(cls, checkpoint=False):
+        original_init, original_print = cls.__init__, cls.PrintOutput
+
+        def init(self, model, settings):
+            original_init(self, model, settings)
+            if checkpoint:
+                self._index_model = self.restart_utility.model_part
+                self._index_root = Path(self.restart_utility.raw_path)
+                if self.restart_utility.save_restart_files_in_folder:
+                    self._index_root /= self.restart_utility.input_output_path
+            else:
+                self._index_model = self.model_part
+                self._index_root = Path(settings["output_path"].GetString()) if settings["save_output_files_in_folder"].GetBool() else Path('.')
+
+        def output(self):
+            root = self._index_root
+            pattern = '*.rest' if checkpoint else '*.vtk'
+            def inventory():
+                return {p: (p.stat().st_mtime_ns, p.stat().st_size) for p in root.rglob(pattern)}
+            before = inventory()
+            original_print(self)
+            after = inventory()
+            index = Path('checkpoint-index.json' if checkpoint else 'result-index.json')
+            records = json.loads(index.read_text())['records'] if index.exists() else []
+            info = self._index_model.ProcessInfo
+            for path, stat in after.items():
+                if before.get(path) == stat:
+                    continue
+                relative = os.path.relpath(path.resolve(), Path.cwd())
+                record = dict(file=relative, series=self._index_model.FullName() + ':' + str(path.parent) + ':' + path.stem.rsplit('_', 1)[0],
+                              time=float(info[KM.TIME]), step=int(info[KM.STEP]))
+                if checkpoint:
+                    digest = hashlib.sha256()
+                    with path.open('rb') as stream:
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                            digest.update(chunk)
+                    record.update(model_part=self._index_model.FullName(), label=path.stem.rsplit('_', 1)[1], size=stat[1], sha256=digest.hexdigest())
+                records = [r for r in records if r['file'] != relative]
+                records.append(record)
+            temporary = index.with_suffix('.tmp')
+            temporary.write_text(json.dumps({'version': 1, 'records': records}, indent=2) + '\n')
+            temporary.replace(index)
+
+        cls.__init__, cls.PrintOutput = init, output
+
+    instrument(SaveRestartProcess, True)
+    instrument(VtkOutputProcess)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case-dir", required=True)
@@ -118,6 +175,11 @@ def main() -> int:
         module_path, class_name = ANALYSIS_CLASSES[analysis_type]
         analysis_cls = getattr(importlib.import_module(module_path), class_name)
 
+    if not parameters.Has("problem_data") or not parameters["problem_data"].Has("parallel_type") or parameters["problem_data"]["parallel_type"].GetString() == "OpenMP":
+        from pathlib import Path
+        for index_name in ("checkpoint-index.json", "result-index.json"):
+            Path(index_name).unlink(missing_ok=True)
+        install_output_indexes(KM)
     model = KM.Model()
     simulation = analysis_cls(model, parameters)
     simulation.Run()

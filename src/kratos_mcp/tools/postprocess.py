@@ -52,7 +52,7 @@ def register(mcp) -> None:
     def results_list(case_dir: str) -> dict[str, Any]:
         """Discover result artifacts in a case directory (recursively):
         VTK/VTU files, GiD post files, HDF5, JSON results and point-output
-        .dat/.csv files, sorted by name so timesteps appear in order."""
+        .dat/.csv files, sorted lexically by name (not physical time)."""
         case = Path(case_dir).expanduser().resolve()
         if not case.is_dir():
             return {"error": f"{case} is not a directory"}
@@ -164,3 +164,32 @@ def register(mcp) -> None:
         result = logparse.convergence(text)
         result.update(logparse.progress(text))
         return result
+
+    @mcp.tool()
+    async def results_time_history(source: str | list[dict[str, Any]], variable: str,
+                                   association: str = "point", point: list[float] | None = None,
+                                   entity_index: int | None = None, series: str | None = None,
+                                   csv_file: str | None = None) -> dict[str, Any]:
+        """Probe a physical-time series from an index path or explicit file/time records; optionally export CSV."""
+        from .. import result_series
+        try:
+            return await anyio.to_thread.run_sync(lambda: result_series.history(
+                source, variable, association, point, entity_index, series, csv_file))
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    async def results_compare(reference: str | list[dict[str, Any]], candidate: str | list[dict[str, Any]],
+                              variable: str, mode: str = "field", association: str = "point",
+                              reference_series: str | None = None, candidate_series: str | None = None,
+                              point: list[float] | None = None, entity_index: int | None = None,
+                              atol: float = 1e-8, rtol: float = 1e-5, time_atol: float = 1e-12,
+                              csv_file: str | None = None) -> dict[str, Any]:
+        """Compare histories or matching-mesh fields at matching physical times without interpolation."""
+        from .. import result_series
+        try:
+            return await anyio.to_thread.run_sync(lambda: result_series.compare(
+                reference, candidate, variable, mode, association, reference_series, candidate_series,
+                point, entity_index, atol, rtol, time_atol, csv_file))
+        except Exception as exc:
+            return {"error": str(exc)}

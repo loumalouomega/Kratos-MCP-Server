@@ -111,6 +111,14 @@ def _assert_inside(path: Path, root: Path, *, key: str) -> None:
 def _rewrite_references(value: Any, case: Path, external: dict[Path, str],
                         copied_external: dict[str, Path], key: str = "") -> Any:
     """Rewrite mesh/material references while preserving all other JSON."""
+    if isinstance(value, dict) and value.get("input_type") == "rest":
+        from .checkpoints import restart_file
+        source = restart_file(value, case)
+        _assert_inside(source, case, key="restart input")
+        if not source.is_file():
+            raise ValueError(f"Restart file not found: {source}")
+        _relative_destination(value["input_filename"], key="restart input_filename")
+        return dict(value)
     if isinstance(value, dict):
         return {k: _rewrite_references(v, case, external, copied_external, k)
                 for k, v in value.items()}

@@ -23,9 +23,10 @@ element simulations end to end:
   meshes with named boundary regions.
 - **Run** simulations (single- or multi-stage) as managed background jobs
   (status, live logs, progress, cancel) that survive server restarts, with
-  optional immutable input snapshots and reproducible reruns.
+  optional immutable input snapshots, reproducible reruns, and checkpoint resume
+  for isolated serial single-stage jobs.
 - **Post-process** VTK results: summaries, point probes, convergence
-  analysis.
+  analysis, physical-time histories, CSV export, and reference comparisons.
 - **Preview** results without ParaView: PNG screenshots and GIF animations
   (deformed shapes, field contours) rendered with pyvista and shown inline
   in the conversation — optional `viz` extra.
@@ -33,7 +34,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-40 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
+46 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start

@@ -7,6 +7,11 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ### Added
 
+- Managed checkpoint configuration, discovery, and verified resume into a new
+  isolated serial single-stage job, with a structural dynamics acceptance test.
+- Physical-time VTK indexes, point/cell time histories, CSV export, and
+  tolerance-based history and matching-mesh field comparisons.
+
 - This changelog and a prioritized roadmap with implementation gaps,
   Kratos source references, and acceptance probes.
 - Roadmap links in the README and documentation navigation.

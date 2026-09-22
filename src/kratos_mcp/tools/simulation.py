@@ -6,7 +6,7 @@ from typing import Any
 
 import anyio
 
-from .. import jobs, logparse
+from .. import jobs, logparse, checkpoints
 from .scaffold import validate_case_files
 
 
@@ -114,3 +114,41 @@ def register(mcp) -> None:
         if status["state"] == "failed":
             status["log_tail"] = jobs.logs(meta.job_id, tail=30)
         return status
+
+    @mcp.tool()
+    async def configure_checkpoints(case_dir: str, frequency: float, control_type: str = "time",
+                                    max_files_to_keep: int = -1,
+                                    parameters_file: str = "ProjectParameters.json") -> dict[str, Any]:
+        """Configure serial single-stage checkpoint output before starting an isolated job."""
+        try:
+            return await anyio.to_thread.run_sync(lambda: checkpoints.configure(
+                case_dir, frequency, control_type, max_files_to_keep, parameters_file))
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    async def job_checkpoints(job_id: str) -> dict[str, Any]:
+        """List completed managed checkpoints, including retained/deleted availability."""
+        try:
+            return await anyio.to_thread.run_sync(checkpoints.list_checkpoints, job_id)
+        except (OSError, ValueError, KeyError, RuntimeError) as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    async def job_resume(job_id: str, checkpoint: str, end_time: float | None = None,
+                         wait_seconds: float = 0) -> dict[str, Any]:
+        """Resume a terminal isolated job from an explicit job_checkpoints path into a new job."""
+        try:
+            meta = await anyio.to_thread.run_sync(checkpoints.resume, job_id, checkpoint, end_time)
+            status = jobs.status(meta.job_id)
+            waited = 0.0
+            while waited < wait_seconds and status["state"] not in jobs.TERMINAL_STATES:
+                delay = min(2.0, wait_seconds - waited)
+                await anyio.sleep(delay)
+                waited += delay
+                status = jobs.status(meta.job_id)
+            if status["state"] == "failed":
+                status["log_tail"] = jobs.logs(meta.job_id, tail=30)
+            return status
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            return {"error": str(exc)}

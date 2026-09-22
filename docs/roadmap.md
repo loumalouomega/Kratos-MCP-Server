@@ -20,18 +20,6 @@ These proposals were checked against server 0.4.0 and the local Kratos source at
 
 Extend the managed-job workflow before introducing new application families.
 
-### Checkpoint discovery and restart — M
-
-Persistent job tracking survives server restarts; it does not provide a tool to resume a stopped simulation from a Kratos checkpoint. Add checkpoint configuration, listing, and resume into a separate run directory, using `kratos/python_scripts/save_restart_process.py` and `restart_utility.py`. Hand-authored restart settings may already work through the generic runner; the gap is a validated, discoverable workflow.
-
-**Probe:** interrupt a transient case after a checkpoint, resume it, and compare the final field with an uninterrupted run within numerical tolerance. Reject missing checkpoints with a useful diagnostic.
-
-### Time histories and quantitative comparisons — M
-
-VTK summaries, nearest-point probes, convergence logs, PNGs, and GIFs already exist. Add probes across a time series, CSV export, and reference-run comparison with absolute and relative tolerances. Preserve physical time and field association; initially require matching meshes for field differences.
-
-**Probe:** a known transient field yields correctly ordered samples even when filenames sort differently from time; mismatched meshes produce a clear error.
-
 ### Parameter sweeps and mesh-convergence studies — L
 
 Build on case snapshots and time-history comparisons to vary explicit JSON parameter paths or mesh resolutions. Queue independent jobs with bounded concurrency, collect response quantities, and retain each run's provenance. This is separate from the existing sequential multi-stage workflow, which can share a model between stages.
@@ -79,7 +67,6 @@ Recorded so they are not re-proposed as gaps.
 
 ## Suggested sequencing
 
-1. Deliver checkpoint/resume and time-history comparisons.
-2. Build sweeps on isolated runs; add local MPI support with lifecycle tests.
-3. Introduce CoSimulation and remeshing as independently optional workflows.
-4. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.
+1. Build sweeps on isolated runs; add local MPI support with lifecycle tests.
+2. Introduce CoSimulation and remeshing as independently optional workflows.
+3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.
