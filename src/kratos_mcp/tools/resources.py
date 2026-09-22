@@ -423,6 +423,23 @@ run_simulation(case_dir='case', wait_seconds=60)   # runs both stages
 """
 
 
+POTENTIAL_FLOW_INTRO = """# Worked example: NACA0012 perturbation potential flow
+
+This is the small NACA0012 perturbation-compressible benchmark shipped with
+Kratos' CompressiblePotentialFlowApplication. The fixture is copied from the
+Kratos source tree at [revision
+`e740da832999e4da58dd9457f35143274edb4992`](https://github.com/KratosMultiphysics/Kratos/tree/e740da832999e4da58dd9457f35143274edb4992/applications/CompressiblePotentialFlowApplication/tests) and
+can be run through `run_simulation` when CompressiblePotentialFlowApplication
+and LinearSolversApplication are compiled."""
+
+POTENTIAL_FLOW_RESULT = """## Verified result
+
+The upstream benchmark gives lift coefficient `0.4968313580730855` and
+potential jump at node 13 `0.48769319614651147` at time 1.0. The bundled
+reference file checks the nodal velocity potential to `1e-6`; the numerical
+acceptance test checks the two scalar values independently."""
+
+
 def _example_bundle(template: str, mesh_hint: str) -> str:
     registry = load_registry()
     values = dict(registry[template]["placeholders"])
@@ -597,21 +614,16 @@ def register(mcp) -> None:
 
     @mcp.resource("kratos://examples/potential-flow")
     def potential_flow_example() -> str:
-        """Steady potential (inviscid, irrotational) flow around a 2D body.
-        Rendered from the potential_flow template. NOTE: requires
-        CompressiblePotentialFlowApplication, which is not always compiled --
-        the structure is shown but this build may not run it."""
-        return _example_bundle(
-            "potential_flow",
-            "Potential flow needs an unstructured mesh around a body with a "
-            "far-field boundary and a wake-defining body sub-model-part -- it "
-            "is NOT produced by mdpa_create_structured_mesh (which only does "
-            "line/rectangle/box). Reuse an airfoil mesh (e.g. the "
-            "kratos://examples/naca-airfoil geometry) whose sub-model-parts "
-            "match far_field_model_part / body_model_part below.\n\n"
-            "REQUIRES the CompressiblePotentialFlowApplication (check with "
-            "kratos_list_applications) -- if it is not compiled, this case "
-            "will not run on your build.")
+        """Runnable NACA0012 potential-flow benchmark with reference values."""
+        case_dir = EXAMPLES_DIR / "potential_flow"
+        mesh = (case_dir / "mesh.mdpa").read_text()
+        pp = (case_dir / "ProjectParameters.json").read_text()
+        reference = (case_dir / "reference_velocity_potential.json").read_text()
+        return (f"{POTENTIAL_FLOW_INTRO}\n\n"
+                f"## mesh.mdpa\n\n```\n{mesh}```\n\n"
+                f"## ProjectParameters.json\n\n```json\n{pp}```\n\n"
+                f"## reference_velocity_potential.json\n\n```json\n{reference}\n```\n\n"
+                f"{POTENTIAL_FLOW_RESULT}")
 
     @mcp.resource("kratos://jobs/{job_id}/log")
     def job_log_resource(job_id: str) -> str:

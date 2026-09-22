@@ -16,49 +16,9 @@ These proposals were checked against server 0.4.0 and the local Kratos source at
 
 ---
 
-## 1. Validation and reproducibility
-
-Prioritize changes that make existing workflows easier to trust and reproduce.
-
-### Per-stage solver validation — M
-
-Single-stage cases already support validation against solver defaults; `_validate_multistage` explicitly skips that Kratos-side check. Validate each stage in a worker and report the stage name and settings path on failure. Keep static shared-model-part checks and distinguish an unavailable application from invalid input. Reuse `worker.op_validate_parameters` rather than starting a solution loop.
-
-**Probe:** a two-stage case with an invalid solver setting only in stage two fails deep validation with that stage identified; a valid case passes.
-
-### Immutable run manifests and case snapshots — M
-
-Jobs already persist metadata and logs, but launching against a mutable case directory does not preserve the exact input set. Record hashes of parameters, materials, meshes and custom scripts, the Kratos build fingerprint, environment overrides, and the launch command. Offer an isolated case copy for reruns and output separation; define how external file references are collected.
-
-**Probe:** edit the original materials after launch; an isolated rerun still uses the recorded inputs and produces outputs in its own directory.
-
-### Potential-flow reference run — S
-
-The potential-flow template and resource already exist. Add a small executed reference with physics assertions and a CI job with CompressiblePotentialFlowApplication available. The existing incompressible NACA example does not validate this solver. Start from `applications/CompressiblePotentialFlowApplication/tests/` in Kratos.
-
-**Probe:** validate and run the template on a small airfoil mesh, checking finite pressure coefficients and symmetry at zero incidence within a stated tolerance.
-
-## 2. Simulation lifecycle and result analysis
+## 1. Simulation lifecycle and result analysis
 
 Extend the managed-job workflow before introducing new application families.
-
-### Checkpoint discovery and restart — M
-
-Persistent job tracking survives server restarts; it does not provide a tool to resume a stopped simulation from a Kratos checkpoint. Add checkpoint configuration, listing, and resume into a separate run directory, using `kratos/python_scripts/save_restart_process.py` and `restart_utility.py`. Hand-authored restart settings may already work through the generic runner; the gap is a validated, discoverable workflow.
-
-**Probe:** interrupt a transient case after a checkpoint, resume it, and compare the final field with an uninterrupted run within numerical tolerance. Reject missing checkpoints with a useful diagnostic.
-
-### Time histories and quantitative comparisons — M
-
-VTK summaries, nearest-point probes, convergence logs, PNGs, and GIFs already exist. Add probes across a time series, CSV export, and reference-run comparison with absolute and relative tolerances. Preserve physical time and field association; initially require matching meshes for field differences.
-
-**Probe:** a known transient field yields correctly ordered samples even when filenames sort differently from time; mismatched meshes produce a clear error.
-
-### Parameter sweeps and mesh-convergence studies — L
-
-Build on case snapshots and time-history comparisons to vary explicit JSON parameter paths or mesh resolutions. Queue independent jobs with bounded concurrency, collect response quantities, and retain each run's provenance. This is separate from the existing sequential multi-stage workflow, which can share a model between stages.
-
-**Probe:** a three-value stiffness sweep creates independent cases and the expected displacement trend; one failed run does not discard other results.
 
 ### MPI launch and resource controls — L
 
@@ -66,7 +26,7 @@ MPI linear-solver presets already exist, but the job launcher starts a single Py
 
 **Probe:** a two-rank run agrees with its serial reference within tolerance, and cancellation leaves no worker ranks running. A missing MPI build fails before launch.
 
-## 3. Additional Kratos workflows
+## 2. Additional Kratos workflows
 
 These depend on optional applications and need small verified examples before being presented as supported templates.
 
@@ -84,7 +44,7 @@ Structured mesh generation and mesh conversion already exist. Add an optional Me
 
 ### Optimization and reduced-order studies — XL
 
-Treat these as separate experiments after sweeps and response extraction work. Kratos provides `applications/OptimizationApplication/python_scripts/optimization_analysis.py` and `applications/RomApplication/python_scripts/rom_manager.py`. The former already has a `(model, parameters)` constructor compatible with generic dispatch; the missing work is scaffolding, validation, response histories, and examples. ROM needs a separate lifecycle for training, validation, and online runs.
+Build these separate experiments on the existing sweeps and response extraction. Kratos provides `applications/OptimizationApplication/python_scripts/optimization_analysis.py` and `applications/RomApplication/python_scripts/rom_manager.py`. The former already has a `(model, parameters)` constructor compatible with generic dispatch; the missing work is scaffolding, validation, response histories, and examples. ROM needs a separate lifecycle for training, validation, and online runs.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
@@ -101,8 +61,6 @@ Recorded so they are not re-proposed as gaps.
 
 ## Suggested sequencing
 
-1. Add per-stage validation, run snapshots, and the potential-flow reference.
-2. Deliver checkpoint/resume and time-history comparisons.
-3. Build sweeps on isolated runs; add local MPI support with lifecycle tests.
-4. Introduce CoSimulation and remeshing as independently optional workflows.
-5. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.
+1. Add local MPI support with lifecycle tests, building on isolated runs and studies.
+2. Introduce CoSimulation and remeshing as independently optional workflows.
+3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

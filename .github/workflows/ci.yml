@@ -39,6 +39,56 @@ jobs:
       - name: Run visualization tests
         run: xvfb-run -a uv run pytest tests/test_visualize.py -m "not kratos" -q
 
+  test-potential-flow:
+    name: Potential-flow integration (Kratos ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: KratosMultiphysics/Kratos
+          ref: e740da832999e4da58dd9457f35143274edb4992
+          path: Kratos
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install server dependencies
+        run: uv sync
+      - name: Install Kratos build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev
+      - name: Cache the pinned Kratos build
+        uses: actions/cache@v4
+        with:
+          path: |
+            Kratos/bin/Release
+            Kratos/build/Release
+          key: kratos-potential-flow-${{ runner.os }}-${{ matrix.python-version }}-release-serial-ublas-e740da832999e4da58dd9457f35143274edb4992
+      - name: Build Kratos and required applications
+        working-directory: Kratos
+        env:
+          KRATOS_APPLICATIONS: ${{ github.workspace }}/Kratos/applications/StructuralMechanicsApplication;${{ github.workspace }}/Kratos/applications/FluidDynamicsApplication;${{ github.workspace }}/Kratos/applications/CompressiblePotentialFlowApplication;${{ github.workspace }}/Kratos/applications/LinearSolversApplication
+          PYTHON_EXECUTABLE: ${{ github.workspace }}/.venv/bin/python
+        run: |
+          cmake -S . -B build/Release \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$PWD/bin/Release \
+            -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+            -DUSE_MPI=OFF \
+            -DUSE_EIGEN_MKL=OFF \
+            -DKRATOS_LINEAR_ALGEBRA_BACKEND=ublas \
+            -DKRATOS_BUILD_TESTING=OFF \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build/Release --target install -- -j2
+      - name: Run the potential-flow reference
+        env:
+          KRATOS_ROOT: ${{ github.workspace }}/Kratos
+          KRATOS_POTENTIAL_FLOW_REQUIRED: "1"
+        run: uv run pytest tests/test_examples.py -m kratos -k potential_flow -q
+
   build-package:
     name: Build Python package
     runs-on: ubuntu-latest

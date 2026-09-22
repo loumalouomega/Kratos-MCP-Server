@@ -235,8 +235,7 @@ def _validate_multistage(case: Path, params: dict[str, Any]) -> dict[str, Any]:
     structure, execution_list consistency, per-stage mesh/material refs, and
     model-part references cross-checked against the shared/imported mesh."""
     issues: list[str] = []
-    warnings: list[str] = ["Multi-stage case: per-stage Kratos-side solver "
-                           "validation is skipped (validated at run time)."]
+    warnings: list[str] = []
 
     settings = params["orchestrator"].get("settings", {})
     execution_list = settings.get("execution_list", [])
@@ -268,7 +267,7 @@ def _validate_multistage(case: Path, params: dict[str, Any]) -> dict[str, Any]:
             if not input_filename:
                 issues.append(f"stage '{stage_name}': model_import_settings.input_filename missing")
             else:
-                mdpa_path = case / f"{input_filename}.mdpa"
+                mdpa_path = case / (input_filename if input_filename.endswith(".mdpa") else f"{input_filename}.mdpa")
                 if not mdpa_path.is_file():
                     issues.append(f"stage '{stage_name}': mesh file {mdpa_path.name} not found")
                 else:
@@ -311,7 +310,29 @@ def _validate_multistage(case: Path, params: dict[str, Any]) -> dict[str, Any]:
                         f"stage '{stage_name}': model_part_name '{ref}' does not match any "
                         f"SubModelPart in the mesh (available: {sorted(available)})")
 
-    return {"valid": not issues, "issues": issues, "warnings": warnings}
+    return {"valid": not issues, "issues": issues, "warnings": warnings,
+            "deep_validated": False}
+
+
+def _validate_solver_settings(pfile: Path, params: dict[str, Any],
+                              result: dict[str, Any], stage_name: str | None = None) -> bool:
+    prefix = f"stages.{stage_name}.stage_settings." if stage_name is not None else ""
+    module = infer_solver_module(params)
+    if module is None:
+        result["warnings"].append(prefix + "solver_settings: could not infer solver module; skipped Kratos-side validation")
+        return False
+    args = {"parameters_file": str(pfile), "solver_module": module}
+    if stage_name is not None:
+        args["stage_name"] = stage_name
+    try:
+        checked = bridge.run_op("validate_parameters", args)
+    except bridge.BridgeError as exc:
+        result["warnings"].append(prefix + f"solver_settings: Kratos-side validation unavailable: {exc}")
+        return False
+    result["issues"].extend(prefix + issue for issue in checked.get("issues", []))
+    result["warnings"].extend(prefix + "solver_settings: " + warning for warning in checked.get("warnings", []))
+    result["valid"] = result["valid"] and checked.get("valid", not checked.get("issues"))
+    return checked.get("deep_validated", False)
 
 
 def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectParameters.json",
@@ -326,14 +347,20 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
 
     pfile = case / parameters_file
     if not pfile.is_file():
-        return {"valid": False, "issues": [f"{pfile} does not exist"], "warnings": []}
+        return {"valid": False, "issues": [f"{pfile} does not exist"], "warnings": [], "deep_validated": False}
     try:
         params = json.loads(pfile.read_text())
     except json.JSONDecodeError as exc:
-        return {"valid": False, "issues": [f"Invalid JSON in {pfile.name}: {exc}"], "warnings": []}
+        return {"valid": False, "issues": [f"Invalid JSON in {pfile.name}: {exc}"], "warnings": [], "deep_validated": False}
 
     if "orchestrator" in params and "stages" in params:
-        return _validate_multistage(case, params)
+        result = _validate_multistage(case, params)
+        if deep and result["valid"]:
+            names = params["orchestrator"].get("settings", {}).get("execution_list", [])
+            checks = [_validate_solver_settings(pfile, params["stages"][name]["stage_settings"], result, name)
+                      for name in names]
+            result["deep_validated"] = bool(checks) and all(checks)
+        return result
 
     for key in ("problem_data", "solver_settings"):
         if key not in params:
@@ -341,12 +368,20 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
 
     solver = params.get("solver_settings", {})
     mesh = None
+    if solver.get("model_import_settings", {}).get("input_type") == "rest":
+        from ..checkpoints import restart_file
+        try:
+            restart = restart_file(solver["model_import_settings"], case)
+            if not restart.is_file():
+                issues.append(f"Restart file not found: {restart}")
+        except (KeyError, ValueError, TypeError) as exc:
+            issues.append(f"Invalid restart settings: {exc}")
     input_filename = solver.get("model_import_settings", {}).get("input_filename")
     if solver.get("model_import_settings", {}).get("input_type", "mdpa") == "mdpa":
         if not input_filename:
             issues.append("solver_settings.model_import_settings.input_filename is missing")
         else:
-            mdpa_path = case / f"{input_filename}.mdpa"
+            mdpa_path = case / (input_filename if input_filename.endswith(".mdpa") else f"{input_filename}.mdpa")
             if not mdpa_path.is_file():
                 issues.append(f"Mesh file {mdpa_path.name} not found in {case}")
             else:
@@ -385,23 +420,11 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
                     f"model_part_name '{ref}' does not match any SubModelPart in the mesh "
                     f"(available: {sorted(available)})")
 
-    result: dict[str, Any] = {"valid": not issues, "issues": issues, "warnings": warnings}
+    result: dict[str, Any] = {"valid": not issues, "issues": issues, "warnings": warnings,
+                              "deep_validated": False}
 
     if deep and not issues:
-        solver_module = infer_solver_module(params)
-        if solver_module is None:
-            warnings.append("Could not infer solver module from solver_type; "
-                            "skipped Kratos-side solver settings validation")
-        try:
-            deep_result = bridge.run_op("validate_parameters", {
-                "parameters_file": str(pfile),
-                "solver_module": solver_module,
-            })
-            if not deep_result.get("valid", True):
-                issues.extend(deep_result.get("issues", []))
-                result["valid"] = False
-        except bridge.BridgeError as exc:
-            warnings.append(f"Kratos-side validation unavailable: {exc}")
+        result["deep_validated"] = _validate_solver_settings(pfile, params, result)
     return result
 
 

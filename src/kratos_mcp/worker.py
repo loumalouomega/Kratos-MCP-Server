@@ -125,16 +125,27 @@ def op_get_solver_defaults(args: dict[str, Any]) -> dict[str, Any]:
 def op_validate_parameters(args: dict[str, Any]) -> dict[str, Any]:
     """Parse a ProjectParameters.json with Kratos and validate solver settings.
 
-    args: {"parameters_file": path, "solver_module": optional module path}
+    args: {"parameters_file": path, "solver_module": optional module path,
+           "stage_name": optional stage selector}
     """
     import KratosMultiphysics as KM
 
     issues: list[str] = []
+    warnings: list[str] = []
+    checked = False
     with open(args["parameters_file"]) as f:
         try:
             params = KM.Parameters(f.read())
         except RuntimeError as exc:
-            return {"valid": False, "issues": [f"Kratos could not parse the JSON: {exc}"]}
+            return {"valid": False, "issues": [f"Kratos could not parse the JSON: {exc}"],
+                    "warnings": [], "deep_validated": False}
+
+    if args.get("stage_name") is not None:
+        name = args["stage_name"]
+        if not params.Has("stages") or not params["stages"].Has(name) or not params["stages"][name].Has("stage_settings"):
+            return {"valid": False, "issues": ["stage_settings missing"],
+                    "warnings": [], "deep_validated": False}
+        params = params["stages"][name]["stage_settings"]
 
     for key in ("problem_data", "solver_settings"):
         if not params.Has(key):
@@ -145,15 +156,21 @@ def op_validate_parameters(args: dict[str, Any]) -> dict[str, Any]:
         try:
             cls = _find_solver_class(solver_module)
             defaults = cls.GetDefaultParameters()
+        except (ImportError, OSError) as exc:
+            warnings.append(f"Solver unavailable ({solver_module}): {exc}")
+        except Exception as exc:
+            warnings.append(f"Could not load defaults for {solver_module}: {exc}")
+        else:
             settings = params["solver_settings"].Clone()
             # Same top-level validation PythonSolver.ValidateSettings performs.
-            settings.ValidateAndAssignDefaults(defaults)
-        except RuntimeError as exc:
-            issues.append(f"solver_settings validation failed: {exc}")
-        except Exception as exc:  # import errors etc.
-            issues.append(f"Could not validate against {solver_module}: {exc}")
+            try:
+                settings.ValidateAndAssignDefaults(defaults)
+            except RuntimeError as exc:
+                issues.append(f"solver_settings validation failed: {exc}")
+            checked = True
 
-    return {"valid": not issues, "issues": issues}
+    return {"valid": not issues, "issues": issues, "warnings": warnings,
+            "deep_validated": checked}
 
 
 DEFAULT_MDPA_APPLICATIONS = [

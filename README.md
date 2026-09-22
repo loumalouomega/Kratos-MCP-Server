@@ -21,10 +21,15 @@ element simulations end to end:
   orchestrated** cases that chain analyses. Curated material and linear-solver
   presets included. ProjectParameters.json, Materials.json and structured MDPA
   meshes with named boundary regions.
+- **Study** parameter sweeps and structured mesh convergence with isolated
+  variants, a bounded background queue, and physical-location probe responses
+  ([tools](docs/tools/studies.md), [tutorial](docs/tutorials/studies.md)).
 - **Run** simulations (single- or multi-stage) as managed background jobs
-  (status, live logs, progress, cancel) that survive server restarts.
+  (status, live logs, progress, cancel) that survive server restarts, with
+  optional immutable input snapshots, reproducible reruns, and checkpoint resume
+  for isolated serial single-stage jobs.
 - **Post-process** VTK results: summaries, point probes, convergence
-  analysis.
+  analysis, physical-time histories, CSV export, and reference comparisons.
 - **Preview** results without ParaView: PNG screenshots and GIF animations
   (deformed shapes, field contours) rendered with pyvista and shown inline
   in the conversation — optional `viz` extra.
@@ -32,7 +37,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-40 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
+52 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start
@@ -97,6 +102,9 @@ that `.venv`.
   orchestration — `create_multistage_project` chaining two load steps,
   `explain_project_parameters`, and a lossless round-trip to/from a
   [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph) node graph.
+- [`docs/tutorials/potential-flow.md`](docs/tutorials/potential-flow.md): a
+  runnable NACA0012 perturbation potential-flow benchmark with upstream
+  reference values.
 
 ## Requirements
 

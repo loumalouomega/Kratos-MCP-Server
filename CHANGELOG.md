@@ -7,9 +7,28 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ### Added
 
+- Persistent parameter sweeps (JSON Pointer product/zip axes) and structured
+  mesh-convergence studies, with six MCP tools, isolated provenance, bounded
+  detached execution, verified coordinator recovery, probe responses and CSV.
+- Durable queued study jobs with exclusive supervisor ownership, process-group
+  cancellation, and recorded exit status independent of the MCP server lifetime.
+- Cantilever study tutorial and numerical stiffness/refinement acceptance tests;
+  the completed study item is removed from the roadmap, leaving MPI next.
+
+- Managed checkpoint configuration, discovery, and verified resume into a new
+  isolated serial single-stage job, with a structural dynamics acceptance test.
+- Physical-time VTK indexes, point/cell time histories, CSV export, and
+  tolerance-based history and matching-mesh field comparisons.
+
 - This changelog and a prioritized roadmap with implementation gaps,
   Kratos source references, and acceptance probes.
 - Roadmap links in the README and documentation navigation.
+- Per-stage deep validation for orchestrated cases, with stage-qualified
+  errors and explicit warnings when an optional solver application is absent.
+- Versioned job manifests, SHA-256 input inventories, opt-in isolated case
+  snapshots, explicit external-input mappings, and verified snapshot reruns.
+- A runnable NACA0012 perturbation potential-flow fixture with upstream
+  reference data, a resource, tutorial, and capability-gated integration test.
 
 ## 0.4.0 — 2026-09-19
 

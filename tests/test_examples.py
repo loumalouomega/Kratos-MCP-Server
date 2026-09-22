@@ -10,6 +10,8 @@ and physically (against a real Kratos build) in the kratos-marked tests.
 from __future__ import annotations
 
 import json
+import math
+import os
 import re
 import time
 
@@ -24,6 +26,7 @@ NACA_AIRFOIL_DIR = EXAMPLES_DIR / "naca_airfoil"
 CAVITY_DIR = EXAMPLES_DIR / "lid_driven_cavity"
 PLASTICITY_DIR = EXAMPLES_DIR / "plasticity_cube"
 MULTISTAGE_DIR = EXAMPLES_DIR / "multistage_load_steps"
+POTENTIAL_FLOW_DIR = EXAMPLES_DIR / "potential_flow"
 
 
 def _run(case, timeout=120.0):
@@ -286,6 +289,54 @@ def test_multistage_example_runs_both_stages(tmp_path, monkeypatch):
     assert np.isclose(tip2, 2.0 * tip1, rtol=0.02)  # doubled load -> doubled tip
 
 
+@pytest.mark.kratos
+def test_potential_flow_example_runs_and_matches_upstream(tmp_path, monkeypatch):
+    """Run the bundled upstream benchmark when its optional application exists."""
+    from kratos_mcp import bridge
+    try:
+        apps = bridge.run_op("list_applications", use_cache=False)
+    except bridge.BridgeError as exc:
+        if os.environ.get("KRATOS_POTENTIAL_FLOW_REQUIRED") == "1":
+            pytest.fail(f"Kratos application discovery unavailable: {exc}")
+        pytest.skip("Kratos application discovery unavailable")
+    required = {"CompressiblePotentialFlowApplication", "LinearSolversApplication"}
+    if not required.issubset(apps):
+        message = f"missing optional applications: {sorted(required - set(apps))}"
+        if os.environ.get("KRATOS_POTENTIAL_FLOW_REQUIRED") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
+
+    import shutil
+    import meshio
+    import numpy as np
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
+    case = tmp_path / "potential_flow"
+    shutil.copytree(POTENTIAL_FLOW_DIR, case)
+    meta = jobs.start(str(case))
+    deadline = time.time() + 120.0
+    status = jobs.status(meta.job_id)
+    while time.time() < deadline and status["state"] not in jobs.TERMINAL_STATES:
+        time.sleep(1.0)
+        status = jobs.status(meta.job_id)
+    log = jobs.logs(meta.job_id, tail=300)
+    assert status["state"] == "succeeded", log
+    assert "nan" not in log.lower()
+    lift_match = re.search(r"ComputeLiftProcess:\s+Cl\s*=\s*([-+0-9.eE]+)", log)
+    jump_match = re.search(r"Cl\s*=\s*([-+0-9.eE]+)\s+=\s+\(\s*2 \* DPhi", log)
+    pressure_coefficients = re.findall(
+        r"ComputeLiftProcess:\s+(?:Cl|Cd)\s*=\s*([-+0-9.eE]+)", log)
+    assert lift_match and jump_match, log
+    assert pressure_coefficients and all(math.isfinite(float(value)) for value in pressure_coefficients)
+    assert math.isclose(float(lift_match.group(1)), 0.4968313580730855, abs_tol=1e-6)
+    assert math.isclose(float(jump_match.group(1)), 0.48769319614651147, abs_tol=1e-6)
+    vtk_files = sorted((case / "vtk_output").glob("*.vtk"))
+    assert vtk_files
+    result_mesh = meshio.read(vtk_files[-1])
+    for field in ("VELOCITY_POTENTIAL", "AUXILIARY_VELOCITY_POTENTIAL"):
+        assert field in result_mesh.point_data
+        assert np.all(np.isfinite(np.asarray(result_mesh.point_data[field])))
+
+
 # --------------------------------------------------- dynamic bundles --------
 
 def _capture_resources():
@@ -315,3 +366,21 @@ def test_example_bundle_resources_render_valid_json():
         # the rendered ProjectParameters block must be valid JSON
         block = text.split("## ProjectParameters.json\n\n```json\n", 1)[1].split("\n```", 1)[0]
         json.loads(block)
+
+
+def test_potential_flow_fixture_is_valid():
+    assert (POTENTIAL_FLOW_DIR / "mesh.mdpa").is_file()
+    assert (POTENTIAL_FLOW_DIR / "ProjectParameters.json").is_file()
+    assert (POTENTIAL_FLOW_DIR / "reference_velocity_potential.json").is_file()
+    mesh = mdpa.read(POTENTIAL_FLOW_DIR / "mesh.mdpa")
+    assert mesh.validate() == []
+    params = json.loads((POTENTIAL_FLOW_DIR / "ProjectParameters.json").read_text())
+    assert params["solver_settings"]["solver_type"] == "potential_flow"
+    assert params["solver_settings"]["model_import_settings"]["input_filename"] == "mesh"
+    result = validate_case_files(POTENTIAL_FLOW_DIR, deep=False)
+    assert result["valid"], result["issues"]
+    reference = json.loads((POTENTIAL_FLOW_DIR / "reference_velocity_potential.json").read_text())
+    assert reference["TIME"] == [1.0]
+    fields = [value for key, item in reference.items() if key.startswith("NODE_")
+              for values in item.values() for value in values]
+    assert fields and all(math.isfinite(float(value)) for value in fields)

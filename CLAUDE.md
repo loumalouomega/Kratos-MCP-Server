@@ -50,6 +50,9 @@ abort the process. All Kratos access goes through subprocesses:
   multi-stage case (`orchestrator` + `stages` keys) and drives it via Kratos'
   `Project` + registry-resolved orchestrator class instead (the entry point
   Kratos' own `test_sequential_orchestrator` uses) — no `jobs.py` change.
+  Isolated runs additionally keep `manifest.json`, an immutable `snapshot/`,
+  and a separate `execution/` directory; `job_rerun` verifies snapshot hashes
+  and the Kratos build fingerprint before launching a fresh job.
 
 `worker.py` and `runner.py` are the ONLY modules that import Kratos, and they
 only run inside subprocesses with the env vars injected.
@@ -70,7 +73,8 @@ installed) via `-displayfd`.
 - `uv run kratos-mcp` — run the server (stdio)
 - `uv run pytest -m "not kratos"` — unit tests, no Kratos needed
 - `uv run pytest -m kratos` — integration tests against the real build
-  (cantilever + thermal bar + naca airfoil end-to-end with physics assertions)
+  (cantilever, thermal bar, naca airfoil, and capability-gated potential flow
+  end-to-end with physics assertions)
 - `uv run python tests/smoke_client.py` — scripted stdio MCP client smoke test
 - `npm run docs:dev` / `npm run docs:build` — VitePress docs
 
@@ -112,7 +116,7 @@ installed) via `-displayfd`.
   `thermal_transient/stationary`, `fluid_transient` (monolithic),
   `fluid_fractional_step`, `potential_flow` (needs
   CompressiblePotentialFlowApplication — modelled on the Kratos NACA0012
-  perturbation test; not always compiled, so run-unverified in CI). Plus two
+  perturbation test; not always compiled in local builds). Plus two
   preset data files (not per-case dirs): `material_presets.json` (constitutive
   laws + default variables, seeded from Flowgraph's material nodes) and
   `linear_solvers.json` (drop-in `linear_solver_settings` blocks). Both are
@@ -153,11 +157,13 @@ installed) via `-displayfd`.
   the mesh). Each has an INTRO/RESULT prose pair + `@mcp.resource` in
   `resources.py`, verified numbers baked in, and structural + `@pytest.mark.kratos`
   tests in `tests/test_examples.py`. Same "re-verify with a real run if a
-  template changes" rule. The four cheap dynamic bundles (`channel-flow`,
-  `modal-box`, `dynamic-cantilever`, `potential-flow`) are just
-  `_example_bundle("<template>", "<hint>")` resources with no on-disk dir;
-  `potential-flow` needs CompressiblePotentialFlowApplication (often uncompiled,
-  so run-unverified).
+  template changes" rule. The three cheap dynamic bundles (`channel-flow`,
+  `modal-box`, and `dynamic-cantilever`) are just `_example_bundle("<template>",
+  "<hint>")` resources. `potential_flow/` is a verbatim NACA0012
+  perturbation-compressible fixture copied from Kratos revision
+  `e740da832999e4da58dd9457f35143274edb4992`, with runnable parameters and
+  upstream reference data; it needs CompressiblePotentialFlowApplication and
+  LinearSolversApplication.
 - `notebooks/{cantilever,naca_airfoil,fluid_cavity,materials,multistage}.ipynb`
   — MCP
   *client* notebooks (use `mcp.client.stdio` directly, not the server code)
@@ -253,3 +259,42 @@ installed) via `-displayfd`.
 ## Keep docs in sync
 
 Every time you change code in this repo, check whether doc/, README.md, and this file need updating too — and update them if they do. Treat doc drift as part of the change, not a follow-up.
+
+
+## Checkpoints and time-series analysis
+
+- `checkpoints.py` backs `configure_checkpoints`, `job_checkpoints`, and
+  `job_resume`. Resume requires a terminal isolated serial single-stage job;
+  it verifies snapshot/build/checkpoint hashes and copies the checkpoint into
+  `restart_input/` in a new snapshot. Native save output remains separate.
+- `runner.py` instruments native restart/VTK output calls for serial single-stage
+  runs, publishing completed-file metadata atomically in `checkpoint-index.json`
+  and `result-index.json`. These indexes record actual model-part time/step.
+- `result_series.py` backs `results_time_history` and `results_compare` with
+  meshio/numpy, including point/cell associations and exclusive-create CSV
+  export. Full fields require identical exported meshes; time matching never
+  interpolates. External results require explicit physical-time records.
+- `tests/test_restart_integration.py` compares resumed structural dynamics
+  displacement against an uninterrupted run, and exercises rerun/re-resume.
+
+
+## Parameter and mesh studies
+
+- `studies.py` backs six `study_*` tools in `tools/studies.py`: frozen inputs,
+  product/zip JSON Pointer axes, structured resolution levels, probe responses,
+  convergence differences and exclusive CSV export. Study state persists in
+  `~/.kratos-mcp/studies/<id>/`. Serial single-stage POSIX cases only.
+- `study_coordinator.py` owns an exclusive study lock and schedules bounded
+  independent children. `jobs.start(..., _defer_launch=True, _job_id=...)` prepares
+  durable queued identities; `jobs.launch_prepared` starts `job_supervisor.py`.
+  The supervisor claims a queued job exactly once under its ownership lock and
+  records the actual runner exit status. The supervisor and runner share a
+  process group. No native imports occur in the coordinator or supervisor.
+- Resume applies only to interrupted coordinators, verifies base/child inventories
+  and build fingerprint, adopts active children and continues queued work.
+  Cancellation preserves results; it cannot be resumed. Job reruns remain separate
+  from their original study. Probe errors never change a successful job's state.
+- `tests/test_studies.py` covers validation and lifecycle races with real dummy
+  subprocesses; `tests/test_studies_integration.py` verifies inverse stiffness
+  response, mesh refinement, failure isolation and detached recovery. The numerical
+  cases require StructuralMechanicsApplication and LinearSolversApplication.

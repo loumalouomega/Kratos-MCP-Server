@@ -1,0 +1,111 @@
+{
+  "problem_data": {
+    "problem_name": "naca0012_small_perturbation",
+    "parallel_type": "OpenMP",
+    "echo_level": 0,
+    "start_time": 0.0,
+    "end_time": 1.0
+  },
+  "solver_settings": {
+    "solver_type": "potential_flow",
+    "model_part_name": "FluidModelPart",
+    "domain_size": 2,
+    "model_import_settings": {
+      "input_type": "mdpa",
+      "input_filename": "mesh"
+    },
+    "formulation": {
+      "element_type": "perturbation_compressible"
+    },
+    "maximum_iterations": 30,
+    "echo_level": 0,
+    "relative_tolerance": 1e-12,
+    "absolute_tolerance": 1e-12,
+    "linear_solver_settings": {
+      "solver_type": "LinearSolversApplication.sparse_lu",
+      "verbosity": 0
+    },
+    "volume_model_part_name": "FluidModelPart.Parts_Parts_Auto1",
+    "skin_parts": [
+      "PotentialWallCondition2D_Far_field_Auto1",
+      "Body2D_Body"
+    ],
+    "no_skin_parts": []
+  },
+  "processes": {
+    "initial_conditions_process_list": [],
+    "boundary_conditions_process_list": [
+      {
+        "python_module": "apply_far_field_and_wake_process",
+        "kratos_module": "KratosMultiphysics.CompressiblePotentialFlowApplication",
+        "process_name": "FarFieldProcess",
+        "Parameters": {
+          "model_part_name": "FluidModelPart.PotentialWallCondition2D_Far_field_Auto1",
+          "free_stream_density": 1.225,
+          "mach_infinity": 0.6,
+          "heat_capacity_ratio": 1.4,
+          "perturbation_field": true,
+          "define_wake": true,
+          "wake_type": "Operations.KratosMultiphysics.CompressiblePotentialFlowApplication.Define2DWakeOperation",
+          "wake_parameters": {
+            "body_model_part_name": "FluidModelPart.Body2D_Body"
+          }
+        }
+      },
+      {
+        "python_module": "compute_lift_process",
+        "kratos_module": "KratosMultiphysics.CompressiblePotentialFlowApplication",
+        "process_name": "ComputeLiftProcess3D",
+        "Parameters": {
+          "model_part_name": "FluidModelPart.Body2D_Body",
+          "far_field_model_part_name": "FluidModelPart.PotentialWallCondition2D_Far_field_Auto1"
+        }
+      }
+    ],
+    "auxiliar_process_list": [
+      {
+        "python_module": "from_json_check_result_process",
+        "kratos_module": "KratosMultiphysics",
+        "process_name": "FromJsonCheckResultProcess",
+        "Parameters": {
+          "check_variables": [
+            "VELOCITY_POTENTIAL"
+          ],
+          "input_file_name": "reference_velocity_potential.json",
+          "model_part_name": "FluidModelPart.Parts_Parts_Auto1",
+          "tolerance": 1e-06,
+          "relative_tolerance": 1e-06,
+          "time_frequency": -2
+        }
+      }
+    ]
+  },
+  "output_processes": {
+    "gid_output": [],
+    "vtk_output": [
+      {
+        "python_module": "vtk_output_process",
+        "kratos_module": "KratosMultiphysics",
+        "process_name": "VtkOutputProcess",
+        "Parameters": {
+          "model_part_name": "FluidModelPart.Parts_Parts_Auto1",
+          "output_control_type": "step",
+          "output_interval": 1,
+          "file_format": "ascii",
+          "output_precision": 7,
+          "output_sub_model_parts": false,
+          "output_path": "vtk_output",
+          "save_output_files_in_folder": true,
+          "nodal_solution_step_data_variables": [
+            "VELOCITY_POTENTIAL",
+            "AUXILIARY_VELOCITY_POTENTIAL"
+          ],
+          "nodal_data_value_variables": [],
+          "element_data_value_variables": [],
+          "condition_data_value_variables": []
+        }
+      }
+    ]
+  },
+  "analysis_stage": "KratosMultiphysics.CompressiblePotentialFlowApplication.potential_flow_analysis"
+}

@@ -80,6 +80,9 @@ detached (own session), with everything persisted under
 ```
 20260712-101530-a1b2c3/
 ├── meta.json     # state machine: queued → running → succeeded|failed|cancelled
+├── manifest.json # command, build fingerprint, environment, and input hashes
+├── snapshot/     # immutable inputs for isolated jobs
+├── execution/    # isolated solver working directory (isolated jobs only)
 └── stdout.log    # combined solver output
 ```
 
@@ -95,6 +98,14 @@ The runner picks the analysis class from the `analysis_stage` key in
 ProjectParameters.json (the convention used by Kratos itself and by all our
 templates), from an explicit `analysis_type`/`analysis_class` argument, or by
 inferring it from `solver_type`.
+
+`jobs.start(..., isolate=True)` copies the case into the job directory before
+launching Kratos. It records hashes for the copied inputs and keeps the
+snapshot separate from the execution directory, so a solver can write output
+without changing the inputs used by `job_rerun`. External files must be mapped
+explicitly to relative snapshot destinations; absolute paths and paths that
+escape the isolated case are rejected. Existing callers keep the original
+in-place behavior when isolation is omitted.
 
 ## Hybrid introspection
 
@@ -122,3 +133,43 @@ Case templates live in `src/kratos_mcp/templates/` as JSON files with
 required applications and solver modules. Substitution is typed: a quoted
 `"{{key}}"` becomes the JSON encoding of the value (numbers stay numbers,
 arrays stay arrays); a bare `{{key}}` inside a longer string is textual.
+
+
+### Checkpoints and physical-time output indexes
+
+For serial single-stage runs, `runner.py` observes native restart and VTK
+process output calls and atomically publishes `checkpoint-index.json` and
+`result-index.json` in the execution directory after successful writes. Time
+and step come from the process model part, never the filename. Checkpoint
+records include SHA-256 hashes and remain discoverable after retention deletes
+the binary file. Indexes are reset when a new run starts in a working directory.
+
+`checkpoints.py` configures restart output and verifies isolated source jobs
+before preparing a new snapshot with a dedicated `restart_input/` directory.
+`result_series.py` reads meshes one time pair at a time through meshio/numpy;
+MCP wrappers run this work in worker threads. Neither module imports Kratos or
+PyVista. Resume is distinct from rerun: resume restores serialized model state,
+whereas rerun repeats the preserved starting inputs (including a checkpoint if
+that job was itself resumed).
+
+## Persistent studies
+
+`studies.py` prepares a frozen base and statically validates all parameter or
+structured-mesh variants before creating launchable child jobs. Study state lives
+under `KRATOS_MCP_HOME/studies/<id>/`; child snapshots, manifests and executions
+remain under the ordinary jobs directory. Inputs, overrides, mesh summaries,
+response histories and errors remain independently inspectable.
+
+`study_coordinator.py` runs detached from the MCP server and bounds active children
+per study. Each prepared job has a durable identity before launch. A detached
+`job_supervisor.py` claims that identity under a POSIX file lock, runs the existing
+Kratos runner in its process group, and records its actual exit status. Ownership
+locks and atomic metadata writes prevent duplicate execution after coordinator
+recovery. Neither module imports Kratos or PyVista.
+
+Cancellation uses durable requests and process-group termination, including jobs
+that are still queued. Coordinator recovery verifies hashes and build identity,
+adopts active children, and schedules remaining work. A claimed job whose
+supervisor dies is failed and its remaining process group is terminated, rather
+than being silently repeated. Response extraction uses the existing meshio/numpy
+time-history code. See [study semantics](/tools/studies) for limits and defaults.
