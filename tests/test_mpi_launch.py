@@ -156,7 +156,9 @@ def test_rank_gt_zero_output_goes_to_rank_log(tmp_path):
     out, log_dir = _run_redirect(tmp_path, {"OMPI_COMM_WORLD_RANK": "1"})
     assert out.returncode == 0
     assert out.stdout == "" and out.stderr == ""
-    assert (log_dir / "rank-1.log").read_text().split() == ["hello", "oops"]
+    # stdout is block-buffered and stderr is not once both point at the file,
+    # so the relative order of the two lines is not defined.
+    assert sorted((log_dir / "rank-1.log").read_text().split()) == ["hello", "oops"]
 
 
 def test_rank_zero_and_serial_keep_stdout(tmp_path):
