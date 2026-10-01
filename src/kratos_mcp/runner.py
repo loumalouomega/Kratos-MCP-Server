@@ -132,9 +132,35 @@ def install_output_indexes(KM):
     instrument(VtkOutputProcess)
 
 
+def redirect_rank_output(log_dir: str | None, environ=None) -> int | None:
+    """Send stdout/stderr of MPI ranks > 0 to <log_dir>/rank-<N>.log.
+
+    Rank 0 keeps the inherited stdout (the job's stdout.log), so log parsing
+    and progress reporting see exactly what a serial run prints. Must run
+    before Kratos is imported so nothing from other ranks reaches the
+    launcher's stream. Returns the detected rank (None when not under MPI).
+    """
+    from kratos_mcp import mpi_launch
+
+    rank = mpi_launch.rank_from_environ(environ)
+    if not log_dir or rank is None or rank == 0:
+        return rank
+    os.makedirs(log_dir, exist_ok=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    fd = os.open(mpi_launch.rank_log_path(log_dir, rank),
+                 os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    os.dup2(fd, 1)
+    os.dup2(fd, 2)
+    os.close(fd)
+    return rank
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case-dir", required=True)
+    parser.add_argument("--rank-log-dir", default=None,
+                        help="Directory for per-rank logs of MPI ranks > 0")
     parser.add_argument("--parameters", default="ProjectParameters.json")
     parser.add_argument("--analysis-type", default=None, choices=sorted(ANALYSIS_CLASSES))
     parser.add_argument(
@@ -143,6 +169,7 @@ def main() -> int:
     )
     ns = parser.parse_args()
 
+    redirect_rank_output(ns.rank_log_dir)
     os.chdir(ns.case_dir)  # Kratos resolves mdpa/materials paths relative to cwd
 
     import KratosMultiphysics as KM

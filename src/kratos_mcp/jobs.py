@@ -27,7 +27,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import kratos_env
+from . import kratos_env, mpi_launch
 
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
 
@@ -295,7 +295,9 @@ def _manifest(env: kratos_env.KratosEnv, *, case: Path, execution: Path,
               parameters_file: str, command: list[str], isolate: bool,
               hashes: dict[str, str] | None, analysis_type: str | None,
               analysis_class: str | None,
-              external_inputs: dict[str, str] | None = None) -> dict[str, Any]:
+              external_inputs: dict[str, str] | None = None,
+              mpi: dict[str, Any] | None = None,
+              omp_threads: int | None = None) -> dict[str, Any]:
     return {
         "version": _MANIFEST_VERSION,
         "created_at": time.time(),
@@ -312,6 +314,8 @@ def _manifest(env: kratos_env.KratosEnv, *, case: Path, execution: Path,
         "external_inputs": {str(source): str(destination)
                             for source, destination in (external_inputs or {}).items()},
         "command": command,
+        "mpi": mpi,
+        "omp_threads": omp_threads,
         "python": env.python,
         "python_executable": env.python,
         "kratos_fingerprint": env.fingerprint(),
@@ -338,6 +342,23 @@ def _pid_alive(pid: int) -> bool:
         return True
 
 
+def _kill_group(pgid: int, grace_seconds: float) -> None:
+    """SIGTERM a process group, escalate to SIGKILL, and wait until it is empty.
+
+    Alive means any non-zombie member, not just the leader: an MPI launcher
+    can exit before its ranks do."""
+    for sig, wait in ((signal.SIGTERM, grace_seconds), (signal.SIGKILL, 5.0)):
+        if not mpi_launch.group_alive(pgid):
+            return
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        deadline = time.time() + wait
+        while time.time() < deadline and mpi_launch.group_alive(pgid):
+            time.sleep(0.1)
+
+
 def start(
     case_dir: str,
     parameters_file: str = "ProjectParameters.json",
@@ -345,11 +366,17 @@ def start(
     analysis_class: str | None = None,
     isolate: bool = False,
     external_inputs: dict[str, str] | None = None,
+    mpi_ranks: int | None = None,
+    omp_threads: int | None = None,
     *,
     _job_id: str | None = None,
     _defer_launch: bool = False,
 ) -> JobMeta:
-    """Spawn a detached runner and return the initial job metadata."""
+    """Spawn a detached runner and return the initial job metadata.
+
+    With `mpi_ranks` the runner is wrapped in an MPI launcher; the launcher
+    leads the job's process group, so cancellation reaches every rank.
+    `omp_threads` sets OMP_NUM_THREADS/MKL_NUM_THREADS for the run."""
     env = kratos_env.resolve()
     if not kratos_env.is_available(env):
         raise RuntimeError("Kratos is not available; cannot start a simulation.")
@@ -360,6 +387,16 @@ def start(
 
     if external_inputs and not isolate:
         raise ValueError("external_inputs requires isolate=True")
+
+    # Validate the parallel request and probe the build BEFORE creating any
+    # job directory: a missing MPI runtime must not leave a failed job behind.
+    mpi_launch.validate_request(_read_case_parameters(case, parameters_file),
+                                mpi_ranks, omp_threads)
+    mpi: dict[str, Any] | None = None
+    if mpi_ranks is not None:
+        if _defer_launch:
+            raise ValueError("mpi_ranks is not supported for supervised (study) jobs")
+        mpi = mpi_launch.check_capability(mpi_ranks)
 
     job_id = _job_id or time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     job_dir = jobs_root() / job_id
@@ -386,11 +423,18 @@ def start(
             cmd += ["--analysis-type", analysis_type]
         if analysis_class:
             cmd += ["--analysis-class", analysis_class]
+        if mpi is not None:
+            rank_logs = job_dir / "ranks"
+            rank_logs.mkdir()
+            mpi["rank_log_dir"] = str(rank_logs)
+            cmd += ["--rank-log-dir", str(rank_logs)]
+            cmd = mpi_launch.build_command(mpi["launcher"], mpi["ranks"], cmd)
         manifest = _manifest(env, case=case, execution=execution,
                              parameters_file=parameters_file, command=cmd,
                              isolate=isolate, hashes=hashes,
                              analysis_type=analysis_type, analysis_class=analysis_class,
-                             external_inputs=external_inputs)
+                             external_inputs=external_inputs, mpi=mpi,
+                             omp_threads=omp_threads)
         (job_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     except (OSError, ValueError, RuntimeError) as exc:
         meta = JobMeta(
@@ -424,6 +468,8 @@ def start(
     own_pkg_root = str(Path(__file__).resolve().parent.parent)
     run_env = env.build_env()
     run_env["PYTHONPATH"] = own_pkg_root + os.pathsep + run_env.get("PYTHONPATH", "")
+    if omp_threads is not None:
+        run_env["OMP_NUM_THREADS"] = run_env["MKL_NUM_THREADS"] = str(omp_threads)
 
     log = open(job_dir / "stdout.log", "wb")
     try:
@@ -436,7 +482,7 @@ def start(
             job_id=job_id, case_dir=str(execution), parameters_file=parameters_file,
             state="failed", returncode=None, created_at=time.time(),
             finished_at=time.time(), analysis_type=analysis_type,
-            extra={"launch_error": str(exc),
+            extra={"launch_error": str(exc), "mpi": mpi, "omp_threads": omp_threads,
                    "original_case_dir": str(case),
                    "execution_case_dir": str(execution),
                    "snapshot_dir": str(snapshot) if snapshot else None,
@@ -454,6 +500,7 @@ def start(
         extra={"original_case_dir": str(case), "execution_case_dir": str(execution),
                "snapshot_dir": str(snapshot) if snapshot else None,
                "analysis_class": analysis_class,
+               "mpi": mpi, "omp_threads": omp_threads,
                "manifest": str(job_dir / "manifest.json")},
     )
     _write_meta(job_dir, meta)
@@ -516,6 +563,13 @@ def refresh(job_id: str) -> JobMeta:
         if finished:
             returncode = 0 if _log_indicates_success(job_dir) else 1
 
+    if finished and meta.pid is not None and meta.extra.get("mpi"):
+        # The launcher can exit (or die) while ranks linger. A job is not
+        # finished while any rank runs, and stragglers must not outlive it.
+        if mpi_launch.group_alive(meta.pid):
+            _kill_group(meta.pid, grace_seconds=2.0)
+            meta.extra["stray_ranks_killed"] = True
+
     if finished:
         meta.returncode = returncode
         meta.finished_at = time.time()
@@ -540,6 +594,9 @@ def status(job_id: str) -> dict[str, Any]:
     if meta.started_at:
         end = meta.finished_at or time.time()
         out["elapsed_seconds"] = round(end - meta.started_at, 1)
+    rank_dir = jobs_root() / job_id / "ranks"
+    if rank_dir.is_dir():
+        out["rank_logs"] = sorted(p.name for p in rank_dir.glob("rank-*.log"))
     return out
 
 
@@ -573,10 +630,13 @@ def rerun(job_id: str) -> JobMeta:
         if actual_hashes[relative] != expected:
             raise RuntimeError(f"Snapshot input changed or is missing: {relative}")
     parameters_file = manifest.get("parameters_file", old.parameters_file)
+    previous_mpi = manifest.get("mpi") or old.extra.get("mpi")
     new = start(str(snapshot), parameters_file,
                 old.analysis_type or manifest.get("analysis_type"),
                 old.extra.get("analysis_class") or manifest.get("analysis_class"),
-                isolate=True)
+                isolate=True,
+                mpi_ranks=previous_mpi["ranks"] if previous_mpi else None,
+                omp_threads=manifest.get("omp_threads") or old.extra.get("omp_threads"))
     new_dir = _job_dir(new.job_id)
     new.extra["rerun_of"] = job_id
     new.extra["original_case_dir"] = manifest.get("original_case_dir", old.case_dir)
@@ -604,10 +664,20 @@ def list_jobs(state: str | None = None) -> list[dict[str, Any]]:
     return results
 
 
-def logs(job_id: str, tail: int = 100, grep: str | None = None) -> str:
+def logs(job_id: str, tail: int = 100, grep: str | None = None,
+         rank: int | None = None) -> str:
+    """Log text of a job. `rank` selects an MPI rank's log (0 / None is the
+    main stdout.log, which also carries launcher output)."""
     job_dir = _job_dir(job_id)
+    path = job_dir / "stdout.log"
+    if rank:
+        if rank < 0 or not (job_dir / "ranks").is_dir():
+            raise ValueError(f"Job '{job_id}' has no log for rank {rank}")
+        path = mpi_launch.rank_log_path(job_dir / "ranks", rank)
+        if not path.is_file():
+            raise ValueError(f"Job '{job_id}' has no log for rank {rank}")
     try:
-        text = (job_dir / "stdout.log").read_text(errors="replace")
+        text = path.read_text(errors="replace")
     except OSError:
         return ""
     lines = text.splitlines()
@@ -635,19 +705,9 @@ def cancel(job_id: str, grace_seconds: float = 5.0) -> dict[str, Any]:
         if meta.state in TERMINAL_STATES:
             return asdict(meta)
     if meta.pid is not None:
-        try:
-            # The runner leads its own session; signal the whole group.
-            os.killpg(meta.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
-        deadline = time.time() + grace_seconds
-        while time.time() < deadline and _pid_alive(meta.pid):
-            time.sleep(0.2)
-        if _pid_alive(meta.pid):
-            try:
-                os.killpg(meta.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
+        # The runner (or MPI launcher) leads its own session; signal the whole
+        # group and wait for every member, so no rank survives the cancel.
+        _kill_group(meta.pid, grace_seconds)
     meta.state = "cancelled"
     meta.finished_at = time.time()
     _write_meta(job_dir, meta)

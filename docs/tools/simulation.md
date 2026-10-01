@@ -19,6 +19,8 @@ Start a simulation job.
 | `wait_seconds` | number | poll up to this long and return the final status if the job finishes in time (default 0 = return immediately) |
 | `isolate` | boolean | copy inputs to a private snapshot and execution directory before launch (default `false`) |
 | `external_inputs` | object? | when isolating, map absolute source files to relative destinations inside the snapshot |
+| `mpi_ranks` | int? | launch under an MPI launcher with this many ranks (requires `problem_data.parallel_type: "MPI"`) |
+| `omp_threads` | int? | set `OMP_NUM_THREADS`/`MKL_NUM_THREADS` for the run |
 
 The analysis class is normally resolved from the `analysis_stage` key that
 our templates write into ProjectParameters.json, falling back to inference
@@ -43,6 +45,34 @@ fingerprint, launch command, and relevant environment settings. External mesh
 or material files must be supplied explicitly, for example
 `external_inputs={"/data/mesh.mdpa": "inputs/mesh.mdpa"}`. Output paths must
 remain relative to the isolated case.
+
+### MPI runs
+
+With `mpi_ranks=N` the runner is started as
+`mpiexec [KRATOS_MPI_ARGS] -n N python -m kratos_mcp.runner ...`. The launcher
+is `KRATOS_MPI_LAUNCHER`, else `mpiexec`, else `mpirun`. The call returns
+`{"error": ...}` **before creating a job** when
+
+- no launcher is installed, or the Kratos build cannot import
+  `KratosMultiphysics.mpi` (see `mpi` in `kratos_check_installation`);
+- the case's `problem_data.parallel_type` is not `"MPI"` (otherwise N copies
+  of a serial run would write the same files), or is `"MPI"` and `mpi_ranks`
+  is missing;
+- the case is multi-stage, or a rank/thread count is not a positive integer.
+
+Rank 0 writes to the normal job log, so `job_status` progress works as for
+serial runs. Other ranks log to `ranks/rank-<N>.log`; `job_status` lists them
+as `rank_logs` and `job_logs(rank=N)` reads one. `job_cancel` signals the
+whole process group and waits until every rank is gone; a job is not finished
+while any rank still runs. The manifest records launcher, arguments, rank
+count and `omp_threads`, and `job_rerun` reuses them.
+
+Thread settings reach ranks through the launcher's inherited environment
+(local launches). Cluster launches that do not forward the environment need
+the launcher's own flag via `KRATOS_MPI_ARGS`. MPI jobs have no result or
+checkpoint index (VTK output is per rank), and studies, checkpoints and
+multi-stage cases remain serial. Scheduler (Slurm etc.) integration is not
+provided.
 
 ## validate_case
 
@@ -74,6 +104,7 @@ List all known jobs, optionally filtered by `state`.
 | `job_id` | string | |
 | `tail` | int | last N lines (default 100) |
 | `grep` | string? | case-insensitive substring filter |
+| `rank` | int? | MPI rank whose log to read (default: the main log) |
 
 The complete live log is also available as the resource
 `kratos://jobs/{job_id}/log`.

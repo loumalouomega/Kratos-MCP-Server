@@ -5,6 +5,20 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ## Unreleased
 
+### Added
+
+- Local MPI launch for `run_simulation` (`mpi_ranks`, `omp_threads`): launcher
+  discovery (`KRATOS_MPI_LAUNCHER`, `KRATOS_MPI_ARGS`), parallel_type
+  validation and an MPI-support probe of the Kratos build that fail before any
+  job is created, per-rank logs (`job_logs(rank=N)`, `rank_logs` in
+  `job_status`), launch provenance in the manifest and replay by `job_rerun`.
+- Cancellation and status now track the whole process group, so no MPI rank
+  outlives `job_cancel` and stray ranks are killed once the launcher exits.
+- `kratos_check_installation` reports MPI launcher, `KratosMultiphysics.mpi`
+  and Trilinos availability.
+- Capability-gated two-rank vs serial acceptance test (not yet run against a
+  real distributed build).
+
 ## 0.5.0 — 2026-09-23
 
 ### Added

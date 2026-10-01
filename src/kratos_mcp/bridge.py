@@ -26,7 +26,8 @@ from . import kratos_env
 DEFAULT_TIMEOUT = 120.0
 
 # Ops whose results depend only on the build, safe to cache.
-_CACHEABLE_OPS = {"check", "list_variables", "list_applications", "get_solver_defaults"}
+_CACHEABLE_OPS = {"check", "list_variables", "list_applications", "get_solver_defaults",
+                  "mpi_support"}
 
 
 class BridgeError(RuntimeError):

@@ -7,7 +7,7 @@ from typing import Any
 
 import anyio
 
-from .. import bridge, kratos_env, process_catalog, source_catalog
+from .. import bridge, kratos_env, mpi_launch, process_catalog, source_catalog
 
 # Curated map of solver_type values per analysis type. Grounded in the
 # python_solvers_wrapper_* factories of each application; extended
@@ -88,6 +88,13 @@ async def _check_installation() -> dict[str, Any]:
     result = await _bridge_op("check")
     if isinstance(result, dict):
         info.update(result)
+    mpi_support = await _bridge_op("mpi_support")
+    if isinstance(mpi_support, dict) and "error" not in mpi_support:
+        info["mpi"] = {
+            "launcher": mpi_launch.find_launcher(),
+            "kratos_mpi_module": mpi_support.get("mpi_module", False),
+            "trilinos": mpi_support.get("trilinos", False),
+        }
     return info
 
 
