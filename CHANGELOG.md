@@ -3,6 +3,16 @@
 Notable changes to Kratos MCP Server. Historical entries are reconstructed
 from repository tags and diffs; dates are the tagged commits' dates.
 
+## 0.7.0 — 2026-10-01
+
+### Changed
+
+- Updated the Python dependency lock to clear the remaining Dependabot
+  security alerts: PyJWT 2.15.1 (from 2.13.0), tornado 6.5.10 (from 6.5.8)
+  and urllib3 2.8.0 (from 2.7.0). All three are transitive dependencies of
+  `mcp[crypto]`, the Jupyter dev group and the `viz` extra respectively.
+- Synchronized package versions at 0.7.0.
+
 ## 0.6.0 — 2026-10-01
 
 ### Added
