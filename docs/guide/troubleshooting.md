@@ -70,6 +70,16 @@ Jobs are detached processes; a server restart does not kill them.
 was reused and the state looks wrong, `job_cancel` forces the record to
 `cancelled`.
 
+## `No MPI launcher available` / `no MPI support`
+
+`run_simulation(mpi_ranks=N)` checks before creating a job that an MPI
+launcher exists (`mpiexec`, `mpirun`, or `KRATOS_MPI_LAUNCHER`) and that the
+Kratos build can `import KratosMultiphysics.mpi`. `kratos_check_installation`
+reports both under `mpi`. The pip wheels are serial; use a build with
+`-DUSE_MPI=ON` (and TrilinosApplication for the Trilinos solver presets). If
+the launcher refuses more ranks than cores, add `KRATOS_MPI_ARGS=--oversubscribe`
+(OpenMPI). MPI jobs also require `problem_data.parallel_type: "MPI"`.
+
 ## Tool calls are slow the first time
 
 The first bridge call after a (re)build spawns a Kratos interpreter (~1–3 s)

@@ -26,8 +26,9 @@ element simulations end to end:
   ([tools](docs/tools/studies.md), [tutorial](docs/tutorials/studies.md)).
 - **Run** simulations (single- or multi-stage) as managed background jobs
   (status, live logs, progress, cancel) that survive server restarts, with
-  optional immutable input snapshots, reproducible reruns, and checkpoint resume
-  for isolated serial single-stage jobs.
+  optional immutable input snapshots, reproducible reruns, checkpoint resume
+  for isolated serial single-stage jobs, and local MPI launch (`mpi_ranks`,
+  `omp_threads`) with per-rank logs and whole-group cancellation.
 - **Post-process** VTK results: summaries, point probes, convergence
   analysis, physical-time histories, CSV export, and reference comparisons.
 - **Preview** results without ParaView: PNG screenshots and GIF animations

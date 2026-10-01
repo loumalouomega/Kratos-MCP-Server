@@ -21,6 +21,8 @@ def register(mcp) -> None:
         wait_seconds: float = 0,
         isolate: bool = False,
         external_inputs: dict[str, str] | None = None,
+        mpi_ranks: int | None = None,
+        omp_threads: int | None = None,
     ) -> dict[str, Any]:
         """Start a Kratos simulation as a background job and return its
         job_id. The analysis class is taken from the 'analysis_stage' key in
@@ -28,11 +30,19 @@ def register(mcp) -> None:
         analysis_type (structural/fluid/thermal/potential_flow) or
         analysis_class ('module.path:ClassName'). If wait_seconds > 0, poll
         up to that long and return the final status if the job finishes in
-        time. Track progress with job_status/job_logs."""
+        time. Track progress with job_status/job_logs.
+
+        mpi_ranks launches the case under an MPI launcher (mpiexec/mpirun, or
+        KRATOS_MPI_LAUNCHER) with that many ranks; the case must set
+        problem_data.parallel_type to "MPI" and the build must have MPI
+        support, otherwise the call fails before any job is created. Rank 0
+        logs to the job log; other ranks to job_logs(rank=N). omp_threads sets
+        OMP_NUM_THREADS/MKL_NUM_THREADS. Not supported for multi-stage cases,
+        checkpoints or studies."""
         try:
             meta = await anyio.to_thread.run_sync(lambda: jobs.start(
                 case_dir, parameters_file, analysis_type, analysis_class,
-                isolate, external_inputs))
+                isolate, external_inputs, mpi_ranks, omp_threads))
         except (RuntimeError, FileNotFoundError, ValueError) as exc:
             return {"error": str(exc)}
 
@@ -81,18 +91,22 @@ def register(mcp) -> None:
         return jobs.list_jobs(state)
 
     @mcp.tool()
-    def job_logs(job_id: str, tail: int = 100, grep: str | None = None) -> dict[str, Any]:
+    def job_logs(job_id: str, tail: int = 100, grep: str | None = None,
+                 rank: int | None = None) -> dict[str, Any]:
         """Return the last 'tail' lines of a job's simulation log, optionally
-        only lines containing the 'grep' substring (case-insensitive)."""
+        only lines containing the 'grep' substring (case-insensitive). For MPI
+        jobs, 'rank' selects another rank's log (job_status lists rank_logs);
+        rank 0 / unset is the main log."""
         try:
-            return {"job_id": job_id, "log": jobs.logs(job_id, tail=tail, grep=grep)}
-        except KeyError as exc:
+            return {"job_id": job_id, "log": jobs.logs(job_id, tail=tail, grep=grep, rank=rank)}
+        except (KeyError, ValueError) as exc:
             return {"error": str(exc)}
 
     @mcp.tool()
     def job_cancel(job_id: str) -> dict[str, Any]:
         """Cancel a running simulation job (SIGTERM, escalating to SIGKILL
-        after a grace period)."""
+        after a grace period). Signals the whole process group, so every MPI
+        rank is stopped."""
         try:
             return jobs.cancel(job_id)
         except KeyError as exc:

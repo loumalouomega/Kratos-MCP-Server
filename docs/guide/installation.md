@@ -62,6 +62,8 @@ takes priority over a pip installation.
 | `KRATOS_LIBS` | `$KRATOS_PYTHONPATH/libs` | Explicit shared-library directory |
 | `KRATOS_SOURCE` | `$KRATOS_ROOT` | Source tree used for element/condition catalogs (only meaningful with a local build) |
 | `KRATOS_EXTRA_LIBS` | auto-detected | Extra `LD_LIBRARY_PATH` entries (e.g. MKL) |
+| `KRATOS_MPI_LAUNCHER` | `mpiexec`, then `mpirun` on `PATH` | MPI launcher used when `run_simulation` gets `mpi_ranks` |
+| `KRATOS_MPI_ARGS` | empty | Extra launcher flags, shell-split (e.g. `--oversubscribe`) |
 | `KRATOS_MCP_HOME` | `~/.kratos-mcp` | Server state: jobs, caches |
 
 None of these are required if you're happy pip-installing Kratos via

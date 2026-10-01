@@ -20,11 +20,11 @@ These proposals were checked against server 0.4.0 and the local Kratos source at
 
 Extend the managed-job workflow before introducing new application families.
 
-### MPI launch and resource controls — L
+### MPI: real-build verification and scheduler integration — M
 
-MPI linear-solver presets already exist, but the job launcher starts a single Python process. Add explicit rank and thread counts, launcher capability checks, rank-aware logs, and cancellation of the entire process group. Start with one small distributed structural or fluid reference case; scheduler integration can follow once local MPI lifecycle handling is reliable.
+Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation, capability checks) is shipped and unit-tested with a fake launcher. What remains is the part that needs a distributed build: run `tests/test_mpi_integration.py` against a Kratos build with `KratosMultiphysics.mpi` and TrilinosApplication, fix whatever the first real run exposes (MPI import of a plain `.mdpa`, `point_output_process` file naming), and bake a verified reference case into an example. After that, add cluster launch: environment forwarding to remote ranks, a Slurm/`srun` launcher mode, and MPI-aware results (per-rank VTK partitions are not indexed today).
 
-**Probe:** a two-rank run agrees with its serial reference within tolerance, and cancellation leaves no worker ranks running. A missing MPI build fails before launch.
+**Probe:** the existing two-rank test passes unmodified on a real build; a Slurm-launched two-rank run produces the same displacement within tolerance.
 
 ## 2. Additional Kratos workflows
 
@@ -61,6 +61,6 @@ Recorded so they are not re-proposed as gaps.
 
 ## Suggested sequencing
 
-1. Add local MPI support with lifecycle tests, building on isolated runs and studies.
+1. Verify local MPI on a real distributed build, then add cluster launch.
 2. Introduce CoSimulation and remeshing as independently optional workflows.
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

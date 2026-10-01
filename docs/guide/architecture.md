@@ -107,6 +107,22 @@ explicitly to relative snapshot destinations; absolute paths and paths that
 escape the isolated case are rejected. Existing callers keep the original
 in-place behavior when isolation is omitted.
 
+### MPI jobs
+
+`jobs.start(..., mpi_ranks=N)` wraps the runner command in
+`<launcher> [KRATOS_MPI_ARGS] -n N python -m kratos_mcp.runner ...`
+(`mpi_launch.py`, no Kratos import). The request is validated and the build
+probed (`mpi_support` worker op) **before** a job directory exists, so a
+missing runtime or a case whose `parallel_type` is not `MPI` leaves nothing
+behind. The launcher leads the job's process group; cancellation signals the
+whole group and waits until no non-zombie member remains, and `refresh` kills
+ranks that outlive an exited launcher. Rank 0 keeps the inherited stdout
+(`stdout.log`, parsed for progress as for serial runs); the runner redirects
+ranks > 0 to `ranks/rank-<N>.log` before importing Kratos. `manifest.json`
+records the launcher, extra args, rank count and `omp_threads`, and
+`job_rerun` replays them. Studies, checkpoints and multi-stage cases stay
+serial.
+
 ## Hybrid introspection
 
 What the tools report comes from two sources:

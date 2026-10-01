@@ -261,6 +261,24 @@ installed) via `-displayfd`.
 Every time you change code in this repo, check whether doc/, README.md, and this file need updating too — and update them if they do. Treat doc drift as part of the change, not a follow-up.
 
 
+## MPI launch
+
+- `mpi_launch.py` (no Kratos import) backs `run_simulation(mpi_ranks=,
+  omp_threads=)`: launcher discovery (`KRATOS_MPI_LAUNCHER`, else `mpiexec`/
+  `mpirun`; extra flags via `KRATOS_MPI_ARGS`), request validation, the
+  `mpi_support` worker-op probe (`KratosMultiphysics.mpi`, Trilinos), rank
+  detection and `/proc`-based process-group liveness. `jobs.start` validates and
+  probes BEFORE creating the job dir, then wraps the runner command in the
+  launcher; the launcher leads the process group.
+- `runner.py` splits logs: rank 0 keeps stdout (`stdout.log`, so `logparse`
+  works), ranks > 0 are `dup2`'d to `ranks/rank-<N>.log` before Kratos is
+  imported. `jobs.cancel`/`refresh` use `_kill_group` and group liveness — never
+  leader pid liveness alone for MPI jobs.
+- Studies, checkpoints and multi-stage cases reject MPI. `tests/test_mpi_launch.py`
+  uses a fake launcher script; `tests/test_mpi_integration.py` (two-rank vs
+  serial) is capability-gated and has not been run against a real MPI build —
+  verify it first when one is available.
+
 ## Checkpoints and time-series analysis
 
 - `checkpoints.py` backs `configure_checkpoints`, `job_checkpoints`, and

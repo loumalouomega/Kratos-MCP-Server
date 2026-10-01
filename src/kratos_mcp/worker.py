@@ -215,8 +215,25 @@ def op_read_mdpa_deep(args: dict[str, Any]) -> dict[str, Any]:
     return {"read_ok": True, "model_part": describe(mp)}
 
 
+def op_mpi_support(args: dict[str, Any]) -> dict[str, Any]:
+    """Whether this build can run distributed (KratosMultiphysics.mpi, Trilinos)."""
+    info: dict[str, Any] = {"mpi_module": False, "trilinos": False}
+    try:
+        import KratosMultiphysics.mpi  # noqa: F401
+        info["mpi_module"] = True
+    except Exception as exc:
+        info["mpi_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        import KratosMultiphysics.TrilinosApplication  # noqa: F401
+        info["trilinos"] = True
+    except Exception:
+        pass
+    return info
+
+
 OPS = {
     "check": op_check,
+    "mpi_support": op_mpi_support,
     "list_applications": op_list_applications,
     "list_variables": op_list_variables,
     "has_constitutive_laws": op_has_constitutive_laws,
