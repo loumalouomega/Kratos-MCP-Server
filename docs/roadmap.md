@@ -32,9 +32,15 @@ These depend on optional applications and need small verified examples before be
 
 ### CoSimulation adapter and coupled example — L
 
-Sequential orchestration already exists; coupled solvers exchanging data need a different integration. In `applications/CoSimulationApplication/python_scripts/co_simulation_analysis.py`, `CoSimulationAnalysis` takes `(cosim_settings, models=None)`, unlike the runner's `(model, parameters)` call. Add an explicit adapter, coupled-case validation, and one small example with interface convergence and transferred-field checks.
+Sequential orchestration already exists; coupled solvers exchanging data need a different integration. Upstream: [CoSimulationApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/CoSimulationApplication). In `applications/CoSimulationApplication/python_scripts/co_simulation_analysis.py`, `CoSimulationAnalysis` takes `(cosim_settings, models=None)`, unlike the runner's `(model, parameters)` call. Add an explicit adapter, coupled-case validation, and one small example with interface convergence and transferred-field checks.
 
 **Probe:** run a minimal two-solver coupling through MCP, verify interface data exchange, and ensure an invalid transfer configuration is diagnosed.
+
+### Partitioned FSI example — M
+
+Upstream: [FSIApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/FSIApplication). In `applications/FSIApplication/python_scripts/fsi_analysis.py`, `FsiAnalysis` keeps the standard `(model, parameters)` constructor, so unlike CoSimulation it needs no runner adapter. The gap is scaffolding and validation: nested `fluid_solver_settings` / `structure_solver_settings` plus mesh motion ([MeshMovingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MeshMovingApplication)) and non-matching interface mapping ([MappingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MappingApplication)). Add a fluid + structure + interface template, coupled-case validation (one shared interface pair, matching dimension, required applications compiled), and one small 2D example with interface data-exchange and mesh-motion checks.
+
+**Probe:** run the minimal FSI example through MCP, verify interface transfer and mesh motion, and ensure a missing/mismatched interface is diagnosed before launch.
 
 ### Adaptive remeshing — L
 
@@ -62,5 +68,5 @@ Recorded so they are not re-proposed as gaps.
 ## Suggested sequencing
 
 1. Verify local MPI on a real distributed build, then add cluster launch.
-2. Introduce CoSimulation and remeshing as independently optional workflows.
+2. Introduce CoSimulation, FSI and remeshing as independently optional workflows.
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.
