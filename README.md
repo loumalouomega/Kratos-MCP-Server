@@ -26,8 +26,8 @@ element simulations end to end:
   presets included. ProjectParameters.json, Materials.json and structured MDPA
   meshes with named boundary regions.
 - **Remesh** adaptively with MMG (MeshingApplication): `mesh_remesh` refines or
-  coarsens an `.mdpa` around a region, a level set or an analytic field
-  (hessian metric), keeps the named boundaries and reports the field transfer
+  coarsens an `.mdpa` around a region, a level set, an analytic field or a
+  solved VTK result field (hessian metric, transferred field written as `NodalData`), keeps the named boundaries and reports the field transfer
   error; `add_remeshing_process` adds a setup-time `mmg_process` to a case
   ([tools](docs/tools/mesh.md#mesh-remesh), [tutorial](docs/tutorials/adaptive-remeshing.md)).
 - **Study** parameter sweeps and structured mesh convergence with isolated

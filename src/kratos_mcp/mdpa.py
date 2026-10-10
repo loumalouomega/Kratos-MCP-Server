@@ -51,6 +51,9 @@ class Mdpa:
     properties: dict[int, dict[str, str]] = field(default_factory=dict)
     sub_model_parts: dict[str, SubModelPart] = field(default_factory=dict)
     model_part_data: dict[str, str] = field(default_factory=dict)
+    # Scalar ``Begin NodalData VAR`` blocks: variable name -> {node id: value}. The
+    # fixed flag is not kept (written back as 0); vector blocks are skipped.
+    nodal_data: dict[str, dict[int, float]] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ info
 
@@ -136,6 +139,14 @@ class Mdpa:
             x, y, z = self.nodes[nid]
             out.append(f"    {nid} {x:.10g} {y:.10g} {z:.10g}")
         out.append("End Nodes\n")
+
+        for variable in sorted(self.nodal_data):
+            values = self.nodal_data[variable]
+            out.append(f"Begin NodalData {variable}")
+            for nid in sorted(values):
+                if nid in self.nodes:
+                    out.append(f"    {nid} 0 {values[nid]:.17g}")
+            out.append("End NodalData\n")
 
         for kind, groups in (("Elements", self.elements), ("Conditions", self.conditions)):
             for type_name in sorted(groups):
@@ -232,6 +243,20 @@ def parse(text: str) -> Mdpa:
                 m.nodes[int(nid)] = (float(x), float(y), float(z))
                 i += 1
             i += 1
+        elif block == "NodalData" and not smp_stack and len(t) > 2:
+            values: dict[int, float] = {}
+            scalar = True
+            i += 1
+            while tokens[i][0] != "End":
+                row = tokens[i]
+                if len(row) == 3:
+                    values[int(row[0])] = float(row[2])
+                else:
+                    scalar = False
+                i += 1
+            i += 1
+            if scalar:
+                m.nodal_data[t[2]] = values
         elif block in ("Elements", "Conditions") and not smp_stack:
             type_name = t[2]
             target = m.elements if block == "Elements" else m.conditions

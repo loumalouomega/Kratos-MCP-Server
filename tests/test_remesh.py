@@ -313,7 +313,9 @@ class FakeWorker:
             return {"meshing": self.support, "mmg": self.support}
         assert op == "remesh_mdpa" and use_cache is False
         self.finer.write(args["output"])
-        return {"written_to": args["output"],
+        fields = {name: {str(nid): float(nid) for nid in self.finer.nodes}
+                  for name in args["request"].get("write_fields", [])}
+        return {"written_to": args["output"], "fields": fields,
                 "transfer": {v["variable"]: {"max_abs_error": 0.0} for v in args["request"]["check"]}}
 
 
@@ -383,6 +385,145 @@ def test_mesh_remesh_reports_worker_failure(tmp_path, monkeypatch, remesh_tool):
     result = _run(remesh_tool(str(EXAMPLE / "plate.mdpa"), str(tmp_path / "o.mdpa"),
                               strategy="uniform", min_size=0.1))
     assert "boom" in result["error"] and "trace" in result["error"]
+
+
+# --- solved fields: NodalData, request, result mapping, tool ----------------------------
+
+def _plate():
+    return mdpa.read(EXAMPLE / "plate.mdpa")
+
+
+def _write_vtk(tmp_path, plate, name="result_1.vtk", order=None, variable="TEMPERATURE"):
+    import meshio
+    import numpy as np
+
+    ids = sorted(plate.nodes)
+    order = order if order is not None else list(range(len(ids)))
+    points = np.array([plate.nodes[ids[i]] for i in order])
+    values = np.array([float(ids[i]) * 0.5 for i in order])
+    cells = [("triangle", np.array([[order.index(ids.index(n)) for n in conn]
+                                    for _, conn in plate_elements(plate)]))]
+    path = tmp_path / name
+    meshio.write(path, meshio.Mesh(points, cells, point_data={variable: values}), file_format="vtk",
+                 binary=False)
+    return path
+
+
+def plate_elements(plate):
+    return [row for by_id in plate.elements.values() for row in by_id.values()]
+
+
+def test_nodal_data_roundtrip(tmp_path):
+    m = mdpa.create_rectangle_mesh(1.0, 1.0, 2, 2)
+    m.nodal_data["TEMPERATURE"] = {nid: 0.1 * nid for nid in m.nodes}
+    path = m.write(tmp_path / "m.mdpa")
+    assert "Begin NodalData TEMPERATURE" in path.read_text()
+    back = mdpa.read(path)
+    assert back.nodal_data["TEMPERATURE"] == m.nodal_data["TEMPERATURE"]
+    assert back.validate() == [] and back.inspect()["num_nodes"] == len(m.nodes)
+
+
+def test_nodal_data_vector_block_is_skipped():
+    text = ("Begin Nodes\n1 0 0 0\nEnd Nodes\n"
+            "Begin NodalData VELOCITY\n1 0 1.0 2.0 3.0\nEnd NodalData\n"
+            "Begin NodalData DISTANCE\n1 0 0.5\nEnd NodalData\n")
+    m = mdpa.parse(text)
+    assert m.nodal_data == {"DISTANCE": {1: 0.5}}
+
+
+def test_setup_example_mesh_keeps_nodal_data():
+    m = mdpa.read(SETUP_CASE / "mesh.mdpa")
+    assert set(m.nodal_data["DISTANCE"]) == set(m.nodes)
+
+
+def test_build_request_with_field_values():
+    plate = _plate()
+    values = {nid: 1.0 + nid for nid in plate.nodes}
+    request = remesh.build_request(plate, strategy="hessian", field_variable="TEMPERATURE",
+                                   field_values=values)
+    item = request["assign"][0]
+    assert item["variable"] == "TEMPERATURE" and item["values"][str(min(plate.nodes))] > 1.0
+    assert request["write_fields"] == ["TEMPERATURE"]
+    with pytest.raises(ValueError, match="exactly one"):
+        remesh.build_request(plate, strategy="hessian", field_variable="T", field_values=values,
+                             field_expression="x")
+    with pytest.raises(ValueError, match="exactly one"):
+        remesh.build_request(plate, strategy="hessian", field_variable="T")
+    with pytest.raises(ValueError, match="every node"):
+        remesh.build_request(plate, strategy="hessian", field_variable="T",
+                             field_values={1: 0.0})
+    bad = {**values, min(values): float("nan")}
+    with pytest.raises(ValueError, match="non-finite"):
+        remesh.build_request(plate, strategy="hessian", field_variable="T", field_values=bad)
+
+
+def test_carry_fields_reads_back_from_mesh():
+    plate = _plate()
+    request = remesh.build_request(plate, strategy="hessian", field_variable="T",
+                                   field_values={n: 0.0 for n in plate.nodes})
+    later = remesh.carry_fields(request)
+    assert later["assign"] == [{"variable": "T", "source": "mesh"}]
+    assert later["read_variables"] == ["T"] and request["assign"][0].get("values")
+
+
+def test_field_from_result_maps_shuffled_points(tmp_path):
+    plate = _plate()
+    ids = sorted(plate.nodes)
+    order = list(reversed(range(len(ids))))
+    path = _write_vtk(tmp_path, plate, order=order)
+    picked = remesh.field_from_result(plate, str(path), "TEMPERATURE")
+    assert picked["values"] == {nid: nid * 0.5 for nid in ids}
+
+
+def test_field_from_result_index_selects_time_and_errors(tmp_path):
+    plate = _plate()
+    _write_vtk(tmp_path, plate, "a_1.vtk")
+    _write_vtk(tmp_path, plate, "a_2.vtk")
+    index = tmp_path / "result-index.json"
+    index.write_text(json.dumps({"version": 1, "records": [
+        {"file": "a_1.vtk", "series": "s", "time": 0.5, "step": 1},
+        {"file": "a_2.vtk", "series": "s", "time": 1.0, "step": 2}]}))
+    assert remesh.field_from_result(plate, str(index), "TEMPERATURE")["time"] == 1.0
+    assert remesh.field_from_result(plate, str(index), "TEMPERATURE", time=0.5)["step"] == 1
+    with pytest.raises(ValueError, match="no result record"):
+        remesh.field_from_result(plate, str(index), "TEMPERATURE", step=9)
+    with pytest.raises(ValueError, match="Missing point field"):
+        remesh.field_from_result(plate, str(index), "PRESSURE")
+    with pytest.raises(ValueError, match="only apply"):
+        remesh.field_from_result(plate, str(tmp_path / "a_1.vtk"), "TEMPERATURE", step=1)
+    moved = _plate()
+    moved.nodes[min(moved.nodes)] = (9.0, 9.0, 0.0)
+    with pytest.raises(ValueError, match="unique mesh node"):
+        remesh.field_from_result(moved, str(tmp_path / "a_1.vtk"), "TEMPERATURE")
+
+
+def test_mesh_remesh_from_solved_field_with_fake_worker(tmp_path, monkeypatch, remesh_tool):
+    plate = _plate()
+    vtk = _write_vtk(tmp_path, plate)
+    worker = FakeWorker(tmp_path)
+    monkeypatch.setattr(bridge, "run_op", worker)
+    out = tmp_path / "out.mdpa"
+    result = _run(remesh_tool(str(EXAMPLE / "plate.mdpa"), str(out), strategy="hessian",
+                              field_variable="TEMPERATURE", field_results=str(vtk), passes=2))
+    assert "error" not in result, result
+    assert result["fields_written"] == ["TEMPERATURE"]
+    first, second = worker.calls[1][1]["request"], worker.calls[2][1]["request"]
+    assert "values" in first["assign"][0]
+    assert second["assign"] == [{"variable": "TEMPERATURE", "source": "mesh"}]
+    assert second["read_variables"] == ["TEMPERATURE"]
+    written = mdpa.read(out)
+    assert set(written.nodal_data["TEMPERATURE"]) == set(worker.finer.nodes)
+    # Both an expression and a result file, or a result file without a variable, are rejected.
+    both = _run(remesh_tool(str(EXAMPLE / "plate.mdpa"), str(tmp_path / "x.mdpa"),
+                            strategy="hessian", field_variable="T", field_expression="x",
+                            field_results=str(vtk)))
+    assert "not both" in both["error"]
+    novar = _run(remesh_tool(str(EXAMPLE / "plate.mdpa"), str(tmp_path / "y.mdpa"),
+                             strategy="hessian", field_results=str(vtk)))
+    assert "field_variable" in novar["error"]
+    bad = _run(remesh_tool(str(EXAMPLE / "plate.mdpa"), str(tmp_path / "z.mdpa"),
+                           strategy="hessian", field_variable="PRESSURE", field_results=str(vtk)))
+    assert "Missing point field" in bad["error"]
 
 
 # --- example resource --------------------------------------------------------------
@@ -543,6 +684,46 @@ def test_setup_remeshing_runs_inside_a_simulation(tmp_path, monkeypatch):
     out = meshio.read(last)
     assert len(out.points) > 3 * 231                          # refined around the disk
     assert out.point_data["TEMPERATURE"].max() == pytest.approx(100.0)   # Dirichlet side kept
+
+
+@pytest.mark.kratos
+def test_remesh_from_a_solved_field(tmp_path, monkeypatch):
+    """Run a real thermal job (ASCII VTK), remesh its mesh from the solved TEMPERATURE and
+    check the transferred field is written back as NodalData."""
+    _mmg_or_skip()
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "home"))
+    case = tmp_path / "case"
+    shutil.copytree(SETUP_CASE, case)
+    params = json.loads((case / "ProjectParameters.json").read_text())
+    params["processes"]["list_other_processes"] = []          # solve on the original mesh
+    (case / "ProjectParameters.json").write_text(json.dumps(params, indent=1))
+    meta = jobs.start(str(case))
+    deadline = time.time() + 180
+    status = jobs.status(meta.job_id)
+    while time.time() < deadline and status["state"] not in jobs.TERMINAL_STATES:
+        time.sleep(1.0)
+        status = jobs.status(meta.job_id)
+    assert status["state"] == "succeeded", jobs.logs(meta.job_id, tail=40)
+
+    source = mdpa.read(case / "mesh.mdpa")
+    picked = remesh.field_from_result(source, str(case / "result-index.json"), "TEMPERATURE")
+    assert len(picked["values"]) == len(source.nodes) and picked["time"] == pytest.approx(0.3)
+
+    out = tmp_path / "adapted.mdpa"
+    result = _remesh(case / "mesh.mdpa", out, strategy="hessian", field_variable="TEMPERATURE",
+                     field_results=str(case / "result-index.json"), min_size=0.01, max_size=0.1,
+                     passes=2)
+    assert "error" not in result, result
+    assert result["issues"] == [] and all(i["ok"] for i in result["preserved"].values())
+    assert result["change"]["elements"] > 400                        # refined around the front
+    assert result["fields_written"] == ["DISTANCE", "TEMPERATURE"]   # input NodalData is kept
+    adapted = mdpa.read(out)
+    assert set(adapted.nodal_data["TEMPERATURE"]) == set(adapted.nodes)
+    # The Dirichlet side keeps its 100 degrees on the new mesh.
+    left = adapted.sub_model_parts["left"].nodes
+    assert all(adapted.nodal_data["TEMPERATURE"][n] == pytest.approx(100.0, abs=1e-6) for n in left)
+    transfer = result["transfer"]["TEMPERATURE"]
+    assert transfer["source"] == "field" and transfer["value_range_after"][1] == pytest.approx(100.0)
 
 
 @pytest.mark.kratos

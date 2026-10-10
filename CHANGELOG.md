@@ -101,6 +101,15 @@ from repository tags and diffs; dates are the tagged commits' dates.
   half the interpolation error of uniform meshes of 657-796 elements, and a thermal
   case is refined from 231 to 1608 nodes at setup.
 - Tests: `tests/test_remesh.py` (Kratos-free, plus capability-gated real MMG tests).
+- **Remeshing from solved fields**: `mesh_remesh(strategy="hessian", field_variable=...,
+  field_results=<result-index.json | ascii .vtk/.vtu>, field_time/field_step)` drives the
+  hessian metric from a field read from a VTK result (points matched to mesh nodes by
+  coordinates), transfers it, and writes it to the output `.mdpa` as `Begin NodalData`
+  (`fields_written`), carrying it across `passes`. `mdpa.parse`/`dumps` now round-trip scalar
+  `NodalData` blocks (`Mdpa.nodal_data`), and the input mesh's own scalar `NodalData` is
+  transferred too. Verified against Kratos 10.4.4 on the thermal example (231 -> 1648 nodes
+  /elements after one pass); `strategy: spr` remains on the roadmap. New helpers
+  `remesh.field_from_result` / `carry_fields`.
 
 ### Changed
 

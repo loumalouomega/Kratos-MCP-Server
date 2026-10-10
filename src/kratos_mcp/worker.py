@@ -283,8 +283,10 @@ def op_remesh_mdpa(args: dict[str, Any]) -> dict[str, Any]:
 
     model = KM.Model()
     root = model.CreateModelPart(settings["model_part_name"])
-    variables = {item["variable"]: _scalar_variable(item["variable"])
-                 for item in [*request["assign"], *request["check"]]}
+    variables = {name: _scalar_variable(name)
+                 for name in [*request.get("read_variables", []),
+                              *(item["variable"] for item in [*request["assign"],
+                                                              *request["check"]])]}
     if settings.get("strategy") == "levelset":
         variables.setdefault("DISTANCE", KM.DISTANCE)
         variables["DISTANCE_GRADIENT"] = KM.DISTANCE_GRADIENT
@@ -295,13 +297,24 @@ def op_remesh_mdpa(args: dict[str, Any]) -> dict[str, Any]:
 
     def assign(items: list[dict[str, str]]) -> None:
         for item in items:
-            fn = remesh.compile_expression(item["expression"])
             var = variables[item["variable"]]
+            if item.get("source") == "mesh":
+                continue  # already loaded from the input mesh's NodalData block
+            if "values" in item:
+                for node in root.Nodes:
+                    node.SetSolutionStepValue(var, item["values"][str(node.Id)])
+                continue
+            fn = remesh.compile_expression(item["expression"])
             for node in root.Nodes:
                 node.SetSolutionStepValue(var, fn(node.X, node.Y, node.Z))
 
     assign(request["assign"])
     assign(request["check"])
+    field_items = [i for i in request["assign"] if "values" in i or i.get("source") == "mesh"]
+    field_ranges_before = {
+        i["variable"]: [min(n.GetSolutionStepValue(variables[i["variable"]]) for n in root.Nodes),
+                        max(n.GetSolutionStepValue(variables[i["variable"]]) for n in root.Nodes)]
+        for i in field_items}
     before = {"nodes": root.NumberOfNodes(), "elements": root.NumberOfElements(),
               "conditions": root.NumberOfConditions()}
 
@@ -325,7 +338,17 @@ def op_remesh_mdpa(args: dict[str, Any]) -> dict[str, Any]:
             "mean_abs_error": sum(errors) / len(errors),
             "value_range": [min(values), max(values)]}
 
-    return {"written_to": stem_out + ".mdpa",
+    for item in field_items:
+        nodal = [n.GetSolutionStepValue(variables[item["variable"]]) for n in root.Nodes]
+        transfer[item["variable"]] = {
+            "source": "field", "value_range_before": field_ranges_before[item["variable"]],
+            "value_range_after": [min(nodal), max(nodal)]}
+
+    fields = {name: {str(node.Id): node.GetSolutionStepValue(variables[name])
+                     for node in root.Nodes}
+              for name in request.get("write_fields", [])}
+
+    return {"written_to": stem_out + ".mdpa", "fields": fields,
             "kratos_counts": {"before": before, "after": {
                 "nodes": root.NumberOfNodes(), "elements": root.NumberOfElements(),
                 "conditions": root.NumberOfConditions()}},

@@ -32,10 +32,10 @@ These depend on optional applications and need small verified examples before be
 
 ### Remeshing inside the solution loop and from solved fields — L
 
-One-shot `mesh_remesh` (levelset, analytic hessian, uniform; repeatable passes) and setup-time `add_remeshing_process` are shipped. What remains:
+One-shot `mesh_remesh` (levelset, analytic or solved-field hessian with the transferred field written as `NodalData`, uniform; repeatable passes) and setup-time `add_remeshing_process` are shipped. What remains:
 
 - **Remeshing during a run.** An `mmg_process` that fires inside the solution loop aborts standard solvers with SIGSEGV after the first remesh (verified with the thermal solver): the strategy, DOFs and builder stay bound to the old mesh. Needs a solver-side re-initialization hook (clear and rebuild after the `MODIFIED` flag) and a story for output continuity, restart and studies.
-- **Metrics from solved fields.** `mesh_remesh` takes analytic expressions only; `.mdpa` carries no `NodalData` in this server's parser/writer. Drive the hessian from a field read from a VTK result (`result_series`), write the transferred field back, and expose superconvergent-patch-recovery error estimation (`strategy: spr`).
+- **Error estimation from recovered stresses.** The hessian can follow a field read from a VTK result, but `strategy: spr` (superconvergent patch recovery) needs element stress data from a live solved model part, which a mesh plus VTK point data cannot provide; it would run in the runner/session worker on the solved model, and vector or element-wise fields have no `NodalData` path yet.
 - **3D and surface meshes.** Only the 2D path has been run against real numbers; `MmgProcess3D` / `MmgProcess3DSurfaces` are wired but unverified.
 
 **Probe:** adapt a 3D tetrahedral mesh to a solved structural field read from VTK and show the transferred stress/temperature error against a uniformly refined mesh.
@@ -60,5 +60,5 @@ Recorded so they are not re-proposed as gaps.
 ## Suggested sequencing
 
 1. Verify local MPI on a real distributed build, then add cluster launch.
-2. Extend remeshing to solved-field metrics and 3D (coupled-solver CoSimulation, partitioned FSI and offline/setup-time remeshing are shipped).
+2. Extend remeshing to SPR error estimation, in-loop remeshing and 3D (solved-field hessian metrics, coupled-solver CoSimulation, partitioned FSI and offline/setup-time remeshing are shipped).
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.
