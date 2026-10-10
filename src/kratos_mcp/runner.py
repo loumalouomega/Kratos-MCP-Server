@@ -132,6 +132,19 @@ def install_output_indexes(KM):
     instrument(VtkOutputProcess)
 
 
+def is_openmp_run(parameters) -> bool:
+    """Serial/OpenMP runs (``parallel_type`` absent or ``OpenMP``) are the only
+    ones whose outputs are indexed."""
+    return (not parameters.Has("problem_data") or not parameters["problem_data"].Has("parallel_type")
+            or parameters["problem_data"]["parallel_type"].GetString() == "OpenMP")
+
+
+def reset_output_indexes():
+    from pathlib import Path
+    for index_name in ("checkpoint-index.json", "result-index.json"):
+        Path(index_name).unlink(missing_ok=True)
+
+
 def redirect_rank_output(log_dir: str | None, environ=None) -> int | None:
     """Send stdout/stderr of MPI ranks > 0 to <log_dir>/rank-<N>.log.
 
@@ -194,12 +207,16 @@ def main() -> int:
     # (type 'coupled_solvers.*' with a coupling_sequence and sub-solvers),
     # driven by CoSimulationAnalysis(cosim_settings) rather than the
     # (model, parameters) constructor used below. The sub-solvers create and
-    # own their Models, and the VTK/restart output-index instrumentation is not
-    # installed for them.
+    # own their Models; the VTK/restart output-index instrumentation patches
+    # the output process classes, so Kratos-wrapped sub-solvers' output is
+    # indexed too (one series per sub-solver model part).
     if parameters.Has("solver_settings") and (
             parameters["solver_settings"].Has("coupling_sequence")
             or (parameters["solver_settings"].Has("type")
                 and parameters["solver_settings"]["type"].GetString().startswith("coupled_solvers."))):
+        if is_openmp_run(parameters):
+            reset_output_indexes()
+            install_output_indexes(KM)
         from KratosMultiphysics.CoSimulationApplication.co_simulation_analysis import CoSimulationAnalysis
         CoSimulationAnalysis(parameters).Run()
         # CoSimulationAnalysis overrides Initialize/Finalize without printing the
@@ -220,10 +237,8 @@ def main() -> int:
         module_path, class_name = ANALYSIS_CLASSES[analysis_type]
         analysis_cls = getattr(importlib.import_module(module_path), class_name)
 
-    if not parameters.Has("problem_data") or not parameters["problem_data"].Has("parallel_type") or parameters["problem_data"]["parallel_type"].GetString() == "OpenMP":
-        from pathlib import Path
-        for index_name in ("checkpoint-index.json", "result-index.json"):
-            Path(index_name).unlink(missing_ok=True)
+    if is_openmp_run(parameters):
+        reset_output_indexes()
         install_output_indexes(KM)
     model = KM.Model()
     simulation = analysis_cls(model, parameters)

@@ -28,14 +28,7 @@ Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation
 
 ## 2. Additional Kratos workflows
 
-These depend on optional applications and need small verified examples before being presented as supported templates.
-
-### CoSimulation: mesh-based coupling example and output indexing — S
-
-The runner adapter, coupled-case validation, `create_cosim_project` and a
-verified two-SDoF example are shipped. What remains is the mesh-based half: a small example coupling two `solver_wrappers.kratos.*` solvers through `kratos_mapping` (the static validator does not yet cross-check interface `model_part_name`s of Kratos-wrapped solvers against their meshes), and result/checkpoint indexing for the sub-solvers' VTK output, which the runner does not instrument for coupled cases.
-
-**Probe:** a two-Kratos-solver coupling through MCP with non-matching interfaces, where a `model_part_name` that is absent from a sub-solver's mesh is diagnosed before launch and `results_time_history` reads the sub-solver output.
+These depend on optional applications and need small verified examples before being presented as supported templates. The shipped CoSimulation support (runner adapter, coupled-case validation, `create_cosim_project`, SDoF and mesh-based examples, per-solver result indexing) is the base the FSI item builds on.
 
 ### Partitioned FSI example — M
 

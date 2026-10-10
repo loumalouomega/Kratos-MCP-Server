@@ -205,6 +205,9 @@ process output calls and atomically publishes `checkpoint-index.json` and
 and step come from the process model part, never the filename. Checkpoint
 records include SHA-256 hashes and remain discoverable after retention deletes
 the binary file. Indexes are reset when a new run starts in a working directory.
+CoSimulation runs (serial/OpenMP) are instrumented too: the output classes are patched
+before `CoSimulationAnalysis` builds its sub-solvers, so each Kratos-wrapped solver's
+VTK output becomes its own series.
 
 `checkpoints.py` configures restart output and verifies isolated source jobs
 before preparing a new snapshot with a dedicated `restart_input/` directory.

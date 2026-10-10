@@ -19,6 +19,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from . import mdpa as mdpa_mod
+
 # Coupled solvers shipped with CoSimulationApplication (python_scripts/coupled_solvers).
 COUPLED_SOLVERS = (
     "coupled_solvers.gauss_seidel_weak",
@@ -61,6 +63,19 @@ SDOF_INPUT_KEYS = {
 }
 
 _STRONG = ("gauss_seidel_strong", "jacobi_strong", "block_strong")
+
+# Vector variables commonly exchanged by Kratos-wrapped solvers: CouplingInterfaceData
+# raises '"dimension" has to be specified for vector variables!' for them.
+VECTOR_VARIABLES = frozenset({
+    "DISPLACEMENT", "VELOCITY", "ACCELERATION", "REACTION", "POINT_LOAD", "LINE_LOAD",
+    "SURFACE_LOAD", "VOLUME_ACCELERATION", "MESH_DISPLACEMENT", "MESH_VELOCITY",
+    "MESH_ACCELERATION", "FORCE", "MOMENT", "ROTATION", "ANGULAR_VELOCITY",
+    "ANGULAR_ACCELERATION", "REACTION_MOMENT", "NORMAL", "TORQUE", "CONVECTION_VELOCITY",
+    "BODY_FORCE", "FLUID_STRESS", "PRESSURE_GRADIENT",
+})
+
+# Mapper types whose ORIGIN interface must carry geometries (conditions/elements).
+GEOMETRY_ORIGIN_MAPPERS = frozenset({"nearest_element", "barycentric"})
 
 
 def is_cosim(params: Any) -> bool:
@@ -160,6 +175,124 @@ def _check_convergence(settings: dict[str, Any], issues: list[str], warnings: li
                               f"in solver '{solver}' data")
 
 
+def _split_model_part(name: str) -> tuple[str, list[str]]:
+    root, *path = str(name).split(".")
+    return root, path
+
+
+def _find_sub_model_part(mesh: mdpa_mod.Mdpa, path: list[str]) -> mdpa_mod.SubModelPart | None:
+    if not path:
+        return None
+    part = mesh.sub_model_parts.get(path[0])
+    for name in path[1:]:
+        if part is None:
+            return None
+        part = part.children.get(name)
+    return part
+
+
+def _load_sub_case(case: Path, solver: dict[str, Any]) -> tuple[str | None, mdpa_mod.Mdpa | None]:
+    """(main model part name, parsed mesh) of a Kratos-wrapped sub-solver; either
+    is ``None`` when it cannot be determined statically (non-mdpa import,
+    missing/unparseable file) -- those cases are reported by the regular
+    sub-case validation, not here."""
+    path = input_file_path(case, solver)
+    if path is None or not path.is_file():
+        return None, None
+    try:
+        sub = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return None, None
+    settings = sub.get("solver_settings") or {}
+    main = settings.get("model_part_name")
+    imported = settings.get("model_import_settings") or {}
+    filename = imported.get("input_filename")
+    if imported.get("input_type", "mdpa") != "mdpa" or not filename:
+        return main, None
+    mdpa_path = case / (filename if filename.endswith(".mdpa") else f"{filename}.mdpa")
+    try:
+        return main, mdpa_mod.read(mdpa_path)
+    except (OSError, ValueError):
+        return main, None
+
+
+def _check_kratos_data(name: str, solver: dict[str, Any], main: str | None,
+                       mesh: mdpa_mod.Mdpa | None, issues: list[str]) -> None:
+    """Diagnose interface data of a Kratos-wrapped sub-solver before launch
+    (Kratos only fails inside ``Initialize``, with little context)."""
+    for data_name, data in (solver.get("data") or {}).items():
+        where = f"solver '{name}': data '{data_name}'"
+        if data.get("variable_name") in VECTOR_VARIABLES and "dimension" not in data:
+            issues.append(f"{where}: vector variable '{data['variable_name']}' needs a \"dimension\" "
+                          "(2 or 3)")
+        model_part = data.get("model_part_name")
+        if not model_part:
+            issues.append(f"{where}: model_part_name is missing")
+            continue
+        root, path = _split_model_part(model_part)
+        if main is not None and root != main:
+            issues.append(f"{where}: model_part_name '{model_part}' does not start with the "
+                          f"sub-solver's model part '{main}'")
+            continue
+        if mesh is None or not path:
+            continue
+        part = _find_sub_model_part(mesh, path)
+        if part is None:
+            issues.append(f"{where}: sub-model-part '{model_part}' does not exist in the mesh "
+                          f"(available: {sorted(mesh.sub_model_parts)})")
+        elif not part.nodes:
+            issues.append(f"{where}: sub-model-part '{model_part}' has no nodes")
+
+
+def _check_mappings(case: Path, settings: dict[str, Any], meshes: dict[str, mdpa_mod.Mdpa | None],
+                    issues: list[str], warnings: list[str]) -> None:
+    solvers = settings.get("solvers") or {}
+    operators = settings.get("data_transfer_operators") or {}
+    for op_name, op in operators.items():
+        if op.get("type") != "kratos_mapping":
+            continue
+        mapper = (op.get("mapper_settings") or {}).get("mapper_type", "UNSPECIFIED")
+        if mapper in (None, "", "UNSPECIFIED"):
+            issues.append(f"data_transfer_operators.{op_name}: kratos_mapping needs "
+                          "mapper_settings.mapper_type (e.g. 'nearest_neighbor', 'nearest_element')")
+
+    def check_transfer(where: str, origin_solver: str, origin_data: str, to_solver: str,
+                       to_data: str, operator_name: str) -> None:
+        operator = operators.get(operator_name) or {}
+        if operator.get("type") != "kratos_mapping":
+            return
+        for side, solver_name, data_name in (("origin", origin_solver, origin_data),
+                                            ("destination", to_solver, to_data)):
+            data = ((solvers.get(solver_name) or {}).get("data") or {}).get(data_name) or {}
+            if "node" not in str(data.get("location", "node_historical")):
+                issues.append(f"{where}: kratos_mapping only supports nodal data, but {side} data "
+                              f"'{solver_name}.{data_name}' has location '{data.get('location')}'")
+        mapper = (operator.get("mapper_settings") or {}).get("mapper_type")
+        mesh = meshes.get(origin_solver)
+        if mapper in GEOMETRY_ORIGIN_MAPPERS and mesh is not None:
+            data = ((solvers.get(origin_solver) or {}).get("data") or {}).get(origin_data) or {}
+            _, path = _split_model_part(data.get("model_part_name", ""))
+            part = _find_sub_model_part(mesh, path)
+            if part is not None and not (part.conditions or part.elements):
+                issues.append(f"{where}: mapper '{mapper}' needs geometries on its origin interface, "
+                              f"but '{data.get('model_part_name')}' of solver '{origin_solver}' has no "
+                              "conditions or elements (Kratos fails with \"No Elements and Conditions "
+                              "are present\"); add e.g. line conditions to that sub-model-part")
+
+    for entry in settings.get("coupling_sequence") or []:
+        if not isinstance(entry, dict):
+            continue
+        owner = entry.get("name")
+        for i, item in enumerate(entry.get("input_data_list", []) or []):
+            check_transfer(f"coupling_sequence[{owner}].input_data_list[{i}]", item.get("from_solver"),
+                           item.get("from_solver_data"), owner, item.get("data"),
+                           item.get("data_transfer_operator"))
+        for i, item in enumerate(entry.get("output_data_list", []) or []):
+            check_transfer(f"coupling_sequence[{owner}].output_data_list[{i}]", owner,
+                           item.get("data"), item.get("to_solver"), item.get("to_solver_data"),
+                           item.get("data_transfer_operator"))
+
+
 def _check_sdof(case: Path, name: str, solver: dict[str, Any], issues: list[str],
                 warnings: list[str]) -> None:
     allowed = SDOF_STATIC_VARIABLES if solver.get("type") == SDOF_STATIC_WRAPPER else SDOF_VARIABLES
@@ -231,6 +364,7 @@ def validate(case_dir: str | Path, params: dict[str, Any],
             warnings.append(f"data_transfer_operators.{op_name}: type '{op.get('type')}' is not a "
                             f"known operator (known: {list(DATA_TRANSFER_OPERATORS)})")
 
+    meshes: dict[str, mdpa_mod.Mdpa | None] = {}
     for name, solver in (settings.get("solvers") or {}).items():
         stype = str(solver.get("type", ""))
         if stype in (SDOF_WRAPPER, SDOF_STATIC_WRAPPER):
@@ -241,12 +375,18 @@ def validate(case_dir: str | Path, params: dict[str, Any],
                 issues.append(f"solver '{name}': solver_wrapper_settings.input_file is missing")
             elif not path.is_file():
                 issues.append(f"solver '{name}': input file {path.name} not found in {case}")
-            elif validate_kratos_solver is not None:
-                sub = validate_kratos_solver(name, path, solver)
-                issues.extend(f"solver '{name}': {i}" for i in sub.get("issues", []))
-                warnings.extend(f"solver '{name}': {w}" for w in sub.get("warnings", []))
+            else:
+                main, mesh = _load_sub_case(case, solver)
+                meshes[name] = mesh
+                _check_kratos_data(name, solver, main, mesh, issues)
+                if validate_kratos_solver is not None:
+                    sub = validate_kratos_solver(name, path, solver)
+                    issues.extend(f"solver '{name}': {i}" for i in sub.get("issues", []))
+                    warnings.extend(f"solver '{name}': {w}" for w in sub.get("warnings", []))
         else:
             warnings.append(f"solver '{name}': wrapper type '{stype}' has no static checks")
+
+    _check_mappings(case, settings, meshes, issues, warnings)
 
     return {"valid": not issues, "issues": issues, "warnings": warnings, "deep_validated": False}
 

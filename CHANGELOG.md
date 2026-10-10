@@ -45,12 +45,32 @@ from repository tags and diffs; dates are the tagged commits' dates.
 - Docs: [interactive sessions tool reference](docs/tools/sessions.md), tutorial,
   architecture section, troubleshooting entries; notebooks
   `interactive_session.ipynb` and `interactive_fluid.ipynb`.
+- **Mesh-based CoSimulation**: `kratos://examples/coupled-bar` — two
+  StructuralMechanics solvers on non-matching interface meshes coupled by
+  Dirichlet–Neumann partitioning through `kratos_mapping` (conservative
+  `use_transpose` load transfer), with verified numbers; tutorial section in
+  `docs/tutorials/cosimulation.md`.
+- Static CoSimulation validation of Kratos-wrapped solvers: interface
+  `model_part_name` roots and sub-model-parts checked against each sub-solver's
+  mesh, missing `dimension` on vector data, `kratos_mapping` without
+  `mapper_type` or on non-nodal data, and geometry-based mappers whose origin
+  interface has no conditions/elements.
 
 ### Changed
 
+- CoSimulation runs (serial/OpenMP) install the output-index instrumentation:
+  sub-solvers' VTK output is indexed in `result-index.json` (one series per
+  sub-solver model part), so `results_time_history`/`results_compare` work on them.
 - MPI launch, studies, checkpoints/resume, interactive sessions and Flowgraph
   export reject CoSimulation cases with an explicit message instead of failing
   with "Cannot infer analysis type".
+
+### Fixed
+
+- `job_status`/`results_convergence` on coupled runs with Kratos-wrapped
+  sub-solvers: the sub-solvers' own `STEP:`/`TIME:` banners and Newton
+  iteration lines were counted as coupled steps; only the CoSimulation banner
+  and the coupled solver's own lines are used now.
 
 ## 0.7.0 — 2026-10-01
 

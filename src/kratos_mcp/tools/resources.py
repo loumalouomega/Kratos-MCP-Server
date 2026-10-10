@@ -487,6 +487,74 @@ reference file checks the nodal velocity potential to `1e-6`; the numerical
 acceptance test checks the two scalar values independently."""
 
 
+COUPLED_BAR_INTRO = """# Worked example: mesh-based coupling (CoSimulation, two Kratos solvers)
+
+An elastic bar split in two blocks, each solved by its own StructuralMechanics
+solver (`solver_wrappers.kratos.structural_mechanics_wrapper`) and coupled at
+the shared interface x = 1 m with Dirichlet-Neumann partitioning:
+
+- `structure_a` (x in [0, 1], E = 3e9 Pa, fixed at x = 0, 4x4 quads) is the
+  Neumann block: it receives nodal `POINT_LOAD`s on its interface;
+- `structure_b` (x in [1, 2], E = 1e9 Pa, 4x3 quads, traction 1e6 N/m at x = 2)
+  is the Dirichlet block: its interface displacement is prescribed.
+
+The interfaces do NOT match (5 nodes on A's side, 4 on B's), so both transfers
+go through `kratos_mapping` (MappingApplication, `nearest_element`):
+
+- `structure_a.interface_displacement` -> `structure_b.interface_displacement`
+  (plain mapping);
+- `structure_b.interface_reaction` (`REACTION`) -> `structure_a.interface_load`
+  (`POINT_LOAD`) with the options `swap_sign` and `use_transpose`, the
+  conservative (force-preserving) form of the mapping.
+
+The coupled solver is `coupled_solvers.gauss_seidel_strong` (B solves first
+each iteration) monitoring the load residual on `structure_a.interface_load`.
+Poisson's ratio is 0, so the exact solution is uniaxial: sigma = 1e6 Pa,
+interface displacement sigma*L/E_A = 3.333e-4 m, tip displacement
+sigma*L/E_A + sigma*L/E_B = 1.3333e-3 m.
+
+Things this example gets right and the validator checks for you:
+
+- vector data need `"dimension": 2`;
+- `nearest_element` needs *geometries* on its ORIGIN interface, so both
+  interface sub-model-parts carry geometry-only `LineCondition2D2N` (they
+  contribute nothing); the point loads of A live in the root model part;
+- Dirichlet-Neumann converges when the Neumann block is the stiffer one
+  (error factor ~ E_B / E_A = 1/3 per iteration); swap the stiffnesses and
+  plain Gauss-Seidel diverges unless you add an accelerator.
+
+Real files on disk (src/kratos_mcp/examples/coupled_bar/): the CoSimulation
+ProjectParameters.json, one parameters + materials + mdpa file per block."""
+
+COUPLED_BAR_RESULT = """\
+## Verified result
+
+Running the case (one static coupled step, a second or two of wall-clock):
+
+    coupling iterations: 17 (rel. tolerance 1e-6), CONVERGENCE WAS ACHIEVED
+    interface load:      sum of structure_a POINT_LOAD = 2.000000e5 N
+                         = -sum of structure_b REACTION (force conserved)
+    interface ux:        3.338e-4 m mean on A, 3.341e-4 m on B
+                         (exact 3.333e-4; 3.320e-4..3.359e-4 across the nodes)
+    tip ux (x = 2 m):    1.3336e-3 m mean, 1.3333e-3..1.3338e-3 across the nodes
+                         (exact 1.3333e-3)
+
+The small spread across the interface is the mapping error between the two
+non-matching node distributions; it vanishes under refinement. Both blocks'
+VTK output is indexed (series `StructureA:vtk_output_StructureA:StructureA_0` and
+`StructureB:...`), so `results_time_history(source=<job result index>,
+series=...)` reads either solver's output after the run.
+
+## Checking a case like this before launch
+
+validate_case statically diagnoses the mistakes that otherwise only surface
+inside Kratos' Initialize: a data `model_part_name` whose root is not the
+sub-solver's model part or whose sub-model-part is absent from its mesh, a
+missing `dimension` on a vector variable, a `kratos_mapping` without
+`mapper_type`, non-nodal data on a mapped transfer, and a geometry-based mapper
+whose origin interface has no conditions/elements.
+"""
+
 COUPLED_SDOF_INTRO = """# Worked example: coupled solvers (CoSimulation, two SDoF oscillators)
 
 Two single-degree-of-freedom oscillators coupled as a mass-spring chain by
@@ -766,6 +834,20 @@ def register(mcp) -> None:
             f"## {name}\n\n```json\n{(case_dir / name).read_text()}\n```\n\n"
             for name in ("ProjectParameters.json", "sdof_1.json", "sdof_2.json"))
         return f"{COUPLED_SDOF_INTRO}\n\n{files}{COUPLED_SDOF_RESULT}"
+
+    @mcp.resource("kratos://examples/coupled-bar")
+    def coupled_bar_example() -> str:
+        """Complete mesh-based CoSimulation example: an elastic bar split into two
+        StructuralMechanics blocks with non-matching interface meshes, coupled by
+        Dirichlet-Neumann partitioning through kratos_mapping (conservative load
+        transfer). Real files on disk with verified numbers."""
+        case_dir = EXAMPLES_DIR / "coupled_bar"
+        names = ("ProjectParameters.json", "structure_a.json", "structure_b.json",
+                 "MaterialsA.json", "MaterialsB.json")
+        files = "".join(f"## {name}\n\n```json\n{(case_dir / name).read_text()}\n```\n\n" for name in names)
+        meshes = "".join(f"## {name}\n\n```\n{(case_dir / name).read_text()}```\n\n"
+                         for name in ("block_a.mdpa", "block_b.mdpa"))
+        return f"{COUPLED_BAR_INTRO}\n\n{files}{meshes}{COUPLED_BAR_RESULT}"
 
     @mcp.resource("kratos://jobs/{job_id}/log")
     def job_log_resource(job_id: str) -> str:

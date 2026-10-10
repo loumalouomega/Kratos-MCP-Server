@@ -1,0 +1,109 @@
+{
+    "problem_data": {
+        "problem_name": "coupled_bar",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "echo_level": 1,
+        "print_colors": false,
+        "parallel_type": "OpenMP"
+    },
+    "solver_settings": {
+        "type": "coupled_solvers.gauss_seidel_strong",
+        "echo_level": 3,
+        "num_coupling_iterations": 30,
+        "convergence_accelerators": [],
+        "convergence_criteria": [
+            {
+                "type": "relative_norm_initial_residual",
+                "solver": "structure_a",
+                "data_name": "interface_load",
+                "abs_tolerance": 1e-09,
+                "rel_tolerance": 1e-06,
+                "label": "interface_load"
+            }
+        ],
+        "data_transfer_operators": {
+            "map_displacement": {
+                "type": "kratos_mapping",
+                "mapper_settings": {
+                    "mapper_type": "nearest_element"
+                }
+            },
+            "map_load": {
+                "type": "kratos_mapping",
+                "mapper_settings": {
+                    "mapper_type": "nearest_element"
+                }
+            }
+        },
+        "coupling_sequence": [
+            {
+                "name": "structure_b",
+                "input_data_list": [
+                    {
+                        "data": "interface_displacement",
+                        "from_solver": "structure_a",
+                        "from_solver_data": "interface_displacement",
+                        "data_transfer_operator": "map_displacement",
+                        "data_transfer_operator_options": []
+                    }
+                ],
+                "output_data_list": [
+                    {
+                        "data": "interface_reaction",
+                        "to_solver": "structure_a",
+                        "to_solver_data": "interface_load",
+                        "data_transfer_operator": "map_load",
+                        "data_transfer_operator_options": [
+                            "swap_sign",
+                            "use_transpose"
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "structure_a",
+                "input_data_list": [],
+                "output_data_list": []
+            }
+        ],
+        "solvers": {
+            "structure_a": {
+                "type": "solver_wrappers.kratos.structural_mechanics_wrapper",
+                "solver_wrapper_settings": {
+                    "input_file": "structure_a"
+                },
+                "data": {
+                    "interface_displacement": {
+                        "model_part_name": "StructureA.interface",
+                        "variable_name": "DISPLACEMENT",
+                        "dimension": 2
+                    },
+                    "interface_load": {
+                        "model_part_name": "StructureA.interface",
+                        "variable_name": "POINT_LOAD",
+                        "dimension": 2
+                    }
+                }
+            },
+            "structure_b": {
+                "type": "solver_wrappers.kratos.structural_mechanics_wrapper",
+                "solver_wrapper_settings": {
+                    "input_file": "structure_b"
+                },
+                "data": {
+                    "interface_displacement": {
+                        "model_part_name": "StructureB.interface",
+                        "variable_name": "DISPLACEMENT",
+                        "dimension": 2
+                    },
+                    "interface_reaction": {
+                        "model_part_name": "StructureB.interface",
+                        "variable_name": "REACTION",
+                        "dimension": 2
+                    }
+                }
+            }
+        }
+    }
+}

@@ -7,7 +7,9 @@ CoSimulationApplication drives these; this server scaffolds, validates and runs
 them. Every number below comes from a real run against Kratos 10.4 with
 `KratosCoSimulationApplication` installed.
 
-The `kratos://examples/coupled-sdof` resource is this exact case.
+The `kratos://examples/coupled-sdof` resource is this exact case. A second example,
+`kratos://examples/coupled-bar`, couples two real Kratos solvers on non-matching
+meshes (last section).
 
 ## The problem
 
@@ -130,18 +132,65 @@ must equal `sdof_1`'s displacement column — and it does, exactly, with a
 The lag is how the SDoF wrapper reports `SCALAR_DISPLACEMENT` (the last accepted
 displacement, not the one being solved), not a bug in the exchange. It means
 this example demonstrates the data flow, not monolithic accuracy: do not
-compare it against a single two-DoF solve. With real Kratos solvers (a
-structure wrapped as `solver_wrappers.kratos.structural_mechanics_wrapper`, a
-mapper such as `kratos_mapping` between non-matching interfaces) the same
+compare it against a single two-DoF solve. With real Kratos solvers the same
 scaffold applies, with the interface `model_part_name`s pointing at
-sub-model-parts of each solver's own mesh.
+sub-model-parts of each solver's own mesh — see the next section.
+
+## 5. Two Kratos solvers on non-matching meshes
+
+`kratos://examples/coupled-bar` splits an elastic bar into two
+`solver_wrappers.kratos.structural_mechanics_wrapper` blocks that meet at x = 1 m
+with different node counts (5 on `structure_a`'s side, 4 on `structure_b`'s).
+`structure_a` (E = 3e9 Pa, fixed at x = 0) is the Neumann block; `structure_b`
+(E = 1e9 Pa, traction 1e6 N/m at x = 2) is the Dirichlet block. The exchange goes
+through `kratos_mapping` (MappingApplication, `nearest_element`):
+
+| Data | From → to | Operator options |
+| --- | --- | --- |
+| `interface_displacement` | `structure_a` → `structure_b` | — |
+| `interface_reaction` (`REACTION`) → `interface_load` (`POINT_LOAD`) | `structure_b` → `structure_a` | `swap_sign`, `use_transpose` |
+
+`use_transpose` is what makes the load transfer conservative: the nodal reactions
+of B's interface are redistributed onto A's nodes so their sum is preserved.
+Poisson's ratio is 0, so the solution is exactly uniaxial and the answer is known:
+interface displacement σL/E_A = 3.333e-4 m, tip displacement 1.3333e-3 m.
+
+`validate_case` catches the mistakes that make a mesh-based coupling fail inside
+Kratos' `Initialize`: a data `model_part_name` whose root is not the sub-solver's
+model part or whose sub-model-part is not in its mesh, a missing `"dimension"` on a
+vector variable, a `kratos_mapping` without `mapper_type`, and a geometry-based
+mapper (`nearest_element`) whose origin interface has no conditions — which is why
+both interface sub-model-parts of the example carry geometry-only `LineCondition2D2N`.
+
+```
+coupling iterations:  17 (rel. tolerance 1e-6), CONVERGENCE WAS ACHIEVED
+sum of A's POINT_LOAD = 2.000000e5 N = -sum of B's REACTION   (force conserved)
+interface ux:         3.338e-4 m on A, 3.341e-4 m on B        (exact 3.333e-4)
+tip ux (x = 2 m):     1.3336e-3 m                              (exact 1.3333e-3)
+```
+
+Three practical points from building it:
+
+- **The Neumann block must be the stiffer one.** The Dirichlet–Neumann error factor
+  is roughly E_B / E_A = 1/3 per iteration here; swap the stiffnesses and plain
+  Gauss–Seidel diverges unless you add an accelerator.
+- **Monitor a datum that is nonzero in the first iteration.** The
+  `relative_norm_initial_residual` criterion divides by the first residual; if that is
+  exactly zero the result is NaN and the step is reported as converged immediately.
+  The example solves `structure_b` first (so the load arriving at `structure_a` is
+  nonzero from iteration 1) and watches that load.
+- **Results are indexed per solver.** Both blocks' VTK output is recorded in
+  `result-index.json`, one series per model part, so
+  `results_time_history(source=<job>/result-index.json, variable="DISPLACEMENT",
+  point=[2, 0, 0], series="StructureB:vtk_output_StructureB:StructureB_0")` reads the tip
+  displacement; without `series` the tool lists the available ones.
 
 ## Limits
 
 CoSimulation cases run as ordinary background jobs, but not with
 `mpi_ranks`, studies, checkpoints/resume or interactive sessions — each is
-rejected with a clear message. They write no `result-index.json`, so
-`results_time_history` does not apply; read the sub-solvers' own output.
-Flowgraph export is refused rather than made lossy. Interface `model_part_name`
-values of Kratos-wrapped solvers are checked by Kratos at initialisation, not by
-the static validator.
+rejected with a clear message. Kratos-wrapped sub-solvers' VTK output is indexed
+(one series per model part); Python-only SDoF solvers write their own result files.
+Flowgraph export is refused rather than made lossy. The static validator checks
+interface `model_part_name`s of Kratos-wrapped solvers against their meshes, but not
+sub-model-parts that a process creates at run time.

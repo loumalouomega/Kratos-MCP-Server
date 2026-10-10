@@ -125,3 +125,19 @@ actually contains.
 4. `validate_case(case_dir)` — re-check the configuration.
 
 The `debug_failed_simulation` prompt packages this workflow.
+
+## CoSimulation: interface errors
+
+`validate_case` reports these before launch; they are what Kratos otherwise raises inside
+`Initialize`.
+
+- **`"dimension" has to be specified for vector variables`**: add `"dimension": 2` (or 3) to
+  the data entry (`DISPLACEMENT`, `REACTION`, `POINT_LOAD`, …).
+- **`No Elements and Conditions are present which is not allowed!`** while creating a mapper:
+  `nearest_element`/`barycentric` need geometries on the ORIGIN interface. Add (geometry-only)
+  conditions such as `LineCondition2D2N` to that sub-model-part.
+- **`CONVERGENCE WAS ACHIEVED` in iteration 1 with a `RuntimeWarning: invalid value`**: the
+  monitored datum was exactly zero in the first iteration (the criterion divides by the initial
+  residual). Monitor a datum that is nonzero at the start, e.g. by solving the loaded block first.
+- **Dirichlet–Neumann diverges**: the Neumann block must be the stiffer one, or add a
+  convergence accelerator.

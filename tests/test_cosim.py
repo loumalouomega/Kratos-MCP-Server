@@ -304,3 +304,113 @@ def test_logparse_cosim_progress_and_convergence():
     assert [s["iterations"] for s in conv["steps"]] == [1, 2]
     assert conv["steps"][0]["time"] == 0.01
     assert conv["max_iterations_in_a_step"] == 2
+
+
+# --- mesh-based case (coupled_bar): interface diagnostics ---------------------
+
+BAR = EXAMPLES_DIR / "coupled_bar"
+
+
+@pytest.fixture
+def bar(tmp_path):
+    dest = tmp_path / "bar"
+    shutil.copytree(BAR, dest)
+    return dest
+
+
+def _solver(p, name):
+    return p["solver_settings"]["solvers"][name]
+
+
+def test_coupled_bar_example_is_valid():
+    result = scaffold.validate_case_files(BAR, deep=False)
+    assert result["valid"], result["issues"]
+    assert result["warnings"] == []
+
+
+def _absent_sub_model_part(p):
+    _solver(p, "structure_a")["data"]["interface_load"]["model_part_name"] = "StructureA.Interface"
+
+
+def _wrong_root(p):
+    _solver(p, "structure_b")["data"]["interface_reaction"]["model_part_name"] = "Structure.interface"
+
+
+def _no_dimension(p):
+    del _solver(p, "structure_b")["data"]["interface_reaction"]["dimension"]
+
+
+def _no_mapper_type(p):
+    p["solver_settings"]["data_transfer_operators"]["map_load"]["mapper_settings"] = {}
+
+
+def _non_nodal(p):
+    _solver(p, "structure_b")["data"]["interface_reaction"]["location"] = "model_part"
+
+
+@pytest.mark.parametrize("mutate,message", [
+    (_absent_sub_model_part, "sub-model-part 'StructureA.Interface' does not exist in the mesh"),
+    (_wrong_root, "does not start with the sub-solver's model part 'StructureB'"),
+    (_no_dimension, "vector variable 'REACTION' needs a \"dimension\""),
+    (_no_mapper_type, "kratos_mapping needs mapper_settings.mapper_type"),
+    (_non_nodal, "kratos_mapping only supports nodal data"),
+])
+def test_bar_invalid_interface_is_diagnosed(bar, mutate, message):
+    params = _load(bar)
+    mutate(params)
+    _save(bar, params)
+    result = scaffold.validate_case_files(bar, deep=False)
+    assert not result["valid"]
+    assert any(message in issue for issue in result["issues"]), result["issues"]
+
+
+def test_geometry_mapper_needs_conditions_on_origin_interface(bar):
+    from kratos_mcp import mdpa
+
+    mesh = mdpa.read(bar / "block_b.mdpa")
+    interface = mesh.sub_model_parts["interface"]
+    for by_id in mesh.conditions.values():  # strip the interface's geometry conditions
+        for cid in interface.conditions:
+            by_id.pop(cid, None)
+    interface.conditions.clear()
+    mesh.conditions = {name: by_id for name, by_id in mesh.conditions.items() if by_id}
+    mesh.write(bar / "block_b.mdpa")
+    result = scaffold.validate_case_files(bar, deep=False)
+    assert any("needs geometries on its origin interface" in i for i in result["issues"]), result["issues"]
+    # a node-based mapper has no such requirement
+    params = _load(bar)
+    params["solver_settings"]["data_transfer_operators"]["map_load"]["mapper_settings"]["mapper_type"] = "nearest_neighbor"
+    _save(bar, params)
+    assert scaffold.validate_case_files(bar, deep=False)["valid"]
+
+
+def test_non_mdpa_subcase_skips_mesh_checks(bar):
+    sub = json.loads((bar / "structure_a.json").read_text())
+    sub["solver_settings"]["model_import_settings"] = {"input_type": "use_input_model_part"}
+    (bar / "structure_a.json").write_text(json.dumps(sub))
+    params = _load(bar)
+    _solver(params, "structure_a")["data"]["interface_load"]["model_part_name"] = "StructureA.Anything"
+    _save(bar, params)
+    # root still checked, absent sub-model-part cannot be (no mesh to look at)
+    assert scaffold.validate_case_files(bar, deep=False)["valid"]
+
+
+def test_logparse_ignores_subsolver_banners_in_coupled_run():
+    log = (
+        "time=1.1 | step=1:\n"
+        "::[KSM Simulation]:: : STEP:  1\n"
+        "::[KSM Simulation]:: : TIME:  1.1\n"
+        "::[KSM Simulation]:: : STEP:  1\n"
+        "GaussSeidelStrongCoupledSolver: Coupling iteration: 1 / 30\n"
+        "RESIDUAL CRITERION :: [ Obtained ratio = 1.0e-9; Expected ratio = 1e-4 ]\n"
+        "Convergence is achieved after 2 iterations\n"
+        "GaussSeidelStrongCoupledSolver: Coupling iteration: 2 / 30\n"
+        "GaussSeidelStrongCoupledSolver: XXX CONVERGENCE WAS NOT ACHIEVED XXX\n"
+    )
+    progress = logparse.progress(log)
+    assert progress["num_steps_seen"] == 1 and progress["current_step"] == 1
+    conv = logparse.convergence(log)
+    assert conv["num_steps"] == 1
+    assert conv["steps"][0]["iterations"] == 2
+    assert conv["steps"][0]["converged"] is False
+    assert conv["steps"][0]["residual_ratios"] == []

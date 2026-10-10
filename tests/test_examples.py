@@ -29,6 +29,7 @@ MULTISTAGE_DIR = EXAMPLES_DIR / "multistage_load_steps"
 POTENTIAL_FLOW_DIR = EXAMPLES_DIR / "potential_flow"
 LOAD_STEPPING_DIR = EXAMPLES_DIR / "load_stepping_cantilever"
 COUPLED_SDOF_DIR = EXAMPLES_DIR / "coupled_sdof"
+COUPLED_BAR_DIR = EXAMPLES_DIR / "coupled_bar"
 
 
 def _run(case, timeout=120.0):
@@ -462,6 +463,70 @@ def test_coupled_sdof_example_runs_and_exchanges_data(tmp_path, monkeypatch):
     assert math.isclose(two[-1, 1], 2.285e-03, rel_tol=1e-3)
     assert math.isclose(np.abs(one[:, 1]).max(), 1.779e-03, rel_tol=1e-3)
     assert math.isclose(np.abs(two[:, 1]).max(), 2.605e-03, rel_tol=1e-3)
+
+
+# ------------------------------------------ coupled bar (mesh-based CoSimulation) --
+
+def test_coupled_bar_files_and_validation():
+    pp = json.loads((COUPLED_BAR_DIR / "ProjectParameters.json").read_text())
+    settings = pp["solver_settings"]
+    assert settings["type"] == "coupled_solvers.gauss_seidel_strong"
+    assert settings["data_transfer_operators"]["map_load"]["type"] == "kratos_mapping"
+    for name in ("block_a.mdpa", "block_b.mdpa"):
+        assert mdpa.read(COUPLED_BAR_DIR / name).validate() == []
+    # non-matching interfaces: 5 nodes on A's side, 4 on B's
+    assert len(mdpa.read(COUPLED_BAR_DIR / "block_a.mdpa").sub_model_parts["interface"].nodes) == 5
+    assert len(mdpa.read(COUPLED_BAR_DIR / "block_b.mdpa").sub_model_parts["interface"].nodes) == 4
+    assert validate_case_files(COUPLED_BAR_DIR, deep=False)["valid"]
+
+
+@pytest.mark.kratos
+def test_coupled_bar_example_runs_and_indexes_both_solvers(tmp_path, monkeypatch):
+    """The documented result: the Dirichlet-Neumann coupling converges in 17
+    iterations, the mapped load conserves the 2e5 N tip force, the tip moves by
+    the analytic 1.3333e-3 m, and both sub-solvers' VTK output is indexed.
+    Needs CoSimulation, Mapping, StructuralMechanics and LinearSolvers."""
+    import shutil
+    from pathlib import Path
+
+    import meshio
+    import numpy as np
+
+    from kratos_mcp import logparse, result_series
+
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
+    case = tmp_path / "bar"
+    shutil.copytree(COUPLED_BAR_DIR, case)
+    meta, status = _run(case, timeout=300.0)
+    log = jobs.logs(meta.job_id, tail=2000)
+    assert status["state"] == "succeeded", log
+
+    conv = logparse.convergence(log)
+    assert conv["num_steps"] == 1 and conv["num_converged"] == 1
+    assert conv["steps"][0]["iterations"] == 17
+
+    run_dir = Path(meta.case_dir)
+    a = meshio.read(run_dir / "vtk_output_StructureA" / "StructureA_0_1.vtk")
+    b = meshio.read(run_dir / "vtk_output_StructureB" / "StructureB_0_1.vtk")
+    at_a = np.isclose(a.points[:, 0], 1.0)
+    at_b = np.isclose(b.points[:, 0], 1.0)
+    tip = np.isclose(b.points[:, 0], 2.0)
+    assert math.isclose(a.point_data["POINT_LOAD"][at_a, 0].sum(), 2.0e5, rel_tol=1e-4)
+    assert math.isclose(b.point_data["REACTION"][at_b, 0].sum(), -2.0e5, rel_tol=1e-4)
+    assert math.isclose(b.point_data["DISPLACEMENT"][tip, 0].mean(), 1.3336e-3, rel_tol=1e-3)
+    assert math.isclose(b.point_data["DISPLACEMENT"][tip, 0].mean(), 4.0 / 3.0 * 1e-3, rel_tol=5e-3)
+    assert math.isclose(a.point_data["DISPLACEMENT"][at_a, 0].mean(), 3.338e-4, rel_tol=2e-3)
+
+    # CoSimulation runs install the output-index instrumentation: one series per sub-solver
+    index = str(run_dir / "result-index.json")
+    with pytest.raises(ValueError, match="Multiple series"):
+        result_series.records(index)
+    series = sorted({r["series"] for r in json.loads(Path(index).read_text())["records"]})
+    assert [s.split(":")[0] for s in series] == ["StructureA", "StructureB"]
+    history = result_series.history(index, "DISPLACEMENT", "point", point=[2.0, 0.0, 0.0], series=series[1])
+    [sample] = history["samples"]
+    assert sample["time"] == 1.1 and sample["series"] == series[1]
+    assert math.isclose(sample["value"][0], 1.3333e-3, rel_tol=1e-3)
 
 
 @pytest.mark.kratos

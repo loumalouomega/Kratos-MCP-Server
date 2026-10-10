@@ -33,8 +33,9 @@ solver in `solver_settings`, e.g. from
 [`create_cosim_project`](/tools/scaffolding#create-cosim-project)), which are
 driven through `CoSimulationAnalysis(cosim_settings)` instead of an
 `AnalysisStage(model, parameters)`; their sub-solvers' parameter files are
-resolved relative to the case directory. Such jobs write no
-`result-index.json`; the runner prints an `Analysis -END-` line after the run
+resolved relative to the case directory. Serial/OpenMP coupled jobs index their
+sub-solvers' VTK output in `result-index.json` (one series per sub-solver model part;
+pass `series` to `results_time_history`); the runner prints an `Analysis -END-` line after the run
 because `CoSimulationAnalysis` has no end banner of its own.
 
 **Returns**: the job status (below). For quick cases pass

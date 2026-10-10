@@ -114,11 +114,19 @@ previous iteration's value) — the usual Gauss–Seidel semantics. The result i
 statically validated and returned under `validation`.
 
 Not supported for CoSimulation cases (clear errors instead): `mpi_ranks`,
-studies, checkpoints/resume, interactive sessions and Flowgraph export. The
-output-index instrumentation behind `result-index.json` is not installed, so
-`results_time_history` does not apply to them.
+studies, checkpoints/resume, interactive sessions and Flowgraph export. VTK output of
+Kratos-wrapped sub-solvers is indexed in `result-index.json` (one series per
+sub-solver model part), so `results_time_history` works on them with an explicit `series`.
 
-See the worked example `kratos://examples/coupled-sdof`.
+For Kratos-wrapped solvers the static validation also checks the interface wiring:
+each data `model_part_name` must start with the sub-solver's model part and the
+sub-model-part must exist in its mesh, vector variables need a `"dimension"`,
+`kratos_mapping` needs `mapper_settings.mapper_type` and nodal data, and geometry-based
+mappers (`nearest_element`, `barycentric`) need conditions/elements on their origin
+interface.
+
+See the worked examples `kratos://examples/coupled-sdof` (Python-only SDoF solvers) and
+`kratos://examples/coupled-bar` (two Kratos solvers coupled through `kratos_mapping`).
 
 ## create_project_parameters
 
