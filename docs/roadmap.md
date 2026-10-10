@@ -30,11 +30,12 @@ Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation
 
 These depend on optional applications and need small verified examples before being presented as supported templates.
 
-### CoSimulation adapter and coupled example — L
+### CoSimulation: mesh-based coupling example and output indexing — S
 
-Sequential orchestration already exists; coupled solvers exchanging data need a different integration. Upstream: [CoSimulationApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/CoSimulationApplication). In `applications/CoSimulationApplication/python_scripts/co_simulation_analysis.py`, `CoSimulationAnalysis` takes `(cosim_settings, models=None)`, unlike the runner's `(model, parameters)` call. Add an explicit adapter, coupled-case validation, and one small example with interface convergence and transferred-field checks.
+The runner adapter, coupled-case validation, `create_cosim_project` and a
+verified two-SDoF example are shipped. What remains is the mesh-based half: a small example coupling two `solver_wrappers.kratos.*` solvers through `kratos_mapping` (the static validator does not yet cross-check interface `model_part_name`s of Kratos-wrapped solvers against their meshes), and result/checkpoint indexing for the sub-solvers' VTK output, which the runner does not instrument for coupled cases.
 
-**Probe:** run a minimal two-solver coupling through MCP, verify interface data exchange, and ensure an invalid transfer configuration is diagnosed.
+**Probe:** a two-Kratos-solver coupling through MCP with non-matching interfaces, where a `model_part_name` that is absent from a sub-solver's mesh is diagnosed before launch and `results_time_history` reads the sub-solver output.
 
 ### Partitioned FSI example — M
 
@@ -68,5 +69,5 @@ Recorded so they are not re-proposed as gaps.
 ## Suggested sequencing
 
 1. Verify local MPI on a real distributed build, then add cluster launch.
-2. Introduce CoSimulation, FSI and remeshing as independently optional workflows.
+2. Introduce FSI (which builds on the shipped CoSimulation support) and remeshing as independently optional workflows.
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

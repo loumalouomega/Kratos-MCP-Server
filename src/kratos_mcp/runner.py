@@ -190,6 +190,24 @@ def main() -> int:
         orch_class(project).Run()
         return 0
 
+    # CoSimulation case: the top-level solver_settings is a coupled solver
+    # (type 'coupled_solvers.*' with a coupling_sequence and sub-solvers),
+    # driven by CoSimulationAnalysis(cosim_settings) rather than the
+    # (model, parameters) constructor used below. The sub-solvers create and
+    # own their Models, and the VTK/restart output-index instrumentation is not
+    # installed for them.
+    if parameters.Has("solver_settings") and (
+            parameters["solver_settings"].Has("coupling_sequence")
+            or (parameters["solver_settings"].Has("type")
+                and parameters["solver_settings"]["type"].GetString().startswith("coupled_solvers."))):
+        from KratosMultiphysics.CoSimulationApplication.co_simulation_analysis import CoSimulationAnalysis
+        CoSimulationAnalysis(parameters).Run()
+        # CoSimulationAnalysis overrides Initialize/Finalize without printing the
+        # AnalysisStage banners; emit the end marker jobs._log_indicates_success
+        # relies on to classify a finished job after a server restart.
+        print("CoSimulationAnalysis: Analysis -END-", flush=True)
+        return 0
+
     if ns.analysis_class:
         module_path, _, class_name = ns.analysis_class.partition(":")
         if not class_name:

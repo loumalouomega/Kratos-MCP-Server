@@ -37,8 +37,12 @@ def register(mcp) -> None:
         problem_data.parallel_type to "MPI" and the build must have MPI
         support, otherwise the call fails before any job is created. Rank 0
         logs to the job log; other ranks to job_logs(rank=N). omp_threads sets
-        OMP_NUM_THREADS/MKL_NUM_THREADS. Not supported for multi-stage cases,
-        checkpoints or studies."""
+        OMP_NUM_THREADS/MKL_NUM_THREADS. Not supported for multi-stage or
+        CoSimulation cases, checkpoints or studies.
+
+        Multi-stage (orchestrator + stages) and CoSimulation (coupled solver in
+        solver_settings, see create_cosim_project) cases are detected
+        automatically; CoSimulation needs KratosCoSimulationApplication."""
         try:
             meta = await anyio.to_thread.run_sync(lambda: jobs.start(
                 case_dir, parameters_file, analysis_type, analysis_class,

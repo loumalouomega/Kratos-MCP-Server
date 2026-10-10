@@ -50,6 +50,10 @@ abort the process. All Kratos access goes through subprocesses:
   multi-stage case (`orchestrator` + `stages` keys) and drives it via Kratos'
   `Project` + registry-resolved orchestrator class instead (the entry point
   Kratos' own `test_sequential_orchestrator` uses) — no `jobs.py` change.
+  A CoSimulation case (`solver_settings` with `coupling_sequence`/`coupled_solvers.*`,
+  detected by `cosim.is_cosim`) is driven by `CoSimulationAnalysis(parameters)` —
+  its constructor is `(cosim_settings, models=None)`, so it is NOT in
+  `ANALYSIS_CLASSES`; output-index instrumentation is skipped for it.
   Isolated runs additionally keep `manifest.json`, an immutable `snapshot/`,
   and a separate `execution/` directory; `job_rerun` verifies snapshot hashes
   and the Kratos build fingerprint before launching a fresh job.
@@ -110,6 +114,12 @@ installed) via `-displayfd`.
   `add_boundary_condition`/`add_output_process`. Output processes validated in
   C++ (e.g. `vtk_output_process`) have no Python defaults → returns None (the
   enrichment then no-ops, keeping the hand-authored block).
+- `src/kratos_mcp/cosim.py` — Kratos-free CoSimulation support: `is_cosim`
+  (the single detection point used by every rejection), static `validate` (names,
+  data, transfer operators, convergence refs, SDoF input files; Kratos-wrapped
+  sub-solvers validated through a callback `scaffold` injects), `summarize`
+  (explain) and `compose` (backs `create_cosim_project`). Studies, checkpoints,
+  MPI, sessions and Flowgraph export reject cosim cases.
 - `src/kratos_mcp/project_explain.py` — pure-JSON structured summary of a
   ProjectParameters.json (analysis type, solver, processes, per-stage for
   multistage); backs `explain_project_parameters` and feeds `flowgraph.py`.
@@ -181,6 +191,13 @@ installed) via `-displayfd`.
   `e740da832999e4da58dd9457f35143274edb4992`, with runnable parameters and
   upstream reference data; it needs CompressiblePotentialFlowApplication and
   LinearSolversApplication.
+- `src/kratos_mcp/examples/coupled_sdof/` — CoSimulation example: two Python-only
+  SDoF oscillators as a mass-spring chain, `gauss_seidel_strong` + Aitken, no
+  mesh (ProjectParameters.json + sdof_1.json + sdof_2.json, served by
+  `kratos://examples/coupled-sdof`, custom loader in `resources.py`). Verified
+  numbers in `COUPLED_SDOF_RESULT` (125 coupling iterations, exact one-step-lag
+  interface exchange); needs only KratosCoSimulationApplication. Same "re-verify
+  with a real run" rule.
 - `notebooks/{cantilever,naca_airfoil,fluid_cavity,materials,multistage,
   interactive_session,interactive_fluid}.ipynb`
   — MCP
@@ -226,6 +243,14 @@ installed) via `-displayfd`.
   "use_input_model_part"` (reuse) after the first stage's `mdpa` import — this
   is exactly what `create_multistage_project` does when a later stage's
   `model_part_name` matches an earlier one's.
+- CoSimulation: SDoF wrapper data must be `"location": "model_part"`;
+  `SCALAR_DISPLACEMENT` reports the last accepted displacement, so the partner's
+  root-point displacement lags one step (documented in the example, don't
+  "fix" it). Constant-relaxation accelerator takes `alpha`, Aitken `init_alpha`.
+  A solver in `solvers` that's missing from `coupling_sequence` aborts Kratos.
+  Coupling-iteration log lines are `Coupling iteration: k / N`,
+  `### CONVERGENCE WAS ACHIEVED ###` / `XXX CONVERGENCE WAS NOT ACHIEVED XXX`,
+  steps are `time=T | step=N:` (parsed in `logparse`).
 - `Kernel.Get*VariableNames()` return one newline-separated string, not lists.
 - `KM.Parameters` tolerates `//` comments; plain `json.loads` on Kratos test
   files may fail.
@@ -368,4 +393,4 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   the tool and the worker. Other knobs: `KRATOS_MCP_MAX_SESSIONS` (4),
   `KRATOS_MCP_SESSION_IDLE_TIMEOUT` (3600 s).
 - Tool/resource/prompt counts are quoted in `README.md` and `docs/tools/index.md`
-  (currently 64 / 16 / 6) — bump both when adding any.
+  (currently 65 / 17 / 6) — bump both when adding any.

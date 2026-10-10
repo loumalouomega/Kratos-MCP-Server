@@ -15,7 +15,7 @@ from typing import Any
 
 import anyio
 
-from .. import bridge, mdpa as mdpa_mod, process_catalog
+from .. import bridge, cosim, mdpa as mdpa_mod, process_catalog
 from .environment import KNOWN_SOLVERS
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -352,6 +352,19 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
         params = json.loads(pfile.read_text())
     except json.JSONDecodeError as exc:
         return {"valid": False, "issues": [f"Invalid JSON in {pfile.name}: {exc}"], "warnings": [], "deep_validated": False}
+
+    if cosim.is_cosim(params):
+        sub_deep: list[bool] = []
+
+        def validate_kratos_solver(_name: str, path: Path, _solver: dict[str, Any]) -> dict[str, Any]:
+            sub = validate_case_files(case, path.name, deep)
+            sub_deep.append(sub["deep_validated"])
+            return sub
+
+        result = cosim.validate(case, params, validate_kratos_solver)
+        # Only Kratos-wrapped sub-solvers have a Kratos-side check to run.
+        result["deep_validated"] = bool(sub_deep) and all(sub_deep)
+        return result
 
     if "orchestrator" in params and "stages" in params:
         result = _validate_multistage(case, params)
@@ -691,6 +704,109 @@ def register(mcp) -> None:
             "execution_list": execution_list,
             "next_steps": next_steps,
         }
+
+    @mcp.tool()
+    def create_cosim_project(
+        directory: str,
+        solvers: list[dict[str, Any]],
+        couplings: list[dict[str, Any]],
+        order: list[str] | None = None,
+        coupled_solver: str = "gauss_seidel_weak",
+        start_time: float = 0.0,
+        end_time: float = 1.0,
+        num_coupling_iterations: int = 10,
+        convergence_criteria: list[dict[str, Any]] | None = None,
+        convergence_accelerators: list[dict[str, Any]] | None = None,
+        data_transfer_operators: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Scaffold a CoSimulation (coupled-solver) case: several solvers
+        exchanging interface data inside every time step, run with
+        run_simulation like any case (the runner drives it through
+        CoSimulationAnalysis). Needs KratosCoSimulationApplication.
+
+        'solvers' is a list of {"name", "type", "data", "parameters"?,
+        "input_file"?}. 'type' is a CoSimulation wrapper module
+        ('solver_wrappers.kratos.structural_mechanics_wrapper', ...) or the
+        shorthands 'sdof' / 'sdof_static' (Python-only single-degree-of-freedom
+        solvers: no mesh, ideal for learning/testing couplings). 'data' maps an
+        interface-data name to {"model_part_name", "variable_name", "location"?}
+        ('sdof' data gets "location": "model_part" automatically). Give
+        'parameters' to have the solver's own parameter file written to
+        <name>.json, or 'input_file' to reference one already in the directory.
+
+        'couplings' is a list of {"from_solver", "from_data", "to_solver",
+        "to_data", "operator"='copy', "options"=[]} (options e.g. 'swap_sign').
+        'order' is the coupling sequence (default: solver order); a coupling
+        whose producer comes first is exchanged right after the producer
+        solves, otherwise right before the consumer solves (previous
+        iteration's value). 'coupled_solver' is 'gauss_seidel_weak' (one pass
+        per step) or a strong variant ('gauss_seidel_strong', 'jacobi_strong')
+        that iterates until every entry of 'convergence_criteria' (e.g.
+        {"type": "relative_norm_initial_residual", "solver": s, "data_name": d,
+        "abs_tolerance": 1e-10, "rel_tolerance": 1e-8}) holds, optionally
+        accelerated by 'convergence_accelerators' (e.g. {"type": "aitken",
+        "solver": s, "data_name": d}). The result is statically validated."""
+        if not solvers:
+            return {"error": "Provide at least one solver."}
+        if not couplings:
+            return {"error": "Provide at least one coupling."}
+
+        case = Path(directory).expanduser().resolve()
+        shorthand = {"sdof": cosim.SDOF_WRAPPER, "sdof_static": cosim.SDOF_STATIC_WRAPPER}
+        resolved: dict[str, dict[str, Any]] = {}
+        files: dict[str, Any] = {}
+        for i, spec in enumerate(solvers):
+            sname = spec.get("name")
+            if not sname or not isinstance(sname, str) or "." in sname:
+                return {"error": f"solvers[{i}] needs a 'name' without dots."}
+            if sname in resolved:
+                return {"error": f"Duplicate solver name '{sname}'."}
+            stype = spec.get("type")
+            if not stype:
+                return {"error": f"solvers[{i}] ('{sname}') needs a 'type'."}
+            stype = shorthand.get(stype, stype)
+            data = {k: dict(v) for k, v in (spec.get("data") or {}).items()}
+            if stype in shorthand.values():
+                for body in data.values():
+                    body.setdefault("model_part_name", "Sdof_Static" if stype == cosim.SDOF_STATIC_WRAPPER else "Sdof")
+                    body.setdefault("location", "model_part")
+            input_file = spec.get("input_file")
+            if spec.get("parameters") is not None:
+                input_file = input_file or sname
+                files[input_file if input_file.endswith(".json") else f"{input_file}.json"] = spec["parameters"]
+            if not input_file:
+                return {"error": f"solvers[{i}] ('{sname}') needs 'parameters' or 'input_file'."}
+            resolved[sname] = {"type": stype, "input_file": input_file, "data": data}
+
+        try:
+            project = cosim.compose(
+                resolved, couplings, order=order, coupled_solver=coupled_solver,
+                start_time=start_time, end_time=end_time,
+                num_coupling_iterations=num_coupling_iterations,
+                convergence_criteria=convergence_criteria,
+                convergence_accelerators=convergence_accelerators,
+                data_transfer_operators=data_transfer_operators)
+        except (KeyError, ValueError) as exc:
+            return {"error": f"Invalid coupling specification: {exc}"}
+
+        case.mkdir(parents=True, exist_ok=True)
+        created: list[str] = []
+        for filename, body in files.items():
+            (case / filename).write_text(json.dumps(body, indent=4))
+            created.append(str(case / filename))
+        pp_path = case / "ProjectParameters.json"
+        pp_path.write_text(json.dumps(project, indent=4))
+        created.insert(0, str(pp_path))
+
+        check = validate_case_files(case, deep=False)
+        next_steps = []
+        if not check["valid"]:
+            next_steps.append("Fix the reported issues, then re-run validate_case")
+        next_steps += [f"Validate with validate_case('{case}')", f"Run with run_simulation('{case}')"]
+        return {"case_dir": str(case), "created": created,
+                "required_applications": ["CoSimulationApplication"],
+                "coupling_order": [e["name"] for e in project["solver_settings"]["coupling_sequence"]],
+                "validation": check, "next_steps": next_steps}
 
     @mcp.tool()
     def add_boundary_condition(

@@ -7,6 +7,24 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ### Added
 
+- **CoSimulation (coupled-solver) cases**: `run_simulation` now detects a
+  coupled solver (`solver_settings.type` `coupled_solvers.*` with a
+  `coupling_sequence` and `solvers`) and drives it through
+  `CoSimulationAnalysis(cosim_settings)`, whose constructor differs from the
+  `(model, parameters)` AnalysisStage entry point. New `create_cosim_project`
+  tool (Python-only `sdof`/`sdof_static` shorthands or any CoSimulation
+  wrapper; weak and strong Gauss-Seidel/Jacobi coupling with convergence
+  criteria and accelerators). `validate_case` / `validate_project_parameters`
+  statically diagnose unknown solvers, data names, transfer operators and
+  sub-solver input files before launch; Kratos-wrapped sub-solvers get the
+  regular single-stage validation. `explain_project_parameters` returns
+  `kind: "cosimulation"`; `results_convergence`/`job_status` understand the
+  `time=... | step=N` banner and coupling-iteration lines. New pure-Python
+  module `cosim.py`.
+- `kratos://examples/coupled-sdof`: two SDoF oscillators coupled as a
+  mass-spring chain (strong Gauss-Seidel + Aitken), verified interface data
+  exchange; tutorial `docs/tutorials/cosimulation.md`.
+- Tests: `tests/test_cosim.py` (Kratos-free) and kratos-marked example tests.
 - **Interactive sessions**: a second execution model next to batch jobs. A
   long-lived `session_worker` process keeps a live Kratos `Model` and
   initialized `AnalysisStage` in memory; `sessions.py` drives it over JSON lines.
@@ -27,6 +45,12 @@ from repository tags and diffs; dates are the tagged commits' dates.
 - Docs: [interactive sessions tool reference](docs/tools/sessions.md), tutorial,
   architecture section, troubleshooting entries; notebooks
   `interactive_session.ipynb` and `interactive_fluid.ipynb`.
+
+### Changed
+
+- MPI launch, studies, checkpoints/resume, interactive sessions and Flowgraph
+  export reject CoSimulation cases with an explicit message instead of failing
+  with "Cannot infer analysis type".
 
 ## 0.7.0 — 2026-10-01
 

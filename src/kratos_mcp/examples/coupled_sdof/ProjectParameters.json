@@ -1,0 +1,103 @@
+{
+    "problem_data": {
+        "problem_name": "cosimulation",
+        "start_time": 0.0,
+        "end_time": 0.5,
+        "echo_level": 1,
+        "print_colors": false,
+        "parallel_type": "OpenMP"
+    },
+    "solver_settings": {
+        "type": "coupled_solvers.gauss_seidel_strong",
+        "echo_level": 1,
+        "num_coupling_iterations": 30,
+        "convergence_accelerators": [
+            {
+                "type": "aitken",
+                "solver": "sdof_1",
+                "data_name": "force"
+            }
+        ],
+        "convergence_criteria": [
+            {
+                "type": "relative_norm_initial_residual",
+                "solver": "sdof_1",
+                "data_name": "force",
+                "abs_tolerance": 1e-10,
+                "rel_tolerance": 1e-08,
+                "label": "force"
+            }
+        ],
+        "data_transfer_operators": {
+            "copy": {
+                "type": "copy"
+            }
+        },
+        "coupling_sequence": [
+            {
+                "name": "sdof_1",
+                "input_data_list": [
+                    {
+                        "data": "force",
+                        "from_solver": "sdof_2",
+                        "from_solver_data": "reaction",
+                        "data_transfer_operator": "copy",
+                        "data_transfer_operator_options": []
+                    }
+                ],
+                "output_data_list": [
+                    {
+                        "data": "disp",
+                        "to_solver": "sdof_2",
+                        "to_solver_data": "root_disp",
+                        "data_transfer_operator": "copy",
+                        "data_transfer_operator_options": []
+                    }
+                ]
+            },
+            {
+                "name": "sdof_2",
+                "input_data_list": [],
+                "output_data_list": []
+            }
+        ],
+        "solvers": {
+            "sdof_1": {
+                "type": "solver_wrappers.sdof.sdof_solver_wrapper",
+                "solver_wrapper_settings": {
+                    "input_file": "sdof_1"
+                },
+                "data": {
+                    "disp": {
+                        "variable_name": "SCALAR_DISPLACEMENT",
+                        "model_part_name": "Sdof",
+                        "location": "model_part"
+                    },
+                    "force": {
+                        "variable_name": "SCALAR_FORCE",
+                        "model_part_name": "Sdof",
+                        "location": "model_part"
+                    }
+                }
+            },
+            "sdof_2": {
+                "type": "solver_wrappers.sdof.sdof_solver_wrapper",
+                "solver_wrapper_settings": {
+                    "input_file": "sdof_2"
+                },
+                "data": {
+                    "root_disp": {
+                        "variable_name": "SCALAR_ROOT_POINT_DISPLACEMENT",
+                        "model_part_name": "Sdof",
+                        "location": "model_part"
+                    },
+                    "reaction": {
+                        "variable_name": "SCALAR_REACTION",
+                        "model_part_name": "Sdof",
+                        "location": "model_part"
+                    }
+                }
+            }
+        }
+    }
+}
