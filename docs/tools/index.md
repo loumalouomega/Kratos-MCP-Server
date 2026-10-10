@@ -1,12 +1,12 @@
 # Tool reference
 
-The server exposes **65 tools**, **18 resources** (13 worked examples) and
+The server exposes **66 tools**, **19 resources** (14 worked examples) and
 **6 prompts**, grouped by workflow stage:
 
 | Category | Tools |
 | --- | --- |
 | [Environment & introspection](/tools/environment) | `kratos_check_installation`, `kratos_install`, `kratos_list_applications`, `kratos_list_elements`, `kratos_list_conditions`, `kratos_list_constitutive_laws`, `kratos_list_variables`, `kratos_list_solvers`, `kratos_list_processes`, `kratos_get_solver_defaults`, `kratos_get_process_defaults` |
-| [Project scaffolding](/tools/scaffolding) | `list_templates`, `create_project`, `create_multistage_project`, `create_cosim_project`, `create_project_parameters`, `create_materials`, `list_material_presets`, `list_linear_solver_presets`, `add_boundary_condition`, `add_output_process`, `validate_project_parameters` |
+| [Project scaffolding](/tools/scaffolding) | `list_templates`, `create_project`, `create_multistage_project`, `create_cosim_project`, `create_fsi_project`, `create_project_parameters`, `create_materials`, `list_material_presets`, `list_linear_solver_presets`, `add_boundary_condition`, `add_output_process`, `validate_project_parameters` |
 | [Meshes](/tools/mesh) | `mdpa_create_structured_mesh`, `mdpa_inspect`, `mdpa_validate`, `mdpa_get_nodes` |
 | [Simulation & jobs](/tools/simulation) | `run_simulation`, `validate_case`, `job_status`, `job_list`, `job_logs`, `job_cancel`, `job_rerun`, `configure_checkpoints`, `job_checkpoints`, `job_resume` |
 | [Interactive sessions](/tools/sessions) | `session_start`, `session_advance`, `session_get_parameters`, `session_model_info`, `session_field_summary`, `session_inspect_node`, `session_inspect_element`, `session_set_nodal_values`, `session_exec_python` (opt-in), `session_status`, `session_list`, `session_close` |

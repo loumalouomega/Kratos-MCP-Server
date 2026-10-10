@@ -22,8 +22,11 @@ and the model parts it targets). Multi-stage (`orchestrator`/`stages`) cases
 return `kind: "multi_stage"` with the `orchestrator`, `execution_list` and a
 per-stage summary. CoSimulation cases return `kind: "cosimulation"` with the
 coupled solver, coupling order, per-solver wrapper/input file/data names and
-the list of interface transfers. They cannot be exported to Flowgraph (no
-coupled-solver nodes, so the conversion would not be lossless).
+the list of interface transfers. Partitioned FSI cases return `kind: "fsi"` with
+the fluid, structure and mesh-motion solvers, the coupling settings (accelerator,
+tolerances, interface pair) and the required applications. Neither can be
+exported to Flowgraph (no coupled-solver nodes, so the conversion would not be
+lossless).
 
 ```json
 // explain_project_parameters("/tmp/case/ProjectParameters.json") → (excerpt)

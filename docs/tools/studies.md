@@ -3,7 +3,7 @@
 Studies prepare isolated serial single-stage jobs, execute a bounded queue, and
 collect named physical-location probe responses. A detached coordinator continues
 after the MCP client or server exits. POSIX process groups and file locks are
-required; MPI, restart-input, multi-stage and CoSimulation studies are not supported.
+required; MPI, restart-input, multi-stage, CoSimulation and FSI studies are not supported.
 
 ## `study_start`
 

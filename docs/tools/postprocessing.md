@@ -59,7 +59,10 @@ nearest node was.
 Extract nonlinear convergence data from a simulation log. For CoSimulation
 logs the per-step `iterations` are coupling iterations and `converged` follows
 the coupled solver's own CONVERGENCE (NOT) ACHIEVED line (weak coupling prints
-none, so it stays `null`).
+none, so it stays `null`). For FSI logs `iterations` are the
+partitioned solver's non-linear iterations, `residual_ratios` its
+`|res|/sqrt(nDOFS)` history (NaNs dropped) and `converged` follows `FSI non-linear
+iteration convergence achieved` / `maximum iterations N reached`.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
