@@ -216,6 +216,22 @@ def _submodelpart_paths(m: mdpa_mod.Mdpa) -> set[str]:
     return paths
 
 
+def _case_model_parts(params_path: Path) -> tuple[str, set[str]] | None:
+    """(root model part name, SubModelPart paths) of the mesh a single-stage
+    parameters file imports, or None when it cannot be read (the regular
+    validation reports that)."""
+    try:
+        solver = json.loads(params_path.read_text()).get("solver_settings", {})
+        import_settings = solver.get("model_import_settings", {})
+        name = import_settings.get("input_filename")
+        if import_settings.get("input_type", "mdpa") != "mdpa" or not name:
+            return None
+        mesh = mdpa_mod.read(params_path.parent / (name if name.endswith(".mdpa") else f"{name}.mdpa"))
+    except (ValueError, OSError, AttributeError):
+        return None
+    return solver.get("model_part_name", ""), _submodelpart_paths(mesh)
+
+
 def _collect_model_part_refs(node: Any) -> set[str]:
     refs: set[str] = set()
     if isinstance(node, dict):
@@ -361,7 +377,7 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
             sub_deep.append(sub["deep_validated"])
             return sub
 
-        result = cosim.validate(case, params, validate_kratos_solver)
+        result = cosim.validate(case, params, validate_kratos_solver, _case_model_parts)
         # Only Kratos-wrapped sub-solvers have a Kratos-side check to run.
         result["deep_validated"] = bool(sub_deep) and all(sub_deep)
         return result

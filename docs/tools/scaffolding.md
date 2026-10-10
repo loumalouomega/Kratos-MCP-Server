@@ -111,14 +111,20 @@ A coupling whose producer comes **first** in `order` is written as an
 *output* of the producer (exchanged right after it solves); otherwise as an
 *input* of the consumer (exchanged right before it solves, carrying the
 previous iteration's value) — the usual Gauss–Seidel semantics. The result is
-statically validated and returned under `validation`.
+statically validated and returned under `validation`. For Kratos-wrapped
+solvers the validation reads each sub-solver's mesh and checks that every
+`data.*.model_part_name` is the solver's root model part or one of its
+SubModelParts, and warns when the two ends of a `kratos_mapping` transfer have
+different `dimension`s.
 
 Not supported for CoSimulation cases (clear errors instead): `mpi_ranks`,
-studies, checkpoints/resume, interactive sessions and Flowgraph export. The
-output-index instrumentation behind `result-index.json` is not installed, so
-`results_time_history` does not apply to them.
+studies, checkpoints/resume, interactive sessions and Flowgraph export. VTK
+output of Kratos-wrapped sub-solvers is recorded in `result-index.json` (one
+series per sub-solver model part), so `results_time_history` works on it —
+select a `series`.
 
-See the worked example `kratos://examples/coupled-sdof`.
+See the worked examples `kratos://examples/coupled-sdof` (Python-only) and
+`kratos://examples/coupled-blocks` (two meshes, non-matching interfaces).
 
 ## create_project_parameters
 

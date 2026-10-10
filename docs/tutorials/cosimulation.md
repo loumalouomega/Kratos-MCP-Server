@@ -130,18 +130,54 @@ must equal `sdof_1`'s displacement column — and it does, exactly, with a
 The lag is how the SDoF wrapper reports `SCALAR_DISPLACEMENT` (the last accepted
 displacement, not the one being solved), not a bug in the exchange. It means
 this example demonstrates the data flow, not monolithic accuracy: do not
-compare it against a single two-DoF solve. With real Kratos solvers (a
-structure wrapped as `solver_wrappers.kratos.structural_mechanics_wrapper`, a
-mapper such as `kratos_mapping` between non-matching interfaces) the same
-scaffold applies, with the interface `model_part_name`s pointing at
-sub-model-parts of each solver's own mesh.
+compare it against a single two-DoF solve.
+
+## 5. Real solvers on two meshes
+
+With Kratos solvers the same scaffold applies: each solver is a
+`solver_wrappers.kratos.*` wrapper with its own `ProjectParameters`-style file
+and mesh, and the interface `model_part_name`s point at sub-model-parts of each
+solver's own mesh. `kratos://examples/coupled-blocks` is the worked case: two
+1 m x 1 m elastic blocks split at x = 1, `block_a` clamped and receiving
+`POINT_LOAD`, `block_b` loaded in tension and receiving an imposed
+`DISPLACEMENT` (Dirichlet–Neumann). The interfaces do not match — 5 nodes
+against 7 — so `data_transfer_operators` uses `kratos_mapping`
+(`nearest_element`): the displacement is mapped with the mapper itself, the
+reaction back with `["swap_sign", "use_transpose"]`, which makes the force
+transfer conservative.
+
+```json
+validate_case({ "case_dir": "/tmp/blocks" })
+→ { "valid": false, "issues": [
+    "solver 'block_a': data 'load' model_part_name 'BlockA.interface' is not in the
+     solver's mesh (root 'BlockA', SubModelParts: ['bottom', 'domain', 'left', 'right', 'top'])" ] }
+```
+
+The static validator reads both meshes, so a misspelt interface is reported
+before launch instead of aborting `Initialize`. After the run:
+
+    13 coupling iterations per step, 2 steps, all converged
+    force through the interface at t = 1: 999998.2 N (applied: 1e6 N)
+    response at t = 1 is 2.000 x the response at t = 0.5
+
+`results_time_history(source="<case>/result-index.json",
+variable="DISPLACEMENT", series="BlockB:vtk_output_block_b:BlockB_0",
+point=[2, 0, 0])` reads the sub-solver output — each Kratos-wrapped solver is
+its own series, and a call without `series` lists them.
+
+Pitfalls the example encodes (and its resource text spells out): the receiving
+block's interface needs `PointLoadCondition2D1N` conditions; vector data needs
+`"dimension"`; put the convergence criterion and accelerator on the data the
+*Neumann* side produces, because the Dirichlet side's first residual is 0/0 and
+is reported as converged.
 
 ## Limits
 
 CoSimulation cases run as ordinary background jobs, but not with
 `mpi_ranks`, studies, checkpoints/resume or interactive sessions — each is
-rejected with a clear message. They write no `result-index.json`, so
-`results_time_history` does not apply; read the sub-solvers' own output.
-Flowgraph export is refused rather than made lossy. Interface `model_part_name`
-values of Kratos-wrapped solvers are checked by Kratos at initialisation, not by
-the static validator.
+rejected with a clear message. Only Kratos-wrapped sub-solvers write VTK output
+that is indexed (the SDoF wrappers write `.dat` files, read those directly).
+Flowgraph export is refused rather than made lossy. The static validator checks
+interface model parts against the meshes of Kratos-wrapped solvers; it does not
+check that the variables exist in the solver's applications (Kratos does, at
+initialisation).

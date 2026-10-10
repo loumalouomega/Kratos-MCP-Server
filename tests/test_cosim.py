@@ -161,6 +161,63 @@ def test_kratos_wrapper_subcase_validated_through_callback(case):
     assert "solver 'sdof_1': mesh Foo.mdpa not found" in result["issues"]
 
 
+# --- mesh-based (Kratos-wrapped) coupling --------------------------------------
+
+BLOCKS = EXAMPLES_DIR / "coupled_blocks"
+
+
+@pytest.fixture
+def blocks(tmp_path):
+    dest = tmp_path / "blocks"
+    shutil.copytree(BLOCKS, dest)
+    return dest
+
+
+def test_blocks_example_is_valid():
+    result = scaffold.validate_case_files(BLOCKS, deep=False)
+    assert result["valid"], result
+    assert result["warnings"] == []
+
+
+def test_interface_model_part_absent_from_mesh_is_diagnosed(blocks):
+    params = _load(blocks)
+    params["solver_settings"]["solvers"]["block_a"]["data"]["load"]["model_part_name"] = "BlockA.interface"
+    _save(blocks, params)
+    result = scaffold.validate_case_files(blocks, deep=False)
+    assert not result["valid"]
+    assert any("solver 'block_a'" in i and "'BlockA.interface'" in i and "'right'" in i
+               for i in result["issues"]), result["issues"]
+
+
+def test_interface_root_model_part_name_is_accepted(blocks):
+    params = _load(blocks)
+    params["solver_settings"]["solvers"]["block_b"]["data"]["reaction"]["model_part_name"] = "BlockB"
+    _save(blocks, params)
+    assert scaffold.validate_case_files(blocks, deep=False)["valid"]
+
+
+def test_interface_check_skipped_when_mesh_unreadable(blocks):
+    (blocks / "block_a.mdpa").unlink()
+    result = scaffold.validate_case_files(blocks, deep=False)
+    # The missing mesh is reported once by the regular check, not once per data entry.
+    assert sum("block_a.mdpa" in i for i in result["issues"]) == 1
+    assert not any("is not in the solver's mesh" in i for i in result["issues"])
+
+
+def test_mapped_dimension_mismatch_warns(blocks):
+    params = _load(blocks)
+    params["solver_settings"]["solvers"]["block_a"]["data"]["disp"]["dimension"] = 3
+    _save(blocks, params)
+    result = scaffold.validate_case_files(blocks, deep=False)
+    assert any("dimensions differ" in w for w in result["warnings"]), result["warnings"]
+
+
+def test_callback_optional_keeps_old_behaviour(blocks):
+    params = _load(blocks)
+    params["solver_settings"]["solvers"]["block_a"]["data"]["load"]["model_part_name"] = "BlockA.nope"
+    assert cosim.validate(blocks, params)["valid"]  # no mesh callback -> no model-part check
+
+
 # --- scaffolding -------------------------------------------------------------
 
 def _solver_specs():
@@ -304,3 +361,34 @@ def test_logparse_cosim_progress_and_convergence():
     assert [s["iterations"] for s in conv["steps"]] == [1, 2]
     assert conv["steps"][0]["time"] == 0.01
     assert conv["max_iterations_in_a_step"] == 2
+
+
+KRATOS_SUBSOLVER_LOG = """\
+time=0.5 | step=1:
+::[KSM Simulation]:: : STEP:  1
+::[KSM Simulation]:: : TIME:  0.5
+::[KSM Simulation]:: : STEP:  1
+::[KSM Simulation]:: : TIME:  0.5
+GaussSeidelStrongCoupledSolver: Coupling iteration: 1 / 30
+GaussSeidelStrongCoupledSolver: Coupling iteration: 2 / 30
+GaussSeidelStrongCoupledSolver: ### CONVERGENCE WAS ACHIEVED ###
+
+time=1 | step=2:
+::[KSM Simulation]:: : STEP:  2
+::[KSM Simulation]:: : TIME:  1.0
+::[KSM Simulation]:: : STEP:  2
+::[KSM Simulation]:: : TIME:  1.0
+GaussSeidelStrongCoupledSolver: Coupling iteration: 1 / 30
+GaussSeidelStrongCoupledSolver: ### CONVERGENCE WAS ACHIEVED ###
+"""
+
+
+def test_logparse_ignores_wrapped_subsolver_step_banners():
+    """Kratos-wrapped sub-solvers print their own STEP:/TIME: lines; they are
+    not coupling steps."""
+    conv = logparse.convergence(KRATOS_SUBSOLVER_LOG)
+    assert conv["num_steps"] == 2 and conv["num_converged"] == 2
+    assert [(s["step"], s["time"], s["iterations"]) for s in conv["steps"]] == [(1, 0.5, 2), (2, 1.0, 1)]
+    progress = logparse.progress(KRATOS_SUBSOLVER_LOG)
+    assert progress["current_step"] == 2 and progress["current_time"] == 1.0
+    assert progress["num_steps_seen"] == 2

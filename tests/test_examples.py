@@ -29,6 +29,7 @@ MULTISTAGE_DIR = EXAMPLES_DIR / "multistage_load_steps"
 POTENTIAL_FLOW_DIR = EXAMPLES_DIR / "potential_flow"
 LOAD_STEPPING_DIR = EXAMPLES_DIR / "load_stepping_cantilever"
 COUPLED_SDOF_DIR = EXAMPLES_DIR / "coupled_sdof"
+COUPLED_BLOCKS_DIR = EXAMPLES_DIR / "coupled_blocks"
 
 
 def _run(case, timeout=120.0):
@@ -462,6 +463,81 @@ def test_coupled_sdof_example_runs_and_exchanges_data(tmp_path, monkeypatch):
     assert math.isclose(two[-1, 1], 2.285e-03, rel_tol=1e-3)
     assert math.isclose(np.abs(one[:, 1]).max(), 1.779e-03, rel_tol=1e-3)
     assert math.isclose(np.abs(two[:, 1]).max(), 2.605e-03, rel_tol=1e-3)
+
+
+# --------------------------------- coupled blocks (CoSimulation, mesh-based) --
+
+def test_coupled_blocks_files_and_validation():
+    pp = json.loads((COUPLED_BLOCKS_DIR / "ProjectParameters.json").read_text())
+    solvers = pp["solver_settings"]["solvers"]
+    assert set(solvers) == {"block_a", "block_b"}
+    assert all(s["type"] == "solver_wrappers.kratos.structural_mechanics_wrapper" for s in solvers.values())
+    mesh_a, mesh_b = (mdpa.read(COUPLED_BLOCKS_DIR / f"block_{n}.mdpa") for n in "ab")
+    assert mesh_a.validate() == [] and mesh_b.validate() == []
+    # The point of the example: the two interfaces do not share nodes.
+    assert len(mesh_a.sub_model_parts["right"].nodes) == 5
+    assert len(mesh_b.sub_model_parts["left"].nodes) == 7
+    assert validate_case_files(COUPLED_BLOCKS_DIR, deep=False)["valid"]
+
+
+def _read_vtk_interface(path, x):
+    import meshio
+    import numpy as np
+
+    m = meshio.read(path)
+    on_interface = np.isclose(m.points[:, 0], x)
+    return m.points[on_interface], {k: v[on_interface] for k, v in m.point_data.items()}
+
+
+@pytest.mark.kratos
+def test_coupled_blocks_example_runs_and_conserves_the_interface_force(tmp_path, monkeypatch):
+    """Dirichlet-Neumann coupling of two elastic blocks through non-matching
+    interfaces: both steps converge, the force transmitted through the interface
+    is conserved by the transpose mapping (= the applied traction x height), the
+    response is linear in the load ramp, and the interface displacements of the
+    two blocks agree. Sub-solver VTK output is indexed for results_time_history.
+    Needs CoSimulationApplication, MappingApplication, StructuralMechanicsApplication
+    and LinearSolversApplication."""
+    import shutil
+
+    import numpy as np
+
+    from kratos_mcp import logparse, result_series
+
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
+    case = tmp_path / "cb"
+    shutil.copytree(COUPLED_BLOCKS_DIR, case)
+    meta, status = _run(case)
+    log = jobs.logs(meta.job_id, tail=4000)
+    assert status["state"] == "succeeded", log
+
+    conv = logparse.convergence(log)
+    assert conv["num_steps"] == 2 and conv["num_converged"] == 2
+
+    # Force conservation across the non-matching interface (1e6*t N/m x 1 m).
+    for step, load in ((1, 5.0e5), (2, 1.0e6)):
+        _, a = _read_vtk_interface(case / "vtk_output_block_a" / f"BlockA_0_{step}.vtk", 1.0)
+        _, b = _read_vtk_interface(case / "vtk_output_block_b" / f"BlockB_0_{step}.vtk", 1.0)
+        assert math.isclose(a["POINT_LOAD"][:, 0].sum(), load, rel_tol=1e-4)
+        assert math.isclose(b["REACTION"][:, 0].sum(), -load, rel_tol=1e-4)
+        # Interface ends coincide in both blocks; interior nodes agree to mapping accuracy.
+        assert math.isclose(a["DISPLACEMENT"][:, 0].max(), b["DISPLACEMENT"][:, 0].max(), rel_tol=1e-3)
+    ux1 = _read_vtk_interface(case / "vtk_output_block_a" / "BlockA_0_1.vtk", 1.0)[1]["DISPLACEMENT"][:, 0]
+    ux2 = _read_vtk_interface(case / "vtk_output_block_a" / "BlockA_0_2.vtk", 1.0)[1]["DISPLACEMENT"][:, 0]
+    assert np.allclose(ux2, 2.0 * ux1, rtol=1e-3)  # linear elasticity, load ramp 0.5 -> 1.0
+    assert math.isclose(ux2.max(), 4.291e-06, rel_tol=1e-2)
+
+    # Output indexing: one series per sub-solver, physical times recorded.
+    index = case / "result-index.json"
+    series = {r["series"] for r in json.loads(index.read_text())["records"]}
+    assert series == {"BlockA:vtk_output_block_a:BlockA_0", "BlockB:vtk_output_block_b:BlockB_0"}
+    with pytest.raises(ValueError, match="Multiple series"):
+        result_series.history(str(index), "DISPLACEMENT")
+    hist = result_series.history(str(index), "DISPLACEMENT", series="BlockB:vtk_output_block_b:BlockB_0",
+                                 point=[2.0, 0.0, 0.0])
+    assert [s["time"] for s in hist["samples"]] == [0.5, 1.0]
+    tip = [s["value"][0] for s in hist["samples"]]  # block B's far end, x-displacement
+    assert tip[1] > tip[0] > 0 and math.isclose(tip[1], 2 * tip[0], rel_tol=1e-3)
 
 
 @pytest.mark.kratos

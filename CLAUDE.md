@@ -53,7 +53,9 @@ abort the process. All Kratos access goes through subprocesses:
   A CoSimulation case (`solver_settings` with `coupling_sequence`/`coupled_solvers.*`,
   detected by `cosim.is_cosim`) is driven by `CoSimulationAnalysis(parameters)` —
   its constructor is `(cosim_settings, models=None)`, so it is NOT in
-  `ANALYSIS_CLASSES`; output-index instrumentation is skipped for it.
+  `ANALYSIS_CLASSES`. The VTK/restart output-index instrumentation IS installed for it
+  (class-level patch, so Kratos-wrapped sub-solvers' VTK output lands in
+  `result-index.json`, one series per sub-solver model part).
   Isolated runs additionally keep `manifest.json`, an immutable `snapshot/`,
   and a separate `execution/` directory; `job_rerun` verifies snapshot hashes
   and the Kratos build fingerprint before launching a fresh job.
@@ -198,6 +200,22 @@ installed) via `-displayfd`.
   numbers in `COUPLED_SDOF_RESULT` (125 coupling iterations, exact one-step-lag
   interface exchange); needs only KratosCoSimulationApplication. Same "re-verify
   with a real run" rule.
+- `src/kratos_mcp/examples/coupled_blocks/` — mesh-based CoSimulation example: two
+  Kratos structural blocks (`solver_wrappers.kratos.structural_mechanics_wrapper`,
+  meshes from `mdpa.create_rectangle_mesh`, interfaces of 5 vs 7 nodes) coupled
+  Dirichlet-Neumann via `kratos_mapping` (`nearest_element`; reaction back with
+  `swap_sign`+`use_transpose`), strong Gauss-Seidel + Aitken. Served by
+  `kratos://examples/coupled-blocks`; verified numbers in `COUPLED_BLOCKS_RESULT`
+  (13 iterations/step, 999998.2 N through the interface). Gotchas encoded in it:
+  the load-receiving interface needs `PointLoadCondition2D1N` (plus line
+  conditions for the mapper), vector data needs `"dimension"`, and the
+  convergence criterion must watch the Neumann side's produced data (the imposed
+  side's first residual is 0/0 = false convergence). Needs CoSimulation, Mapping,
+  StructuralMechanics and LinearSolvers applications. Same "re-verify" rule.
+  `cosim.validate` cross-checks every Kratos-wrapped `data.*.model_part_name`
+  against that solver's mesh (callback injected by `scaffold`), and
+  `logparse` treats the `time=… | step=N` banner as authoritative in a coupled
+  log (sub-solvers print their own `STEP:`/`TIME:`).
 - `notebooks/{cantilever,naca_airfoil,fluid_cavity,materials,multistage,
   interactive_session,interactive_fluid}.ipynb`
   — MCP
@@ -393,4 +411,4 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   the tool and the worker. Other knobs: `KRATOS_MCP_MAX_SESSIONS` (4),
   `KRATOS_MCP_SESSION_IDLE_TIMEOUT` (3600 s).
 - Tool/resource/prompt counts are quoted in `README.md` and `docs/tools/index.md`
-  (currently 65 / 17 / 6) — bump both when adding any.
+  (currently 65 / 18 / 6) — bump both when adding any.
