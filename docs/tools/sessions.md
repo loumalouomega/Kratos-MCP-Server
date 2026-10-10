@@ -13,7 +13,7 @@ that the batch runner deliberately does not expose.
 | Inspect mid-run | parse logs / output files | query the live model (fields, nodes, elements) |
 | Modify mid-run | no | set / fix nodal values, optional Python exec |
 | Survives a server restart | yes (`~/.kratos-mcp/jobs/`) | **no** (the process is owned by the server) |
-| Cases | single-stage, multi-stage and CoSimulation, MPI, studies, checkpoints | single-stage, serial/OpenMP |
+| Cases | single-stage, multi-stage, CoSimulation and FSI, MPI, studies, checkpoints | single-stage, serial/OpenMP |
 | Best for | production runs, sweeps | exploration, debugging, load stepping, steering |
 
 Everything here needs a Kratos build (*needs Kratos*), and — like every Kratos
@@ -59,7 +59,7 @@ yet.
 `end_time`, `step`, node/element/condition counts, the main `model_part` and all
 `model_parts`, and the `log_file` that receives the Kratos banner and solver
 output. Multi-stage cases (`orchestrator` + `stages`), CoSimulation
-(coupled-solver) cases and `parallel_type: "MPI"` cases are rejected with an explanatory error — use
+(coupled-solver) cases, partitioned FSI cases and `parallel_type: "MPI"` cases are rejected with an explanatory error — use
 `run_simulation` for those.
 
 ```json

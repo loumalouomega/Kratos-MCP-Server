@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import cosim
+from . import cosim, fsi
 
 # Environment variables the common launchers set for each rank.
 _RANK_VARS = ("OMPI_COMM_WORLD_RANK", "PMIX_RANK", "PMI_RANK", "MV2_COMM_WORLD_RANK",
@@ -75,6 +75,8 @@ def validate_request(params: Any, ranks: int | None, threads: int | None) -> Non
     if ranks is not None:
         if cosim.is_cosim(params):
             raise ValueError("mpi_ranks is not supported for CoSimulation (coupled-solver) cases yet")
+        if fsi.is_fsi(params):
+            raise ValueError("mpi_ranks is not supported for partitioned FSI cases yet")
         if multistage:
             raise ValueError("mpi_ranks is not supported for multi-stage cases yet")
         if ptype != "MPI":

@@ -121,7 +121,7 @@ ranks that outlive an exited launcher. Rank 0 keeps the inherited stdout
 (`stdout.log`, parsed for progress as for serial runs); the runner redirects
 ranks > 0 to `ranks/rank-<N>.log` before importing Kratos. `manifest.json`
 records the launcher, extra args, rank count and `omp_threads`, and
-`job_rerun` replays them. Studies, checkpoints, multi-stage and CoSimulation cases stay
+`job_rerun` replays them. Studies, checkpoints, multi-stage, CoSimulation and FSI cases stay
 serial.
 
 ## Interactive sessions
@@ -159,7 +159,7 @@ server ── sessions.py ── stdin: {"id", "op", "args"}\n ──▶ session
   timeout (`KRATOS_MCP_SESSION_IDLE_TIMEOUT`) or `session_close`, which also
   kills the process group. A persisted session whose process is gone reads as
   `lost`. At most `KRATOS_MCP_MAX_SESSIONS` run concurrently.
-- **Scope**: single-stage serial/OpenMP cases; multi-stage, CoSimulation and MPI cases
+- **Scope**: single-stage serial/OpenMP cases; multi-stage, CoSimulation, FSI and MPI cases
   are rejected. `session_exec_python` runs arbitrary code in the worker and is
   disabled unless `KRATOS_MCP_ALLOW_EXEC=1` (enforced by both the tool and the
   worker).

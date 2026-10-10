@@ -60,12 +60,34 @@ from repository tags and diffs; dates are the tagged commits' dates.
 - Sub-solver VTK output of CoSimulation runs is indexed in `result-index.json`
   (one series per sub-solver model part), so `results_time_history` and
   `results_compare` apply to it.
+- **Partitioned FSI cases** (Kratos' FSIApplication): `run_simulation` detects
+  `solver_settings.solver_type: "partitioned"` and drives it with `FsiAnalysis`
+  (ordinary `(model, parameters)` constructor, so no runner adapter). New
+  `create_fsi_project` tool scaffolds a channel with an elastic floor (monolithic
+  fluid + structure + ALE mesh solver, non-matching interface meshes, any FSI
+  accelerator). `validate_case` / `validate_project_parameters` statically diagnose
+  the nested solver blocks, domain-size and model-part mismatches, per-mesh
+  sub model part references, and the interface pair (bare instead of full model-part
+  names, missing/empty/unlisted interfaces, mapper count and faces, interfaces
+  not on the same region) before launch; deep mode checks the five required
+  applications are compiled. `explain_project_parameters` returns `kind: "fsi"`.
+  `results_convergence` / `job_status` parse `STEP =`/`TIME =` banners,
+  `FSI non-linear iteration` residual lines and the (otherwise silent)
+  `maximum iterations N reached` non-convergence warning. New pure-Python module
+  `fsi.py`.
+- `kratos://examples/fsi-flexible-flap`: the Mok flexible-flap benchmark from
+  Kratos' FSI tests, adapted to Kratos 10.x (full interface model-part names,
+  placeholder `python_process` entries dropped, VTK output) and verified against the
+  upstream control-node history (mesh displacement within 0.4 %, pressure within
+  1 % over 30 steps); tutorial `docs/tutorials/fsi.md`.
+- Tests: `tests/test_fsi.py` (Kratos-free) and kratos-marked example tests for both the
+  Mok case and the generated case.
 
 ### Changed
 
 - MPI launch, studies, checkpoints/resume, interactive sessions and Flowgraph
-  export reject CoSimulation cases with an explicit message instead of failing
-  with "Cannot infer analysis type".
+  export reject CoSimulation and partitioned FSI cases with an explicit message
+  (CoSimulation previously failed with "Cannot infer analysis type").
 - `results_convergence` / `job_status` progress no longer count the `STEP:`/`TIME:`
   banners that Kratos-wrapped sub-solvers print as extra coupling steps; the
   `time=… | step=N` banner is authoritative in a coupled log.

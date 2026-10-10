@@ -126,6 +126,55 @@ select a `series`.
 See the worked examples `kratos://examples/coupled-sdof` (Python-only) and
 `kratos://examples/coupled-blocks` (two meshes, non-matching interfaces).
 
+## create_fsi_project
+
+Scaffold a **partitioned fluid-structure interaction (FSI) case** for Kratos'
+`FSIApplication`: a 2D channel `[0, length] x [0, fluid_height]` whose floor is an
+elastic block `[0, length] x [-wall_thickness, 0]`. The fluid (monolithic
+Navier–Stokes; inlet velocity ramped over `ramp_time`, outlet pressure 0, no-slip
+top) loads the wall through the shared `Interface`; the deformed wall moves the
+fluid mesh (ALE, `mesh_solver_structural_similarity`). Unlike CoSimulation,
+`FsiAnalysis` keeps the usual `(model, parameters)` constructor, so
+`run_simulation` needs no special entry point: it detects `solver_type:
+"partitioned"` and runs `FsiAnalysis`. Needs `FSIApplication`,
+`FluidDynamicsApplication`, `StructuralMechanicsApplication`,
+`MeshMovingApplication` and `MappingApplication`.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `directory` | string | case directory (created if missing) |
+| `length`, `fluid_height`, `wall_thickness` | number | geometry (2.0, 1.0, 0.4) |
+| `fluid_divisions`, `wall_divisions` | `[nx, ny]` | structured divisions of the triangle fluid mesh (30, 12) and the quad wall mesh (20, 4) — **deliberately different interface discretizations** (31 vs 21 nodes), so the mapper does real work |
+| `inlet_velocity`, `ramp_time` | number | peak parabolic inlet speed and the cosine ramp that gets there (1.0, 1.0) |
+| `end_time`, `time_step` | number | 2.0, 0.1 |
+| `fluid_density`, `fluid_viscosity` | number | 1.0, 1.0 (a Stokes-like regime) |
+| `young_modulus`, `poisson_ratio` | number | wall material, plane strain (200, 0.3) |
+| `dynamic_structure`, `wall_density` | bool, number | `False`: static wall (quasi-steady structure, default); `True`: Bossak dynamic wall with the given density |
+| `accelerator` | string | `MVQN_recursive` (default), `MVQN`, `Relaxation` (Aitken), `constant_relaxation`, `IBQN_MVQN`, `MVQN_randomized_SVD`, `IBQN_MVQN_randomized_SVD` |
+| `coupling_tolerance`, `max_coupling_iterations` | number, int | `nl_tol` (1e-6) and `nl_max_it` (25) of the Dirichlet–Neumann iteration |
+| `output_interval` | int | VTK output every N steps (5) |
+
+It writes `ProjectParameters.json`, `fluid.mdpa`, `structure.mdpa`,
+`MaterialsFluid.json` and `MaterialsStructure.json`, and returns the statically
+validated case under `validation`. With the defaults every step converges in 3–7
+coupling iterations and the floor settles at a deflection of about −2.05e-2 (2 %
+of the channel height) in a few seconds.
+
+**Choosing the wall stiffness.** Dirichlet–Neumann iteration diverges when the wall
+is too soft for the fluid: the dimensionless group
+`wall_thickness * viscosity * length^2 / (E * fluid_height^3 * time_step)` must
+stay well below 1, and a high Reynolds number adds fluid inertia that also
+destabilizes a soft wall. Typical symptom: `Fluid solver did not converge`
+warnings, `|res|/sqrt(nDOFS) = nan` in the log and `FSI non-linear maximum
+iterations N reached` — the run still exits with status 0, so check
+`results_convergence` (a non-converged step shows `converged: false`).
+
+Not supported for FSI cases (clear errors instead): `mpi_ranks`, studies,
+checkpoints/resume (`FsiAnalysis` has no restart), interactive sessions and
+Flowgraph export. See the worked example `kratos://examples/fsi-flexible-flap`
+(the Mok benchmark, reused from Kratos' own FSI tests) and the
+[FSI tutorial](/tutorials/fsi).
+
 ## create_project_parameters
 
 Render only a ProjectParameters.json (returned, and optionally written to
@@ -251,6 +300,23 @@ defined, strong coupled solvers need `convergence_criteria` whose `solver` /
 are key-checked; Kratos-wrapped sub-solvers get the regular single-stage
 validation, including the deep Kratos-side check). Kratos reports these
 problems only mid-run, if at all. The interface `model_part_name`s of
-Kratos-wrapped solvers are not cross-checked against their meshes.
+Kratos-wrapped solvers are cross-checked against their meshes.
+
+Partitioned FSI cases (`solver_type: "partitioned"`) are recognised and checked
+before launch: the nested `fluid_solver_settings`, `structure_solver_settings`,
+`mesh_solver_settings` (not for `partitioned_embedded`) and `coupling_settings`
+must be present, the fluid and structure must use different root model parts, the
+mesh solver must act on the fluid model part, all `domain_size`s must agree, both
+meshes and both materials files must exist and parse, and every model part named
+in the solver lists (`volume_model_part_name`, `skin_parts`, `no_skin_parts`,
+`problem_domain_sub_model_part_list`, …), in the process lists and in the
+materials must exist in the matching mesh. The coupling interface is checked
+hardest: one mapper (single-faced) or two (`Positive`/`Negative`) sharing one
+structure interface; each interface must be a **full** model part name
+(`FluidModelPart.Interface` — a bare name makes Kratos 10.x fail with "not found
+as root-ModelPart"), exist in its mesh, be non-empty and be listed in
+`fluid_interfaces_list` / `structure_interfaces_list`. A warning is raised when the
+two interfaces do not occupy the same region at t = 0. Deep mode also checks that
+the five required applications are compiled in.
 
 **Returns**: `{valid, issues: [...], warnings: [...], deep_validated}`.

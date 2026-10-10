@@ -58,6 +58,7 @@ export default defineConfig({
             { text: 'Plasticity cube', link: '/tutorials/plasticity-cube' },
             { text: 'Multi-stage load steps', link: '/tutorials/multistage' },
             { text: 'Coupled solvers (CoSimulation)', link: '/tutorials/cosimulation' },
+            { text: 'Fluid–structure interaction (FSI)', link: '/tutorials/fsi' },
             { text: 'Interactive session', link: '/tutorials/interactive-session' },
           ],
         },

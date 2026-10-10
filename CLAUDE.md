@@ -122,6 +122,16 @@ installed) via `-displayfd`.
   sub-solvers validated through a callback `scaffold` injects), `summarize`
   (explain) and `compose` (backs `create_cosim_project`). Studies, checkpoints,
   MPI, sessions and Flowgraph export reject cosim cases.
+- `src/kratos_mcp/fsi.py` — Kratos-free partitioned FSI support: `is_fsi`
+  (`solver_settings.solver_type` `partitioned`/`partitioned_embedded`, the single
+  detection point used by every rejection), static `validate` (nested
+  fluid/structure/mesh blocks, domain sizes, per-mesh sub model part references,
+  the interface pair), `summarize` (explain) and the flexible-wall generators
+  behind `create_fsi_project`. Unlike CoSimulation, `FsiAnalysis`
+  (`KratosMultiphysics.FSIApplication.fsi_analysis`) keeps the `(model, parameters)`
+  constructor, so `runner.py` just maps `partitioned*` to it via
+  `ANALYSIS_CLASSES["fsi"]`. Studies, checkpoints (no FSI restart), MPI, sessions
+  and Flowgraph export reject FSI cases.
 - `src/kratos_mcp/project_explain.py` — pure-JSON structured summary of a
   ProjectParameters.json (analysis type, solver, processes, per-stage for
   multistage); backs `explain_project_parameters` and feeds `flowgraph.py`.
@@ -216,6 +226,21 @@ installed) via `-displayfd`.
   against that solver's mesh (callback injected by `scaffold`), and
   `logparse` treats the `time=… | step=N` banner as authoritative in a coupled
   log (sub-solvers print their own `STEP:`/`TIME:`).
+- `src/kratos_mcp/examples/fsi_flexible_flap/` — the Mok flexible-flap benchmark
+  from Kratos' own FSIApplication tests (`MokBenchmarkTest`: externally authored
+  GiD meshes, 4556 fluid / 505 structure nodes, plus the upstream
+  control-node history `reference_control_nodes.json`). Adapted to Kratos 10.x:
+  interfaces and fluid skin/volume parts as FULL model-part names, upstream's
+  placeholder `python_process` entries dropped, GiD → VTK output, `end_time` 3 s.
+  Served by `kratos://examples/fsi-flexible-flap` with mdpa summaries instead of
+  the raw meshes. Verified numbers (mesh displacement within 0.4 %, pressure
+  within 1 % of upstream; 30 steps converge in 3-6 FSI iterations, ~50 s) are in
+  `FSI_FLEXIBLE_FLAP_RESULT` and asserted by `tests/test_examples.py`. The
+  upstream `TIME` array has 249 entries against 250 values, so Kratos'
+  `FromJsonCheckResultProcess` cannot consume it — tests compare VTK output.
+  The generated counterpart is `create_fsi_project` (`fsi.flexible_wall_*`):
+  `FSI_FLEXIBLE_WALL_NOTE` holds its numbers (-2.05e-2 floor deflection).
+  Same "re-verify with a real run" rule.
 - `notebooks/{cantilever,naca_airfoil,fluid_cavity,materials,multistage,
   interactive_session,interactive_fluid}.ipynb`
   — MCP
@@ -281,6 +306,19 @@ installed) via `-displayfd`.
   condition names (e.g. `naca_airfoil`'s `LineCondition2D2N`, not the
   registry's informational `WallCondition2D2N` default) works fine as-is;
   there's no need to rename anything before import.
+
+- FSI (FSIApplication): interfaces must be FULL model-part names
+  (`FluidModelPart.X`) — a bare sub model part name fails in `PrepareModelPart`
+  with "not found as root-ModelPart" (older Kratos accepted it; upstream's test
+  files still use bare names). FSI non-convergence only logs `FSI non-linear
+  maximum iterations N reached` and the job still exits 0 — read
+  `results_convergence`. A static elastic wall under an incompressible fluid
+  diverges (NaN residuals) unless
+  `thickness*mu*L^2/(E*H^3*dt) << 1` and the Reynolds number is low; the
+  generator's defaults (rho=mu=1, E=200) are a verified stable regime and a
+  Reynolds-1000 variant oscillated even when stiff. `meshio` cannot read
+  Kratos' `binary` VTK — FSI outputs use `ascii`. Float time accumulation:
+  `end_time` 5.0 at dt 0.1 runs 51 steps, 3.0 runs 30.
 
 ## MCP / pyvista gotchas
 
@@ -411,4 +449,4 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   the tool and the worker. Other knobs: `KRATOS_MCP_MAX_SESSIONS` (4),
   `KRATOS_MCP_SESSION_IDLE_TIMEOUT` (3600 s).
 - Tool/resource/prompt counts are quoted in `README.md` and `docs/tools/index.md`
-  (currently 65 / 18 / 6) — bump both when adding any.
+  (currently 66 / 19 / 6) — bump both when adding any.

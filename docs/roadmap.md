@@ -28,13 +28,7 @@ Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation
 
 ## 2. Additional Kratos workflows
 
-These depend on optional applications and need small verified examples before being presented as supported templates.
-
-### Partitioned FSI example — M
-
-Upstream: [FSIApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/FSIApplication). In `applications/FSIApplication/python_scripts/fsi_analysis.py`, `FsiAnalysis` keeps the standard `(model, parameters)` constructor, so unlike CoSimulation it needs no runner adapter. The gap is scaffolding and validation: nested `fluid_solver_settings` / `structure_solver_settings` plus mesh motion ([MeshMovingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MeshMovingApplication)) and non-matching interface mapping ([MappingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MappingApplication)). The shipped `kratos://examples/coupled-blocks` already demonstrates mapping and interface-model-part validation between two Kratos solvers, so the FSI work can reuse them. Add a fluid + structure + interface template, coupled-case validation (one shared interface pair, matching dimension, required applications compiled), and one small 2D example with interface data-exchange and mesh-motion checks.
-
-**Probe:** run the minimal FSI example through MCP, verify interface transfer and mesh motion, and ensure a missing/mismatched interface is diagnosed before launch.
+These depend on optional applications and need small verified examples before being presented as supported templates. The shipped CoSimulation (`create_cosim_project`) and partitioned FSI (`create_fsi_project`) support is the pattern to follow: pure-Python static validation, a scaffold tool, and a worked example verified against real numbers.
 
 ### Adaptive remeshing — L
 
@@ -62,5 +56,5 @@ Recorded so they are not re-proposed as gaps.
 ## Suggested sequencing
 
 1. Verify local MPI on a real distributed build, then add cluster launch.
-2. Introduce FSI (which builds on the shipped CoSimulation support) and remeshing as independently optional workflows.
+2. Introduce remeshing as an independently optional workflow (coupled-solver CoSimulation and partitioned FSI cases are shipped).
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

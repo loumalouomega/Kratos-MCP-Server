@@ -652,6 +652,84 @@ def _example_bundle(template: str, mesh_hint: str) -> str:
     )
 
 
+FSI_FLEXIBLE_FLAP_INTRO = """# Worked example: partitioned FSI (flexible flap in a channel, Mok benchmark)
+
+A 2D channel flow past a flexible flap: the Mok FSI benchmark from Kratos' FSIApplication tests, solved
+with Kratos' FSIApplication (`solver_type: "partitioned"`, Dirichlet-Neumann
+coupling). The viscous fluid (rho = 956, mu = 0.145) enters through a parabolic
+inlet profile ramped over 10 s, bends the elastic flap (E = 2.3e6, nu = 0.45,
+plane stress, linear elastic) and the flap's motion deforms the fluid
+mesh (ALE). Three sub-solvers live in one `solver_settings`:
+
+- `fluid_solver_settings`: monolithic Navier-Stokes, VMS elements, on `FluidModelPart`
+- `structure_solver_settings`: dynamic (Bossak) total-Lagrangian structure on `Structure`
+- `mesh_solver_settings`: `mesh_solver_structural_similarity`, moves the fluid mesh
+
+`coupling_settings` holds the interface pair and the non-linear iteration:
+`FluidModelPart.FluidNoSlipInterface2D_Interface` <-> `Structure.Interface2D_Structure_interface`
+(single-faced, `mapper_face: "unique"`), MVQN_recursive accelerator, `nl_tol` 1e-6.
+
+The meshes are the externally authored (GiD) meshes of Kratos' own FSI validation
+test (4556 fluid nodes, 505 structure nodes), reused verbatim; the parameters are
+that test's ProjectParameters adapted to Kratos 10.x and shortened to 3 s (30
+steps). Adaptations that matter:
+
+- interfaces (and the fluid `volume_model_part_name` / `skin_parts`) are FULL model
+  part names (`FluidModelPart.X`); a bare sub model part name makes Kratos 10.x
+  fail in `PrepareModelPart` with "not found as root-ModelPart";
+- the placeholder `python_process` entries of the upstream file no longer exist
+  and are dropped; GiD output is replaced by VTK output (every 5 steps);
+- the upstream control-node history is shipped as `reference_control_nodes.json`
+  (its `TIME` array has 249 entries against 250 values, so Kratos'
+  `FromJsonCheckResultProcess` cannot consume it; compare against VTK output).
+
+Unlike the other examples, the meshes are too large to embed: summaries are given
+below, and the full files are on disk (src/kratos_mcp/examples/fsi_flexible_flap/).
+Needs FSIApplication, FluidDynamicsApplication, StructuralMechanicsApplication,
+MeshMovingApplication and MappingApplication."""
+
+FSI_FLEXIBLE_FLAP_RESULT = """\
+## Verified result
+
+Running the case with Kratos 10.4.4 (about 50 s wall-clock): all 30 steps
+converge, 3-6 FSI iterations each (`PartitionedFSIBaseSolver: FSI non-linear
+iteration convergence achieved in N iterations`). The mesh displacement
+(MESH_DISPLACEMENT_X) at the two control nodes of `Control_Nodes` agrees with the
+upstream reference history (`reference_control_nodes.json`, one value per 0.1 s):
+
+    step 10 (t = 1 s)  node 2122: 5.390e-04 (ref 5.404e-04)   node 3100: 3.042e-04 (ref 3.054e-04)
+    step 20 (t = 2 s)  node 2122: 4.889e-03 (ref 4.898e-03)   node 3100: 1.931e-03 (ref 1.935e-03)
+    step 30 (t = 3 s)  node 2122: 1.518e-02 (ref 1.520e-02)   node 3100: 5.651e-03 (ref 5.658e-03)
+    pressure at node 2122, step 30: 13.22 (ref 13.22)
+
+The flap tip x-displacement on the structure side (0.015179) equals the fluid
+mesh displacement at the same node: the interface transfer is consistent. The tip
+keeps moving after 3 s (the full upstream run is 25 s).
+
+## Reproducing this with the tools
+
+```
+validate_case(case_dir='case')            # interfaces, meshes, materials cross-checked
+run_simulation(case_dir='case', wait_seconds=120)
+results_convergence(job_id)               # coupling iterations per step
+results_render(source='case/vtk_output/fluid/Parts_Fluid_0_30.vtk', scalar='PRESSURE')
+```
+
+For a small case you generate yourself (non-matching interface meshes, fast), use
+`create_fsi_project`.
+"""
+
+FSI_FLEXIBLE_WALL_NOTE = """\
+## Related: generated FSI cases
+
+`create_fsi_project(directory)` writes a smaller, faster FSI case in the same
+format: a channel whose floor is an elastic block, with DIFFERENT fluid (31 nodes)
+and wall (21 nodes) interface discretizations. With the defaults (Stokes-like flow,
+E = 200) the 2 s run takes a few seconds, converges in 3-7 coupling iterations per
+step and settles at a floor deflection of about -2.05e-2 (2 % of the channel
+height) with an inlet pressure of about 14.7.
+"""
+
 def register(mcp) -> None:
 
     @mcp.resource("kratos://templates/{name}")
@@ -858,6 +936,24 @@ def register(mcp) -> None:
         for name in ("block_a.mdpa", "block_b.mdpa"):
             files.append(f"## {name}\n\n```\n{(case_dir / name).read_text()}```\n\n")
         return f"{COUPLED_BLOCKS_INTRO}\n\n{''.join(files)}{COUPLED_BLOCKS_RESULT}"
+
+    @mcp.resource("kratos://examples/fsi-flexible-flap")
+    def fsi_flexible_flap_example() -> str:
+        """Complete partitioned fluid-structure interaction example: the Mok
+        flexible-flap benchmark (FSIApplication, Dirichlet-Neumann coupling,
+        ALE mesh motion) with a verified comparison against the upstream
+        reference history. Real files on disk; the large meshes are summarized
+        instead of embedded."""
+        case_dir = EXAMPLES_DIR / "fsi_flexible_flap"
+        summaries = "".join(
+            f"## {name}.mdpa summary (mdpa_inspect)\n\n```json\n"
+            f"{json.dumps(mdpa_mod.read(case_dir / f'{name}.mdpa').inspect(), indent=2)}\n```\n\n"
+            for name in ("fluid", "structure"))
+        files = "".join(
+            f"## {name}\n\n```json\n{(case_dir / name).read_text()}\n```\n\n"
+            for name in ("ProjectParameters.json", "MaterialsFluid.json", "MaterialsStructure.json"))
+        return (f"{FSI_FLEXIBLE_FLAP_INTRO}\n\n{summaries}{files}"
+                f"{FSI_FLEXIBLE_FLAP_RESULT}\n{FSI_FLEXIBLE_WALL_NOTE}")
 
     @mcp.resource("kratos://jobs/{job_id}/log")
     def job_log_resource(job_id: str) -> str:

@@ -18,22 +18,34 @@ CoSimulationAnalysis prints its own step banner and coupling-iteration lines
     time=0.43 | step=43:
     GaussSeidelStrongCoupledSolver: Coupling iteration: 4 / 30
     GaussSeidelStrongCoupledSolver: ### CONVERGENCE WAS ACHIEVED ###
-    GaussSeidelStrongCoupledSolver: XXX CONVERGENCE WAS NOT ACHIEVED XXX"""
+    GaussSeidelStrongCoupledSolver: XXX CONVERGENCE WAS NOT ACHIEVED XXX
+
+FsiAnalysis (FSIApplication, partitioned_fsi_base_solver.py) prints
+``STEP = N`` / ``TIME = t`` per step and one line per coupling iteration:
+
+    PartitionedFSIBaseSolver: FSI non-linear iteration = 3 |res|/sqrt(nDOFS) = 7.4e-06
+    PartitionedFSIBaseSolver: FSI non-linear iteration convergence achieved in 4 iterations.
+    PartitionedFSIBaseSolver: FSI non-linear maximum iterations 25 reached
+
+(The last one is only a warning: the run goes on, so ``convergence`` is the
+only place a non-converged FSI step shows up.)"""
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
-_STEP_RE = re.compile(r"\bSTEP:\s*(\d+)")
-_TIME_RE = re.compile(r"\bTIME:\s*([-+0-9.eE]+)")
+_STEP_RE = re.compile(r"\bSTEP(?::|\s*=)\s*(\d+)")
+_TIME_RE = re.compile(r"\bTIME(?::|\s*=)\s*([-+0-9.eE]+)")
 _COSIM_STEP_RE = re.compile(r"\btime=([-+0-9.eE]+)\s*\|\s*step=(\d+)")
-_ITER_RE = re.compile(r"(?:ITERATION:?|Coupling iteration:)\s*(\d+)", re.IGNORECASE)
+_ITER_RE = re.compile(r"(?:ITERATION:?|Coupling iteration:|FSI non-linear iteration\s*=)\s*(\d+)", re.IGNORECASE)
+_FSI_RES_RE = re.compile(r"\|res\|/sqrt\(nDOFS\)\s*=\s*([-+0-9.eEna]+)")
 _RATIO_RE = re.compile(r"ratio\s*=\s*([-+0-9.eE]+)", re.IGNORECASE)
-_CONVERGED_RE = re.compile(r"convergence\s+(is|was)\s+achieved", re.IGNORECASE)
+_CONVERGED_RE = re.compile(r"convergence\s+((is|was)\s+)?achieved", re.IGNORECASE)
 _NOT_CONVERGED_RE = re.compile(
     r"(not\s+achieve[d]?\s+convergence|convergence\s+was\s+not\s+achieved"
-    r"|max(imum)?\s+iterations?\s+(exceeded|reached))",
+    r"|max(imum)?\s+iterations?\s+(\d+\s+)?(exceeded|reached))",
     re.IGNORECASE)
 _ERROR_RE = re.compile(r"\b(Error|ERROR|Traceback|KRATOS.*EXCEPTION|RuntimeError)\b")
 
@@ -86,6 +98,14 @@ def convergence(text: str) -> dict[str, Any]:
         m = _ITER_RE.search(line)
         if m:
             current["iterations"] = max(current["iterations"], int(m.group(1)))
+        m = _FSI_RES_RE.search(line)
+        if m:
+            try:
+                residual = float(m.group(1))
+            except ValueError:
+                residual = math.nan
+            if math.isfinite(residual):
+                current["residual_ratios"].append(residual)
         m = _RATIO_RE.search(line)
         if m and "expected" not in line.lower().split("ratio")[0][-20:].lower():
             try:

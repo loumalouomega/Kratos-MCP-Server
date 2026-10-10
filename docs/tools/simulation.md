@@ -36,7 +36,13 @@ driven through `CoSimulationAnalysis(cosim_settings)` instead of an
 resolved relative to the case directory. VTK output of Kratos-wrapped
 sub-solvers is recorded in `result-index.json` (one series each); the runner
 prints an `Analysis -END-` line after the run because `CoSimulationAnalysis` has
-no end banner of its own.
+no end banner of its own. **Partitioned FSI** cases (`solver_type:
+"partitioned"`, e.g. from [`create_fsi_project`](/tools/scaffolding#create-fsi-project))
+run through `FsiAnalysis` from the FSIApplication, which has the ordinary
+`(model, parameters)` constructor; VTK output is indexed like any single-stage
+run. FSI non-convergence (`FSI non-linear maximum iterations N reached`) is only
+a warning in Kratos — the job still succeeds, so check
+[`results_convergence`](/tools/postprocessing#results-convergence).
 
 **Returns**: the job status (below). For quick cases pass
 `wait_seconds: 60`–`120` and get the terminal state in one call; failed jobs
@@ -66,7 +72,7 @@ is `KRATOS_MPI_LAUNCHER`, else `mpiexec`, else `mpirun`. The call returns
 - the case's `problem_data.parallel_type` is not `"MPI"` (otherwise N copies
   of a serial run would write the same files), or is `"MPI"` and `mpi_ranks`
   is missing;
-- the case is multi-stage or CoSimulation, or a rank/thread count is not a positive integer.
+- the case is multi-stage, CoSimulation or FSI, or a rank/thread count is not a positive integer.
 
 Rank 0 writes to the normal job log, so `job_status` progress works as for
 serial runs. Other ranks log to `ranks/rank-<N>.log`; `job_status` lists them
@@ -79,7 +85,7 @@ Thread settings reach ranks through the launcher's inherited environment
 (local launches). Cluster launches that do not forward the environment need
 the launcher's own flag via `KRATOS_MPI_ARGS`. MPI jobs have no result or
 checkpoint index (VTK output is per rank), and studies, checkpoints and
-multi-stage and CoSimulation cases remain serial. Scheduler (Slurm etc.) integration is not
+multi-stage, CoSimulation and FSI cases remain serial. Scheduler (Slurm etc.) integration is not
 provided.
 
 ## validate_case

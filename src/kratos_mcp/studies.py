@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from . import cosim, jobs, kratos_env, mdpa, result_series
+from . import cosim, fsi, jobs, kratos_env, mdpa, result_series
 from .job_supervisor import exclusive
 
 TERMINAL_STATES = {'succeeded', 'completed_with_errors', 'cancelled'}
@@ -226,6 +226,8 @@ def serial_case(params: dict[str, Any]) -> None:
         raise ValueError('Studies require serial single-stage cases')
     if cosim.is_cosim(params):
         raise ValueError('Studies do not support CoSimulation (coupled-solver) cases')
+    if fsi.is_fsi(params):
+        raise ValueError('Studies do not support partitioned FSI cases')
     if any(not isinstance(params.get(key), dict) for key in ('problem_data', 'solver_settings')):
         raise ValueError('problem_data and solver_settings must be objects')
     if params.get('problem_data', {}).get('parallel_type', 'OpenMP') != 'OpenMP':

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import cosim, project_explain
+from . import cosim, fsi, project_explain
 
 # Solver-settings sub-blocks that Flowgraph models as their own nodes.
 _SOLVER_COMPONENT_KEYS = (
@@ -162,6 +162,10 @@ def project_to_graph(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("CoSimulation (coupled-solver) cases cannot be exported to a "
                          "Flowgraph graph: the format has no coupled-solver nodes, so the "
                          "conversion would not be lossless.")
+    if fsi.is_fsi(params):
+        raise ValueError("Partitioned FSI cases cannot be exported to a Flowgraph graph: the "
+                         "format has no partitioned-solver nodes, so the conversion would not "
+                         "be lossless.")
     b = _GraphBuilder()
     if "orchestrator" in params and "stages" in params:
         orch = params["orchestrator"]
