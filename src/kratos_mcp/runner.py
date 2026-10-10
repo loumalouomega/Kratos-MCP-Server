@@ -31,6 +31,10 @@ ANALYSIS_CLASSES: dict[str, tuple[str, str]] = {
         "KratosMultiphysics.CompressiblePotentialFlowApplication.potential_flow_analysis",
         "PotentialFlowAnalysis",
     ),
+    "fsi": (
+        "KratosMultiphysics.FSIApplication.fsi_analysis",
+        "FsiAnalysis",
+    ),
 }
 
 # Heuristics mapping ProjectParameters solver_type prefixes to analysis types,
@@ -40,6 +44,7 @@ _SOLVER_TYPE_HINTS = [
     (("monolithic", "fractional_step", "embedded", "compressible", "two_fluids"), "fluid"),
     (("transient", "stationary", "conjugate", "thermal"), "thermal"),
     (("potential_flow", "ale_potential_flow"), "potential_flow"),
+    (("partitioned",), "fsi"),
 ]
 
 

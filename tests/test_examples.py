@@ -30,6 +30,7 @@ POTENTIAL_FLOW_DIR = EXAMPLES_DIR / "potential_flow"
 LOAD_STEPPING_DIR = EXAMPLES_DIR / "load_stepping_cantilever"
 COUPLED_SDOF_DIR = EXAMPLES_DIR / "coupled_sdof"
 COUPLED_BLOCKS_DIR = EXAMPLES_DIR / "coupled_blocks"
+FSI_FLAP_DIR = EXAMPLES_DIR / "fsi_flexible_flap"
 
 
 def _run(case, timeout=120.0):
@@ -549,4 +550,121 @@ def test_cosim_case_rejected_by_sessions(tmp_path):
     case = tmp_path / "cs"
     shutil.copytree(COUPLED_SDOF_DIR, case)
     with pytest.raises(sessions.SessionError, match="CoSimulation"):
+        sessions.start(str(case), timeout=120)
+
+
+# ------------------------------------------------------------------ FSI -----
+
+def _vtk_point_data(path, mdpa_path, model_part):
+    """{node id: row index} lookup plus the VTK point data of a model part
+    written by vtk_output_process (points follow the sorted node ids)."""
+    import meshio
+
+    ids = sorted(mdpa.read(mdpa_path).sub_model_parts[model_part].nodes)
+    return {nid: i for i, nid in enumerate(ids)}, meshio.read(path).point_data
+
+
+@pytest.mark.kratos
+def test_fsi_flexible_flap_runs_and_matches_upstream_reference(tmp_path, monkeypatch):
+    """Mok flexible-flap benchmark (partitioned FSI, Dirichlet-Neumann, ALE mesh
+    motion): every step converges within the coupling tolerance, the control-node
+    mesh displacement/pressure follow the upstream reference history, and the
+    structure-side flap tip equals the fluid-side mesh displacement of the same
+    node. Needs FSIApplication, FluidDynamicsApplication,
+    StructuralMechanicsApplication, MeshMovingApplication, MappingApplication."""
+    import shutil
+
+    from kratos_mcp import logparse
+
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
+    case = tmp_path / "flap"
+    shutil.copytree(FSI_FLAP_DIR, case)
+    meta, status = _run(case, timeout=400.0)
+    log = jobs.logs(meta.job_id, tail=4000)
+    assert status["state"] == "succeeded", log
+
+    conv = logparse.convergence(jobs.logs(meta.job_id, tail=200000))
+    assert conv["num_steps"] == 30 and conv["num_converged"] == 30 and conv["num_not_converged"] == 0
+    assert conv["max_iterations_in_a_step"] <= 8
+
+    reference = json.loads((FSI_FLAP_DIR / "reference_control_nodes.json").read_text())
+    for step in (10, 20, 30):
+        rows, data = _vtk_point_data(case / "vtk_output" / "fluid" / f"Parts_Fluid_0_{step}.vtk",
+                                     case / "fluid.mdpa", "Parts_Fluid")
+        for node in (2122, 3100):
+            ref = reference[f"NODE_{node}"]
+            assert math.isclose(data["MESH_DISPLACEMENT"][rows[node], 0],
+                                ref["MESH_DISPLACEMENT_X"][step - 1], rel_tol=1e-2)
+            assert math.isclose(data["PRESSURE"][rows[node]], ref["PRESSURE"][step - 1], rel_tol=3e-2)
+
+    # Interface consistency at the flap tip (control node 2122 sits on the interface).
+    fluid_rows, fluid = _vtk_point_data(case / "vtk_output" / "fluid" / "Parts_Fluid_0_30.vtk",
+                                        case / "fluid.mdpa", "Parts_Fluid")
+    _, structure = _vtk_point_data(case / "vtk_output" / "structure" / "Parts_Structure_0_30.vtk",
+                                   case / "structure.mdpa", "Parts_Structure")
+    tip = float(fluid["MESH_DISPLACEMENT"][fluid_rows[2122], 0])
+    assert math.isclose(float(structure["DISPLACEMENT"][:, 0].max()), tip, rel_tol=1e-3)
+    assert math.isclose(tip, 1.518e-2, rel_tol=1e-2)  # documented in FSI_FLEXIBLE_FLAP_RESULT
+
+
+@pytest.mark.kratos
+def test_generated_fsi_case_runs_and_deflects_the_wall(tmp_path, monkeypatch):
+    """create_fsi_project defaults: a flexible floor under a ramped channel flow.
+    Non-matching interface meshes (31 vs 21 nodes), every step converges, the
+    wall deflects downward and settles, and the structure and fluid-mesh
+    interface displacements agree to mapping accuracy."""
+    import numpy as np
+
+    from kratos_mcp import logparse
+    from kratos_mcp.tools import scaffold as scaffold_mod
+
+    captured = {}
+
+    class FakeMCP:
+        def tool(self, *a, **k):
+            def deco(fn):
+                captured[fn.__name__] = fn
+                return fn
+            return deco
+
+    scaffold_mod.register(FakeMCP())
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
+    case = tmp_path / "wall"
+    created = captured["create_fsi_project"](str(case))
+    assert created["validation"]["valid"], created["validation"]
+    assert validate_case_files(case, deep=True)["valid"]
+
+    meta, status = _run(case, timeout=300.0)
+    log = jobs.logs(meta.job_id, tail=4000)
+    assert status["state"] == "succeeded", log
+    conv = logparse.convergence(jobs.logs(meta.job_id, tail=200000))
+    assert conv["num_steps"] == 20 and conv["num_converged"] == 20
+    assert 3 <= conv["max_iterations_in_a_step"] <= 10
+
+    mesh_f, mesh_s = mdpa.read(case / "fluid.mdpa"), mdpa.read(case / "structure.mdpa")
+    interface_f, interface_s = mesh_f.sub_model_parts["Interface"].nodes, mesh_s.sub_model_parts["Interface"].nodes
+    deflection = []
+    for step in (10, 15, 20):
+        rows_f, fluid = _vtk_point_data(case / "vtk_output" / "fluid" / f"Parts_Fluid_0_{step}.vtk",
+                                        case / "fluid.mdpa", "Parts_Fluid")
+        rows_s, structure = _vtk_point_data(case / "vtk_output" / "structure" / f"Parts_Structure_0_{step}.vtk",
+                                            case / "structure.mdpa", "Parts_Structure")
+        dy_s = np.array([structure["DISPLACEMENT"][rows_s[n], 1] for n in interface_s])
+        dy_f = np.array([fluid["MESH_DISPLACEMENT"][rows_f[n], 1] for n in interface_f])
+        assert dy_s.max() <= 1e-9 and dy_f.max() <= 1e-9  # pushed down by the flow, never up
+        assert math.isclose(dy_s.min(), dy_f.min(), rel_tol=2e-2)  # mapping accuracy
+        deflection.append(dy_s.min())
+    assert deflection[0] < 0 and math.isclose(deflection[-1], deflection[-2], rel_tol=2e-2)  # settled
+    assert math.isclose(deflection[-1], -2.05e-2, rel_tol=5e-2)  # documented in FSI_FLEXIBLE_WALL_NOTE
+
+
+@pytest.mark.kratos
+def test_fsi_case_rejected_by_sessions(tmp_path):
+    import shutil
+
+    from kratos_mcp import sessions
+
+    case = tmp_path / "fs"
+    shutil.copytree(FSI_FLAP_DIR, case)
+    with pytest.raises(sessions.SessionError, match="FSI"):
         sessions.start(str(case), timeout=120)

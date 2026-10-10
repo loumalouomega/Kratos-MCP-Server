@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from typing import Any
 
-from . import cosim, jobs, kratos_env
+from . import cosim, fsi, jobs, kratos_env
 
 
 def serial_single(params: dict[str, Any]) -> None:
@@ -18,6 +18,8 @@ def serial_single(params: dict[str, Any]) -> None:
         raise ValueError('Multistage checkpoints are not supported')
     if cosim.is_cosim(params):
         raise ValueError('CoSimulation checkpoints are not supported')
+    if fsi.is_fsi(params):
+        raise ValueError('FSI checkpoints are not supported (FsiAnalysis has no restart)')
     if params.get('problem_data', {}).get('parallel_type', 'OpenMP') != 'OpenMP':
         raise ValueError('MPI checkpoints are not supported')
 

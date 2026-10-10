@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import cosim
+from . import cosim, fsi
 
 # solver_type prefix -> analysis type (aligned with runner._SOLVER_TYPE_HINTS).
 _ANALYSIS_HINTS: list[tuple[tuple[str, ...], str]] = [
@@ -108,10 +108,15 @@ def _explain_single(params: dict[str, Any]) -> dict[str, Any]:
 
 def explain(params: dict[str, Any]) -> dict[str, Any]:
     """Return a structured summary of a ProjectParameters dict. Handles both
-    single-stage, multi-stage (orchestrator/stages) and CoSimulation cases."""
+    single-stage, multi-stage (orchestrator/stages), CoSimulation and
+    partitioned FSI cases."""
     if cosim.is_cosim(params):
         result = {"kind": "cosimulation"}
         result.update(cosim.summarize(params))
+        return result
+    if fsi.is_fsi(params):
+        result = {"kind": "fsi"}
+        result.update(fsi.summarize(params))
         return result
     if "orchestrator" in params and "stages" in params:
         orch = params["orchestrator"]

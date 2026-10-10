@@ -15,7 +15,7 @@ from typing import Any
 
 import anyio
 
-from .. import bridge, cosim, mdpa as mdpa_mod, process_catalog
+from .. import bridge, cosim, fsi, mdpa as mdpa_mod, process_catalog
 from .environment import KNOWN_SOLVERS
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -380,6 +380,23 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
         result = cosim.validate(case, params, validate_kratos_solver, _case_model_parts)
         # Only Kratos-wrapped sub-solvers have a Kratos-side check to run.
         result["deep_validated"] = bool(sub_deep) and all(sub_deep)
+        return result
+
+    if fsi.is_fsi(params):
+        result = fsi.validate(case, params, _submodelpart_paths)
+        if deep:
+            try:
+                compiled = set(bridge.run_op("list_applications", {}))
+            except bridge.BridgeError as exc:
+                result["warnings"].append(f"required applications not checked: {exc}")
+            else:
+                missing = [a for a in fsi.REQUIRED_APPLICATIONS if a not in compiled]
+                if missing:
+                    result["valid"] = False
+                    result["issues"].append(
+                        f"required applications not available in this Kratos build: {missing}")
+                else:
+                    result["deep_validated"] = True
         return result
 
     if "orchestrator" in params and "stages" in params:
@@ -822,6 +839,101 @@ def register(mcp) -> None:
         return {"case_dir": str(case), "created": created,
                 "required_applications": ["CoSimulationApplication"],
                 "coupling_order": [e["name"] for e in project["solver_settings"]["coupling_sequence"]],
+                "validation": check, "next_steps": next_steps}
+
+    @mcp.tool()
+    def create_fsi_project(
+        directory: str,
+        length: float = 2.0,
+        fluid_height: float = 1.0,
+        wall_thickness: float = 0.4,
+        fluid_divisions: list[int] | None = None,
+        wall_divisions: list[int] | None = None,
+        inlet_velocity: float = 1.0,
+        ramp_time: float = 1.0,
+        end_time: float = 2.0,
+        time_step: float = 0.1,
+        fluid_density: float = 1.0,
+        fluid_viscosity: float = 1.0,
+        young_modulus: float = 200.0,
+        poisson_ratio: float = 0.3,
+        dynamic_structure: bool = False,
+        wall_density: float = 1.0,
+        accelerator: str = "MVQN_recursive",
+        coupling_tolerance: float = 1e-6,
+        max_coupling_iterations: int = 25,
+        output_interval: int = 5,
+    ) -> dict[str, Any]:
+        """Scaffold a partitioned fluid-structure interaction (FSI) case with
+        Kratos' FSIApplication: a 2D channel [0,length]x[0,fluid_height] whose
+        floor is an elastic block [0,length]x[-wall_thickness,0]. The fluid
+        (monolithic Navier-Stokes, inlet velocity ramped over 'ramp_time',
+        outlet pressure 0) loads the wall through the shared 'Interface'; the
+        deformed wall moves the fluid mesh (ALE, mesh_solver_structural_similarity).
+        Fluid and wall meshes are generated with DIFFERENT interface
+        discretizations ('fluid_divisions' [nx, ny] triangles, 'wall_divisions'
+        [nx, ny] quads), so the interface mapper does real work. Dirichlet-
+        Neumann coupling is iterated each step until 'coupling_tolerance' using
+        the convergence 'accelerator' (MVQN_recursive, MVQN, Relaxation = Aitken,
+        constant_relaxation, ...). Writes ProjectParameters.json, fluid.mdpa,
+        structure.mdpa, MaterialsFluid.json, MaterialsStructure.json and runs
+        with run_simulation like any case. Needs FSIApplication,
+        FluidDynamicsApplication, StructuralMechanicsApplication,
+        MeshMovingApplication and MappingApplication.
+        The defaults are a verified Stokes-like regime; the wall must be stiff
+        enough relative to the fluid's added damping (roughly
+        wall_thickness*viscosity*length^2/(E*fluid_height^3*time_step) << 1) or
+        the Dirichlet-Neumann iteration diverges. The result is statically
+        validated."""
+        fluid_div = tuple(fluid_divisions or (30, 12))
+        wall_div = tuple(wall_divisions or (20, 4))
+        if len(fluid_div) != 2 or len(wall_div) != 2 or min(fluid_div + wall_div) < 1:
+            return {"error": "fluid_divisions and wall_divisions must be [nx, ny] with positive integers."}
+        for name, value in (("length", length), ("fluid_height", fluid_height),
+                            ("wall_thickness", wall_thickness), ("time_step", time_step),
+                            ("young_modulus", young_modulus), ("fluid_density", fluid_density),
+                            ("fluid_viscosity", fluid_viscosity)):
+            if not value > 0:
+                return {"error": f"{name} must be positive, got {value!r}."}
+        if not 0 <= poisson_ratio < 0.5:
+            return {"error": f"poisson_ratio must be in [0, 0.5), got {poisson_ratio!r}."}
+        if end_time <= 0 or ramp_time <= 0:
+            return {"error": "end_time and ramp_time must be positive."}
+        if accelerator not in fsi.ACCELERATORS:
+            return {"error": f"Unknown accelerator '{accelerator}'. Available: {list(fsi.ACCELERATORS)}"}
+
+        fluid_mesh, wall_mesh = fsi.flexible_wall_meshes(
+            length, fluid_height, wall_thickness, fluid_div, wall_div)
+        project = fsi.flexible_wall_parameters(
+            length=length, fluid_height=fluid_height, inlet_velocity=inlet_velocity,
+            ramp_time=ramp_time, start_time=0.0, end_time=end_time, time_step=time_step,
+            structure_static=not dynamic_structure, nl_tol=coupling_tolerance,
+            nl_max_it=max_coupling_iterations, accelerator=accelerator,
+            output_interval=output_interval)
+        fluid_mats, wall_mats = fsi.flexible_wall_materials(
+            fluid_density=fluid_density, fluid_viscosity=fluid_viscosity,
+            young_modulus=young_modulus, poisson_ratio=poisson_ratio, wall_density=wall_density)
+
+        case = Path(directory).expanduser().resolve()
+        case.mkdir(parents=True, exist_ok=True)
+        created: list[str] = []
+        for filename, body in (("ProjectParameters.json", project),
+                               ("MaterialsFluid.json", fluid_mats),
+                               ("MaterialsStructure.json", wall_mats)):
+            (case / filename).write_text(json.dumps(body, indent=4))
+            created.append(str(case / filename))
+        created.append(str(fluid_mesh.write(case / "fluid.mdpa")))
+        created.append(str(wall_mesh.write(case / "structure.mdpa")))
+
+        check = validate_case_files(case, deep=False)
+        next_steps = []
+        if not check["valid"]:
+            next_steps.append("Fix the reported issues, then re-run validate_case")
+        next_steps += [f"Validate with validate_case('{case}')", f"Run with run_simulation('{case}')",
+                       "Inspect coupling convergence with results_convergence(job_id)"]
+        return {"case_dir": str(case), "created": created,
+                "required_applications": list(fsi.REQUIRED_APPLICATIONS),
+                "interface": {"fluid": fsi.FLUID_INTERFACE, "structure": fsi.STRUCTURE_INTERFACE},
                 "validation": check, "next_steps": next_steps}
 
     @mcp.tool()

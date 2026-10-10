@@ -45,7 +45,7 @@ def register(mcp) -> None:
         solved until session_advance. Unlike run_simulation this keeps the
         live model in memory so you can step, inspect and modify it.
 
-        Single-stage, serial/OpenMP cases only (multi-stage, CoSimulation and
+        Single-stage, serial/OpenMP cases only (multi-stage, CoSimulation, FSI and
         MPI cases are rejected: use run_simulation). isolate=True works on a private copy of
         the case so the original files and outputs stay untouched. Sessions do
         not survive a server restart; close them with session_close. At most
