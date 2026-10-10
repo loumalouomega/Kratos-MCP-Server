@@ -27,6 +27,8 @@ mcp = FastMCP(
         "scaffold cases (create_project, list_templates, add_boundary_condition), "
         "generate and inspect MDPA meshes (mdpa_*), run simulations as background "
         "jobs (run_simulation, job_*), run parameter/mesh studies (study_*), "
+        "drive a live simulation step by step (session_start, session_advance, "
+        "session_field_summary, session_inspect_node, ... session_close), "
         "post-process VTK results (results_*), and "
         "render PNG/GIF previews of them (results_render, results_animate -- "
         "needs the optional 'viz' extra). "
