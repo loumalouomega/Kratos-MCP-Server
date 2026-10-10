@@ -231,9 +231,112 @@ def op_mpi_support(args: dict[str, Any]) -> dict[str, Any]:
     return info
 
 
+def op_meshing_support(args: dict[str, Any]) -> dict[str, Any]:
+    """Whether this build can remesh: MeshingApplication importable and compiled with MMG."""
+    info: dict[str, Any] = {"meshing": False, "mmg": False}
+    try:
+        import KratosMultiphysics.MeshingApplication as MA
+    except Exception as exc:
+        info["meshing_error"] = f"{type(exc).__name__}: {exc}"
+        return info
+    info["meshing"] = True
+    info["mmg"] = all(hasattr(MA, name) for name in ("MmgProcess2D", "MmgProcess3D"))
+    return info
+
+
+def _scalar_variable(name: str):
+    import KratosMultiphysics as KM
+
+    try:
+        variable = KM.KratosGlobals.GetVariable(name)
+    except Exception as exc:
+        raise ValueError(f"Unknown Kratos variable '{name}'") from exc
+    if "Double" not in type(variable).__name__:
+        raise ValueError(f"Variable '{name}' is a {type(variable).__name__}; remeshing fields "
+                         "must be scalar (Double) variables")
+    return variable
+
+
+def op_remesh_mdpa(args: dict[str, Any]) -> dict[str, Any]:
+    """Remesh an .mdpa with MMG (MeshingApplication's mmg_process) and write the result.
+
+    args: {"input": stem-or-path, "output": stem-or-path, "applications": [...],
+           "request": remesh.build_request(...)} — ``assign`` lists the nodal
+    expressions evaluated on the input mesh before remeshing (metric drivers);
+    ``check`` lists expressions whose interpolated values are compared with the
+    exact expression on the new nodes."""
+    import KratosMultiphysics as KM
+    from kratos_mcp import remesh
+
+    for app in [*args.get("applications", DEFAULT_MDPA_APPLICATIONS), "MeshingApplication"]:
+        try:
+            importlib.import_module(f"KratosMultiphysics.{app}")
+        except ImportError:
+            if app == "MeshingApplication":
+                raise
+    from KratosMultiphysics.MeshingApplication import mmg_process
+
+    request = args["request"]
+    settings = dict(request["settings"])
+    stem_in = args["input"][:-5] if args["input"].endswith(".mdpa") else args["input"]
+    stem_out = args["output"][:-5] if args["output"].endswith(".mdpa") else args["output"]
+
+    model = KM.Model()
+    root = model.CreateModelPart(settings["model_part_name"])
+    variables = {item["variable"]: _scalar_variable(item["variable"])
+                 for item in [*request["assign"], *request["check"]]}
+    if settings.get("strategy") == "levelset":
+        variables.setdefault("DISTANCE", KM.DISTANCE)
+        variables["DISTANCE_GRADIENT"] = KM.DISTANCE_GRADIENT
+    for variable in variables.values():
+        root.AddNodalSolutionStepVariable(variable)
+    root.ProcessInfo[KM.DOMAIN_SIZE] = request["domain_size"]
+    KM.ModelPartIO(stem_in).ReadModelPart(root)
+
+    def assign(items: list[dict[str, str]]) -> None:
+        for item in items:
+            fn = remesh.compile_expression(item["expression"])
+            var = variables[item["variable"]]
+            for node in root.Nodes:
+                node.SetSolutionStepValue(var, fn(node.X, node.Y, node.Z))
+
+    assign(request["assign"])
+    assign(request["check"])
+    before = {"nodes": root.NumberOfNodes(), "elements": root.NumberOfElements(),
+              "conditions": root.NumberOfConditions()}
+
+    process = mmg_process.Factory(KM.Parameters(json.dumps({"Parameters": settings})), model)
+    process.ExecuteInitialize()
+
+    mode = KM.IO.WRITE | KM.IO.MESH_ONLY if hasattr(KM.IO, "MESH_ONLY") else KM.IO.WRITE
+    KM.ModelPartIO(stem_out, mode).WriteModelPart(root)
+
+    transfer: dict[str, Any] = {}
+    for item in request["check"]:
+        fn = remesh.compile_expression(item["expression"])
+        var = variables[item["variable"]]
+        errors, values = [], []
+        for node in root.Nodes:
+            exact = fn(node.X, node.Y, node.Z)
+            values.append(exact)
+            errors.append(abs(node.GetSolutionStepValue(var) - exact))
+        transfer[item["variable"]] = {
+            "expression": item["expression"], "max_abs_error": max(errors),
+            "mean_abs_error": sum(errors) / len(errors),
+            "value_range": [min(values), max(values)]}
+
+    return {"written_to": stem_out + ".mdpa",
+            "kratos_counts": {"before": before, "after": {
+                "nodes": root.NumberOfNodes(), "elements": root.NumberOfElements(),
+                "conditions": root.NumberOfConditions()}},
+            "transfer": transfer}
+
+
 OPS = {
     "check": op_check,
     "mpi_support": op_mpi_support,
+    "meshing_support": op_meshing_support,
+    "remesh_mdpa": op_remesh_mdpa,
     "list_applications": op_list_applications,
     "list_variables": op_list_variables,
     "has_constitutive_laws": op_has_constitutive_laws,

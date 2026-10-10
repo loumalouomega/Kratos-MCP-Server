@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import anyio
 
-from .. import bridge, mdpa as mdpa_mod
+from .. import bridge, mdpa as mdpa_mod, remesh as remesh_mod
 
 
 def register(mcp) -> None:
@@ -89,6 +90,119 @@ def register(mcp) -> None:
             return {"error": "size/divisions have too few entries for this kind"}
         written = mesh.write(Path(path).expanduser().resolve())
         return {"written_to": str(written), **mesh.inspect()}
+
+    @mcp.tool()
+    async def mesh_remesh(
+        input_mdpa: str,
+        output_mdpa: str,
+        strategy: str = "levelset",
+        region: dict[str, Any] | None = None,
+        distance_expression: str | None = None,
+        field_variable: str | None = None,
+        field_expression: str | None = None,
+        min_size: float | None = None,
+        max_size: float | None = None,
+        transition_distance: float | None = None,
+        preserve_sub_model_parts: list[str] | None = None,
+        freeze_sub_model_parts: list[str] | None = None,
+        check_fields: list[dict[str, str]] | None = None,
+        interpolation_error: float | None = None,
+        passes: int = 1,
+        overwrite: bool = False,
+        applications: list[str] | None = None,
+        timeout: float = 600.0,
+    ) -> dict[str, Any]:
+        """Adaptively remesh a .mdpa with MMG (MeshingApplication) and write a new
+        .mdpa; returns before/after mesh summaries, a boundary preservation check
+        and the field transfer error. Needs KratosMeshingApplication built with MMG
+        (see kratos_install). Strategies: 'levelset' refines around a signed
+        distance given as 'region' ({"type": "sphere", "center": [x, y], "radius": r}
+        or {"type": "box", "min": [...], "max": [...]}; "mode": "inside" (default,
+        the whole region gets min_size) or "surface") or as 'distance_expression'
+        in x, y, z; 'hessian' adapts to the second derivatives of the analytic nodal
+        field field_expression stored in the Kratos scalar variable field_variable;
+        'uniform' remeshes to the single element size min_size. Sizes default to
+        max_size = mean input element size, min_size = max_size/4; the size grows
+        from min_size to max_size over transition_distance (default 3*max_size).
+        preserve_sub_model_parts (default: every part with conditions) are checked
+        to keep their conditions and node bounding box; freeze_sub_model_parts
+        additionally forbids MMG from touching their nodes. check_fields
+        ([{"variable": "TEMPERATURE", "expression": "x + 2*y"}]) assigns analytic
+        nodal values before remeshing and reports how well the interpolation
+        reproduces them on the new nodes. Elements must be simplices (triangles /
+        tetrahedra). For 'hessian', interpolation_error (default 0.04) is the
+        target P1 interpolation error - smaller means finer. A metric computed on a
+        coarse mesh under-resolves a sharp feature: passes=3 repeats remeshing on
+        the previous result (the analytic field is re-evaluated on every new mesh),
+        which on the worked example halves the interpolation error at the same
+        element count. Existing output is only replaced with overwrite=true."""
+        src = Path(input_mdpa).expanduser().resolve()
+        dst = Path(output_mdpa).expanduser().resolve()
+        if dst.suffix != ".mdpa":
+            dst = dst.with_suffix(".mdpa")
+        if not src.is_file():
+            return {"error": f"{src} does not exist"}
+        if dst == src:
+            return {"error": "output_mdpa must differ from input_mdpa"}
+        if dst.exists() and not overwrite:
+            return {"error": f"{dst} already exists; pass overwrite=true to replace it"}
+        try:
+            before = mdpa_mod.read(src)
+            names = (list(preserve_sub_model_parts) if preserve_sub_model_parts is not None
+                     else remesh_mod.boundary_parts(before))
+            request = remesh_mod.build_request(
+                before, strategy=strategy, region=region,
+                distance_expression=distance_expression, field_variable=field_variable,
+                field_expression=field_expression, min_size=min_size, max_size=max_size,
+                transition_distance=transition_distance,
+                freeze_sub_model_parts=freeze_sub_model_parts, check_fields=check_fields,
+                interpolation_error=interpolation_error)
+        except (ValueError, IndexError) as exc:
+            return {"error": str(exc)}
+        issues = before.validate()
+        if issues:
+            return {"error": "The input mesh is invalid", "issues": issues[:20]}
+        if not isinstance(passes, int) or isinstance(passes, bool) or not 1 <= passes <= 6:
+            return {"error": "passes must be an integer between 1 and 6"}
+
+        def work() -> tuple[dict[str, Any], list[dict[str, int]]]:
+            support = bridge.run_op("meshing_support")
+            if not support.get("mmg"):
+                raise remesh_mod.MeshingUnavailable(support)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            history: list[dict[str, int]] = []
+            current, result = src, {}
+            with tempfile.TemporaryDirectory(prefix="kratos-mcp-remesh-") as scratch:
+                for index in range(passes):
+                    target = dst if index == passes - 1 else Path(scratch) / f"pass{index}.mdpa"
+                    op_args: dict[str, Any] = {"input": str(current), "output": str(target),
+                                               "request": request}
+                    if applications:
+                        op_args["applications"] = applications
+                    result = bridge.run_op("remesh_mdpa", op_args, timeout=timeout,
+                                           use_cache=False)
+                    info = mdpa_mod.read(target).inspect()
+                    history.append({"pass": index + 1, "nodes": info["num_nodes"],
+                                    "elements": info["num_elements"]})
+                    current = target
+            return result, history
+
+        try:
+            result, history = await anyio.to_thread.run_sync(work)
+        except remesh_mod.MeshingUnavailable as exc:
+            return {"error": "MMG remeshing is not available in the configured Kratos build "
+                             "(KratosMeshingApplication missing or built without MMG). "
+                             "Install it with kratos_install(applications=['MeshingApplication']) "
+                             "or point KRATOS_ROOT at a build that has it.",
+                    "meshing_support": exc.support}
+        except bridge.BridgeError as exc:
+            return {"error": exc.details()}
+
+        after = mdpa_mod.read(dst)
+        return {"written_to": str(dst), "strategy": strategy, "passes": history,
+                "settings": request["settings"],
+                **remesh_mod.report(before, after, names),
+                "transfer": result["transfer"]}
 
     @mcp.tool()
     def mdpa_get_nodes(

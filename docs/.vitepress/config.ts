@@ -59,6 +59,7 @@ export default defineConfig({
             { text: 'Multi-stage load steps', link: '/tutorials/multistage' },
             { text: 'Coupled solvers (CoSimulation)', link: '/tutorials/cosimulation' },
             { text: 'Fluid–structure interaction (FSI)', link: '/tutorials/fsi' },
+            { text: 'Adaptive remeshing (MMG)', link: '/tutorials/adaptive-remeshing' },
             { text: 'Interactive session', link: '/tutorials/interactive-session' },
           ],
         },

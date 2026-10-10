@@ -30,11 +30,15 @@ Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation
 
 These depend on optional applications and need small verified examples before being presented as supported templates. The shipped CoSimulation (`create_cosim_project`) and partitioned FSI (`create_fsi_project`) support is the pattern to follow: pure-Python static validation, a scaffold tool, and a worked example verified against real numbers.
 
-### Adaptive remeshing — L
+### Remeshing inside the solution loop and from solved fields — L
 
-Structured mesh generation and mesh conversion already exist. Add an optional MeshingApplication workflow around `applications/MeshingApplication/python_scripts/mmg_process.py`, with metric settings, boundary preservation, field transfer, and before/after mesh summaries. Check MMG availability before offering the workflow.
+One-shot `mesh_remesh` (levelset, analytic hessian, uniform; repeatable passes) and setup-time `add_remeshing_process` are shipped. What remains:
 
-**Probe:** refine a localized region while preserving named boundaries and a known transferred field; compare the solution with a uniformly refined case.
+- **Remeshing during a run.** An `mmg_process` that fires inside the solution loop aborts standard solvers with SIGSEGV after the first remesh (verified with the thermal solver): the strategy, DOFs and builder stay bound to the old mesh. Needs a solver-side re-initialization hook (clear and rebuild after the `MODIFIED` flag) and a story for output continuity, restart and studies.
+- **Metrics from solved fields.** `mesh_remesh` takes analytic expressions only; `.mdpa` carries no `NodalData` in this server's parser/writer. Drive the hessian from a field read from a VTK result (`result_series`), write the transferred field back, and expose superconvergent-patch-recovery error estimation (`strategy: spr`).
+- **3D and surface meshes.** Only the 2D path has been run against real numbers; `MmgProcess3D` / `MmgProcess3DSurfaces` are wired but unverified.
+
+**Probe:** adapt a 3D tetrahedral mesh to a solved structural field read from VTK and show the transferred stress/temperature error against a uniformly refined mesh.
 
 ### Optimization and reduced-order studies — XL
 
@@ -56,5 +60,5 @@ Recorded so they are not re-proposed as gaps.
 ## Suggested sequencing
 
 1. Verify local MPI on a real distributed build, then add cluster launch.
-2. Introduce remeshing as an independently optional workflow (coupled-solver CoSimulation and partitioned FSI cases are shipped).
+2. Extend remeshing to solved-field metrics and 3D (coupled-solver CoSimulation, partitioned FSI and offline/setup-time remeshing are shipped).
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

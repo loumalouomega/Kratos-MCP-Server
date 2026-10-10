@@ -51,6 +51,62 @@ Use generic simplex elements — `element_name: "Element2D3N"`,
 solvers replace them with the physical element at import time.
 :::
 
+## mesh_remesh
+
+*Needs Kratos* with `KratosMeshingApplication` built with MMG (the pip wheel bundles
+it: `kratos_install(applications=["MeshingApplication"])`). Adaptively remesh a
+`.mdpa` with MMG and write a new one; the input is never modified. The
+[adaptive remeshing tutorial](/tutorials/adaptive-remeshing) walks through verified numbers.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `input_mdpa`, `output_mdpa` | string | source mesh and the file to write (`.mdpa` appended; must differ). An existing output is only replaced with `overwrite: true` |
+| `strategy` | string | `levelset` (default), `hessian` or `uniform` |
+| `region` | object? | `levelset`: `{"type": "sphere", "center": [x, y], "radius": r}` or `{"type": "box", "min": [...], "max": [...]}`; optional `"mode"`: `inside` (default — the whole region gets `min_size`) or `surface` (only a layer around its boundary) |
+| `distance_expression` | string? | `levelset` alternative to `region`: a signed distance in `x`, `y`, `z` |
+| `field_variable`, `field_expression` | string? | `hessian`: the Kratos scalar variable (e.g. `TEMPERATURE`) and the analytic field assigned to it on every node before remeshing |
+| `min_size`, `max_size` | number? | element size bounds. Defaults: `max_size` = mean input element size, `min_size` = `max_size / 4`. `uniform` takes one target size in `min_size` |
+| `transition_distance` | number? | `levelset`: distance over which the size grows from `min_size` to `max_size` (default `3 * max_size`) |
+| `interpolation_error` | number? | `hessian`: target P1 interpolation error (default 0.04); smaller means finer |
+| `passes` | int | repeat remeshing on the previous result, 1–6 (default 1). A metric computed on a mesh too coarse for the feature under-resolves it |
+| `preserve_sub_model_parts` | string[]? | parts checked for lost conditions and moved bounding box (default: every part with conditions) |
+| `freeze_sub_model_parts` | string[]? | parts whose nodes MMG may not touch (`fix_contour_model_parts`) |
+| `check_fields` | object[]? | `[{"variable": "TEMPERATURE", "expression": "x + 2*y"}]`: assigned before remeshing, compared with the exact expression on the new nodes |
+| `applications` | string[]? | applications to import before reading (default: StructuralMechanics, ConvectionDiffusion, FluidDynamics — element names must be registered) |
+
+Expressions use `x`, `y`, `z`, `pi`, `e`, `+ - * / % **` (constant exponent, |n| ≤ 16) and
+`sqrt sin cos tan exp log tanh atan abs min max`; anything else is rejected before
+anything runs. Elements must be simplices (triangles or tetrahedra); the element and
+condition types of the input are kept.
+
+```json
+// mesh_remesh("/case/plate.mdpa", "/case/adapted.mdpa", strategy="hessian",
+//             field_variable="TEMPERATURE", field_expression="tanh(30*(x-0.5))",
+//             min_size=0.005, max_size=0.25, passes=3)   (excerpt)
+{
+  "written_to": "/case/adapted.mdpa",
+  "passes": [{"pass": 1, "nodes": 162, "elements": 286},
+             {"pass": 2, "nodes": 269, "elements": 496},
+             {"pass": 3, "nodes": 385, "elements": 724}],
+  "before": {"num_elements": 200, "element_size": {"min": 0.114, "mean": 0.114, "max": 0.114}},
+  "after":  {"num_elements": 724, "element_size": {"min": 0.0208, "mean": 0.0503, "max": 0.158}},
+  "change": {"nodes": 264, "elements": 524, "conditions": 4, "element_count_ratio": 3.62},
+  "preserved": {"left": {"ok": true, "before": {"nodes": 11, "conditions": 10}, "after": {"nodes": 7, "conditions": 6}}},
+  "transfer": {},
+  "issues": []
+}
+```
+
+`preserved.<part>.ok` is false (with `problems`) when a part loses its conditions or
+nodes, vanishes, or its node bounding box moves. MMG keeps straight boundaries and
+corners exact but is free to coarsen or refine the boundary discretization (above, `left`
+goes from 11 to 7 nodes where the field is smooth) — `freeze_sub_model_parts` forbids that. `transfer.<variable>` gives
+`max_abs_error`, `mean_abs_error` and `value_range` of the interpolated field. Fields
+are not written to the `.mdpa` (the mesh carries geometry and sub model parts only).
+
+Errors (`{"error": ...}`): missing/identical/existing files, invalid input mesh,
+bad arguments, MMG not available (`meshing_support` explains what the build lacks).
+
 ## mdpa_inspect
 
 Report the contents of an `.mdpa` file: counts by entity type, bounding box,

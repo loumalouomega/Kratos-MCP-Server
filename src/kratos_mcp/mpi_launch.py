@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import cosim, fsi
+from . import cosim, fsi, remesh
 
 # Environment variables the common launchers set for each rank.
 _RANK_VARS = ("OMPI_COMM_WORLD_RANK", "PMIX_RANK", "PMI_RANK", "MV2_COMM_WORLD_RANK",
@@ -77,6 +77,9 @@ def validate_request(params: Any, ranks: int | None, threads: int | None) -> Non
             raise ValueError("mpi_ranks is not supported for CoSimulation (coupled-solver) cases yet")
         if fsi.is_fsi(params):
             raise ValueError("mpi_ranks is not supported for partitioned FSI cases yet")
+        if remesh.has_remeshing(params):
+            raise ValueError("mpi_ranks is not supported for cases with an mmg_process "
+                             "(MMG remeshing here is serial/OpenMP only)")
         if multistage:
             raise ValueError("mpi_ranks is not supported for multi-stage cases yet")
         if ptype != "MPI":

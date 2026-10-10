@@ -83,6 +83,25 @@ from repository tags and diffs; dates are the tagged commits' dates.
 - Tests: `tests/test_fsi.py` (Kratos-free) and kratos-marked example tests for both the
   Mok case and the generated case.
 
+- **Adaptive remeshing (MeshingApplication / MMG)**: new `mesh_remesh` tool remeshes an
+  `.mdpa` offline in a worker (`remesh_mdpa` op; `meshing_support` reports whether
+  MMG is compiled in) with a `levelset` (sphere/box region or signed-distance
+  expression), `hessian` (analytic nodal field, optional repeated passes) or `uniform`
+  strategy, size bounds, frozen sub model parts and field transfer checks, and returns
+  before/after mesh summaries plus a boundary preservation report. New
+  `add_remeshing_process` tool adds a setup-time `mmg_process` (remeshed before the
+  solver initializes) to a ProjectParameters.json; `validate_case` checks MMG
+  availability and warns about remeshing inside the solution loop (verified to crash
+  the standard thermal solver with SIGSEGV); `explain_project_parameters` lists a
+  `remeshing` summary. Cases with an `mmg_process` are rejected by studies,
+  checkpoints, MPI launch and interactive sessions. New pure-Python module
+  `remesh.py` (AST-whitelisted expressions, request building, reports).
+- `kratos://examples/adaptive-remeshing` and tutorial `docs/tutorials/adaptive-remeshing.md`:
+  verified against Kratos 10.4.4 - a 3-pass hessian-adapted mesh (724 elements) has about
+  half the interpolation error of uniform meshes of 657-796 elements, and a thermal
+  case is refined from 231 to 1608 nodes at setup.
+- Tests: `tests/test_remesh.py` (Kratos-free, plus capability-gated real MMG tests).
+
 ### Changed
 
 - MPI launch, studies, checkpoints/resume, interactive sessions and Flowgraph

@@ -65,7 +65,9 @@ a **result file** — never stdout — so banners and solver chatter cannot
 corrupt it; stdout/stderr are captured and attached to error messages.
 
 Ops: `check`, `list_applications`, `list_variables`, `has_constitutive_laws`,
-`get_solver_defaults`, `validate_parameters`, `read_mdpa_deep`.
+`get_solver_defaults`, `validate_parameters`, `read_mdpa_deep`, `mpi_support`,
+`meshing_support` (is MMG compiled in?), `remesh_mdpa` (one MMG remeshing of an `.mdpa`;
+uncached, run in a worker like everything else that imports Kratos).
 
 Because each spawn costs one to a few seconds, results of build-dependent ops
 are cached in `~/.kratos-mcp/cache/`, keyed by `(op, args, build
@@ -121,7 +123,7 @@ ranks that outlive an exited launcher. Rank 0 keeps the inherited stdout
 (`stdout.log`, parsed for progress as for serial runs); the runner redirects
 ranks > 0 to `ranks/rank-<N>.log` before importing Kratos. `manifest.json`
 records the launcher, extra args, rank count and `omp_threads`, and
-`job_rerun` replays them. Studies, checkpoints, multi-stage, CoSimulation and FSI cases stay
+`job_rerun` replays them. Studies, checkpoints, multi-stage, CoSimulation, FSI and remeshing (`mmg_process`) cases stay
 serial.
 
 ## Interactive sessions
@@ -159,8 +161,8 @@ server ── sessions.py ── stdin: {"id", "op", "args"}\n ──▶ session
   timeout (`KRATOS_MCP_SESSION_IDLE_TIMEOUT`) or `session_close`, which also
   kills the process group. A persisted session whose process is gone reads as
   `lost`. At most `KRATOS_MCP_MAX_SESSIONS` run concurrently.
-- **Scope**: single-stage serial/OpenMP cases; multi-stage, CoSimulation, FSI and MPI cases
-  are rejected. `session_exec_python` runs arbitrary code in the worker and is
+- **Scope**: single-stage serial/OpenMP cases; multi-stage, CoSimulation, FSI, MPI and
+  remeshing (`mmg_process`) cases are rejected. `session_exec_python` runs arbitrary code in the worker and is
   disabled unless `KRATOS_MCP_ALLOW_EXEC=1` (enforced by both the tool and the
   worker).
 

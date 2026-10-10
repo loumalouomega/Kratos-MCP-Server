@@ -161,6 +161,9 @@ class KratosSession:
                 self.parameters["solver_settings"]["solver_type"].GetString().lower().startswith("partitioned"):
             raise ValueError("Partitioned FSI cases cannot be stepped interactively; "
                              "use run_simulation.")
+        if '"mmg_process"' in text:
+            raise ValueError("Cases with an mmg_process (remeshing) cannot be stepped "
+                             "interactively; use run_simulation.")
         problem_data =self.parameters["problem_data"] if self.parameters.Has("problem_data") else None
         if problem_data is not None and problem_data.Has("parallel_type") \
                 and problem_data["parallel_type"].GetString() != "OpenMP":
