@@ -423,6 +423,53 @@ run_simulation(case_dir='case', wait_seconds=60)   # runs both stages
 """
 
 
+LOAD_STEPPING_INTRO = """# Worked example: load-stepping cantilever (interactive session)
+
+A 5 m x 0.5 m plane-strain steel cantilever (105 nodes, 80 `SmallDisplacementElement2D4N`
+quads, E = 210 GPa, nu = 0.3) fixed on `Structure.left`, with a tip line load on
+`Structure.right` that is RAMPED with time: `modulus = "1.0e6*t"` N/m, pointing
+down. `time_step` is 0.125 (exactly representable) so the 8 steps land on
+t = 0.125, 0.25, ..., 1.0 with no floating-point drift.
+
+Unlike the other examples this one is meant to be driven STEP BY STEP with the
+`session_*` tools instead of run to completion with `run_simulation`: open it
+with `session_start`, advance a couple of steps, inspect the displacement field
+and the tip node, advance the rest, and close. Because the problem is linear
+the stepped result must equal a batch run of the same files.
+
+Real files on disk (src/kratos_mcp/examples/load_stepping_cantilever/); the
+mesh is a 20x4 rectangle from mdpa_create_structured_mesh."""
+
+LOAD_STEPPING_RESULT = """\
+## Verified result
+
+Stepping the case with session_advance(steps=1) eight times and reading the tip
+node (id 105) after each step:
+
+    step  time   uy(tip) [m]    max von Mises [Pa]
+       1  0.125  -9.833e-04     6.046e+06
+       2  0.250  -1.967e-03     1.209e+07
+       4  0.500  -3.933e-03     2.418e+07
+       8  1.000  -7.867e-03     4.837e+07
+
+Both the tip deflection and the peak stress grow linearly with the load
+(uy(t) = -7.867e-03 * t, to ~1e-5 relative), and the final state equals a batch
+run_simulation of the same case. The deflection is ~9% below the Euler-Bernoulli
+estimate for E/(1-nu^2) because this coarse 20x4 mesh is stiffer than the beam.
+
+## Driving it with the tools
+
+```
+session_start(case_dir='case')                     # -> session_id, time 0
+session_advance(session_id, steps=2)               # t = 0.25
+session_field_summary(session_id, 'DISPLACEMENT')  # max |u| and where
+session_inspect_node(session_id, 105)              # the loaded tip
+session_advance(session_id, steps=6)               # t = 1.0, finished
+session_close(session_id)                          # Finalize() + cleanup
+```
+"""
+
+
 POTENTIAL_FLOW_INTRO = """# Worked example: NACA0012 perturbation potential flow
 
 This is the small NACA0012 perturbation-compressible benchmark shipped with
@@ -567,6 +614,15 @@ def register(mcp) -> None:
         two sequential load steps sharing one mesh via the SequentialOrchestrator.
         Real files on disk with a verified per-stage result."""
         return _verbatim_example("multistage_load_steps", MULTISTAGE_INTRO, MULTISTAGE_RESULT)
+
+    @mcp.resource("kratos://examples/load-stepping-cantilever")
+    def load_stepping_cantilever_example() -> str:
+        """Complete interactive-session example: a cantilever with a time-ramped
+        tip load (modulus '1.0e6*t'), meant to be stepped with the session_*
+        tools (session_start/session_advance/session_inspect_node/...). Real
+        files on disk with a verified step-by-step result."""
+        return _verbatim_example("load_stepping_cantilever", LOAD_STEPPING_INTRO,
+                                 LOAD_STEPPING_RESULT)
 
     @mcp.resource("kratos://examples/channel-flow")
     def channel_flow_example() -> str:

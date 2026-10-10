@@ -64,7 +64,10 @@ takes priority over a pip installation.
 | `KRATOS_EXTRA_LIBS` | auto-detected | Extra `LD_LIBRARY_PATH` entries (e.g. MKL) |
 | `KRATOS_MPI_LAUNCHER` | `mpiexec`, then `mpirun` on `PATH` | MPI launcher used when `run_simulation` gets `mpi_ranks` |
 | `KRATOS_MPI_ARGS` | empty | Extra launcher flags, shell-split (e.g. `--oversubscribe`) |
-| `KRATOS_MCP_HOME` | `~/.kratos-mcp` | Server state: jobs, caches |
+| `KRATOS_MCP_HOME` | `~/.kratos-mcp` | Server state: jobs, sessions, studies, caches |
+| `KRATOS_MCP_ALLOW_EXEC` | unset | Set to `1` to enable `session_exec_python` (runs arbitrary Python inside an interactive session; off by default) |
+| `KRATOS_MCP_MAX_SESSIONS` | `4` | Maximum simultaneously open interactive sessions |
+| `KRATOS_MCP_SESSION_IDLE_TIMEOUT` | `3600` | Seconds of inactivity after which a session worker exits on its own |
 
 None of these are required if you're happy pip-installing Kratos via
 `kratos_install` — the server injects `PYTHONPATH` and `LD_LIBRARY_PATH`

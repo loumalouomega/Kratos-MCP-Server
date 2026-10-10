@@ -29,6 +29,12 @@ element simulations end to end:
   optional immutable input snapshots, reproducible reruns, checkpoint resume
   for isolated serial single-stage jobs, and local MPI launch (`mpi_ranks`,
   `omp_threads`) with per-rank logs and whole-group cancellation.
+- **Drive interactively**: open a live *session* (a Kratos `Model` +
+  `AnalysisStage` kept in memory), advance it a few steps at a time, inspect
+  fields, nodes and elements between steps, pin or change nodal values, and
+  continue — the direct, stateful route into Kratos' Python layer next to the
+  batch-job route. Optional raw Python access behind `KRATOS_MCP_ALLOW_EXEC=1`
+  ([tools](docs/tools/sessions.md), [tutorial](docs/tutorials/interactive-session.md)).
 - **Post-process** VTK results: summaries, point probes, convergence
   analysis, physical-time histories, CSV export, and reference comparisons.
 - **Preview** results without ParaView: PNG screenshots and GIF animations
@@ -38,7 +44,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-52 tools, 15 resources (10 worked examples) and 5 guided prompts. See the full documentation in
+64 tools, 16 resources (11 worked examples) and 6 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start
@@ -74,7 +80,7 @@ mcp add` line) — see [Installation](docs/guide/installation.md).
 
 ## Notebooks
 
-Five notebooks drive the server interactively as an MCP *client* — no AI
+Seven notebooks drive the server interactively as an MCP *client* — no AI
 assistant involved — each touching most of the relevant tools, resources
 and prompts in one sitting. Run any with `uv sync --extra viz --group
 dev` (adds `ipykernel` + pyvista) and open it in Jupyter/VS Code against
@@ -103,6 +109,13 @@ that `.venv`.
   orchestration — `create_multistage_project` chaining two load steps,
   `explain_project_parameters`, and a lossless round-trip to/from a
   [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph) node graph.
+- [`notebooks/interactive_session.ipynb`](notebooks/interactive_session.ipynb):
+  interactive sessions — step a load-ramped cantilever two steps at a time,
+  inspect fields and nodes between steps, pin a DOF mid-run, peek into the
+  live Kratos objects, and verify the stepped result equals a batch run.
+- [`notebooks/interactive_fluid.ipynb`](notebooks/interactive_fluid.ipynb):
+  stepping the lid-driven cavity in chunks and watching the flow approach
+  steady state through live field summaries.
 - [`docs/tutorials/potential-flow.md`](docs/tutorials/potential-flow.md): a
   runnable NACA0012 perturbation potential-flow benchmark with upstream
   reference values.
@@ -125,7 +138,8 @@ Kratos is never imported in the server process — it prints a banner on import
 (which would corrupt the stdio JSON-RPC stream) and can abort the process on
 solver errors. Short operations run in a **worker** subprocess that returns
 JSON through a result file; simulations run **detached** with per-job
-directories under `~/.kratos-mcp/jobs/`. See
+directories under `~/.kratos-mcp/jobs/`; **interactive sessions** keep a live
+`AnalysisStage` in a long-lived worker driven over JSON lines. See
 [docs/guide/architecture.md](docs/guide/architecture.md).
 
 ## Development

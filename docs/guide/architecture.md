@@ -13,8 +13,8 @@ Kratos cannot run inside the MCP server process, for three reasons:
    `LD_LIBRARY_PATH` set *before* the interpreter starts — too late for a
    process that is already running.
 
-So the server process never imports Kratos. Two subprocess mechanisms cover
-all Kratos access:
+So the server process never imports Kratos. Three subprocess mechanisms cover
+all Kratos access (short ops, batch jobs and interactive sessions):
 
 ```
 ┌──────────────────────────────┐
@@ -25,13 +25,14 @@ all Kratos access:
 │  kratos-mcp server (FastMCP) │   never imports Kratos
 │  tools/ · mdpa.py · jobs.py  │
 └─────┬───────────────────┬────┘
-      │ bridge.run_op()   │ jobs.start()
-      │ (sync, seconds)   │ (detached, minutes-hours)
-┌─────▼─────────┐   ┌─────▼─────────┐
-│  worker.py    │   │  runner.py    │   both import Kratos,
-│  introspection│   │  AnalysisStage│   env vars injected
-│  validation   │   │  .Run()       │
-└───────────────┘   └───────────────┘
+      │ bridge.run_op()   │ jobs.start()      │ sessions.start()
+      │ (sync, seconds)   │ (detached,        │ (long-lived, driven
+      │                   │  minutes-hours)   │  step by step)
+┌─────▼─────────┐   ┌─────▼─────────┐   ┌─────▼──────────────┐
+│  worker.py    │   │  runner.py    │   │  session_worker.py │   all import Kratos,
+│  introspection│   │  AnalysisStage│   │  live Model +      │   env vars injected
+│  validation   │   │  .Run()       │   │  AnalysisStage     │
+└───────────────┘   └───────────────┘   └────────────────────┘
 ```
 
 The same isolation pattern covers pyvista: `render_worker.py` (spawned by
@@ -122,6 +123,51 @@ ranks > 0 to `ranks/rank-<N>.log` before importing Kratos. `manifest.json`
 records the launcher, extra args, rank count and `omp_threads`, and
 `job_rerun` replays them. Studies, checkpoints and multi-stage cases stay
 serial.
+
+## Interactive sessions
+
+Batch jobs call `AnalysisStage.Run()` and cannot be paused. A **session** keeps
+the Kratos `Model` and an initialized `AnalysisStage` alive in a long-lived
+`session_worker.py` process so the state can be inspected and changed between
+solution steps — the direct interface to Kratos' Python layer, with a small
+stateful class (`KratosSession`) holding the model, stage, time and step
+counters.
+
+```
+server ── sessions.py ── stdin: {"id", "op", "args"}\n ──▶ session_worker.py
+          (no Kratos)  ◀── response pipe: {"id","ok",...}\n      (KratosSession)
+                                                  fds 1/2 ──▶ sessions/<id>/session.log
+```
+
+- **Protocol**: JSON lines. The worker's first message (id 0) is the *ready*
+  handshake with the start summary (or a fatal error). Requests are matched to
+  responses by id; a reader thread in the server demultiplexes them, so a
+  request that exceeds its timeout returns `busy` while the worker finishes it,
+  and later requests queue behind it.
+- **stdout stays clean**: at startup the worker duplicates the original stdout
+  pipe for responses, then re-points file descriptors 1 and 2 at
+  `session.log` — the same guarantee the batch paths get from result files. The
+  Kratos banner and solver output can never corrupt the response channel.
+- **Stepping** mirrors `AnalysisStage.RunSolutionLoop` exactly
+  (`_AdvanceTime` → `InitializeSolutionStep` → `SolveSolutionStep` →
+  `FinalizeSolutionStep` → `OutputSolutionStep`, guarded by
+  `KeepAdvancingSolutionLoop`), so a stepped run and a batch run of the same
+  case agree. Analysis-class resolution is shared with `runner.py`.
+- **Lifetime**: sessions are owned by the server process. State is persisted
+  in `~/.kratos-mcp/sessions/<id>/` (`meta.json`, `session.log`,
+  `history.jsonl`), but the worker dies with the server (stdin EOF), an idle
+  timeout (`KRATOS_MCP_SESSION_IDLE_TIMEOUT`) or `session_close`, which also
+  kills the process group. A persisted session whose process is gone reads as
+  `lost`. At most `KRATOS_MCP_MAX_SESSIONS` run concurrently.
+- **Scope**: single-stage serial/OpenMP cases; multi-stage and MPI cases are
+  rejected. `session_exec_python` runs arbitrary code in the worker and is
+  disabled unless `KRATOS_MCP_ALLOW_EXEC=1` (enforced by both the tool and the
+  worker).
+
+Pick a session when you want to look at or steer the model between steps; pick
+a batch job for production runs, restarts, MPI, studies and checkpoints. See
+the [tool reference](/tools/sessions) and the
+[tutorial](/tutorials/interactive-session).
 
 ## Hybrid introspection
 

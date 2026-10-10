@@ -27,6 +27,7 @@ CAVITY_DIR = EXAMPLES_DIR / "lid_driven_cavity"
 PLASTICITY_DIR = EXAMPLES_DIR / "plasticity_cube"
 MULTISTAGE_DIR = EXAMPLES_DIR / "multistage_load_steps"
 POTENTIAL_FLOW_DIR = EXAMPLES_DIR / "potential_flow"
+LOAD_STEPPING_DIR = EXAMPLES_DIR / "load_stepping_cantilever"
 
 
 def _run(case, timeout=120.0):
@@ -287,6 +288,38 @@ def test_multistage_example_runs_both_stages(tmp_path, monkeypatch):
     tip1, tip2 = tip("vtk_stage_1"), tip("vtk_stage_2")
     assert tip1 < 0 and tip2 < 0            # both deflect downward
     assert np.isclose(tip2, 2.0 * tip1, rtol=0.02)  # doubled load -> doubled tip
+
+
+# ------------------------------------------- load-stepping cantilever --------
+
+def test_load_stepping_mesh_and_json():
+    m = mdpa.read(LOAD_STEPPING_DIR / "mesh.mdpa")
+    assert m.validate() == []
+    assert m.inspect()["num_nodes"] == 105
+    pp = json.loads((LOAD_STEPPING_DIR / "ProjectParameters.json").read_text())
+    assert pp["solver_settings"]["time_stepping"]["time_step"] == 0.125  # exact in binary: 8 steps
+    assert pp["processes"]["loads_process_list"][0]["Parameters"]["modulus"] == "1.0e6*t"
+    assert validate_case_files(LOAD_STEPPING_DIR, deep=False)["valid"]
+
+
+@pytest.mark.kratos
+def test_load_stepping_example_matches_documented_result(tmp_path, monkeypatch):
+    """Batch run of the example: 8 steps, tip uy matches LOAD_STEPPING_RESULT."""
+    import shutil
+
+    import meshio
+    import numpy as np
+
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
+    case = tmp_path / "lsc"
+    shutil.copytree(LOAD_STEPPING_DIR, case)
+    meta, status = _run(case)
+    assert status["state"] == "succeeded", jobs.logs(meta.job_id, tail=100)
+    vtks = sorted((case / "vtk_output").glob("*.vtk"))
+    assert len(vtks) == 8
+    mesh = meshio.read(vtks[-1])
+    tip = np.asarray(mesh.point_data["DISPLACEMENT"])[np.argmax(np.asarray(mesh.points)[:, 0])][1]
+    assert tip == pytest.approx(-7.867e-3, rel=1e-3)
 
 
 @pytest.mark.kratos

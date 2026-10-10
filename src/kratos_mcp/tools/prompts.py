@@ -116,3 +116,29 @@ Follow this workflow with the kratos MCP tools:
 5. Report: what was computed, headline numbers with units, plausibility
    checks (symmetry, boundary values, expected orders of magnitude).
 """
+
+    @mcp.prompt()
+    def interactive_session(
+        case_dir: str,
+        goal: str = "step the case forward, checking the response after every few steps",
+    ) -> str:
+        """Guided workflow to drive a case step by step in a live session."""
+        return f"""Drive the Kratos case in '{case_dir}' interactively: {goal}
+
+Use a session (a live Model + AnalysisStage kept in memory) instead of
+run_simulation when you want to look at the state between steps:
+1. validate_case('{case_dir}') — fix problems first; sessions reject
+   multi-stage and MPI cases.
+2. session_start(case_dir='{case_dir}', isolate=true) — isolate keeps the
+   original files untouched. Note the session_id, end_time and model parts.
+3. session_get_parameters(session_id, path='/solver_settings') — confirm what
+   is actually solved (time step, solver, processes).
+4. Loop: session_advance(steps=N) -> session_field_summary(variable=...) ->
+   session_inspect_node / session_inspect_element at the hot spot. Check each
+   chunk is converged and the response is physically plausible before going on.
+5. Optionally change the live state with session_set_nodal_values (pin a DOF,
+   perturb a field) and advance again; session_exec_python is available only
+   when the server runs with KRATOS_MCP_ALLOW_EXEC=1.
+6. session_close(session_id) — runs Finalize() so VTK/GiD output is flushed.
+7. Report the history (time, converged) and headline numbers with units.
+"""

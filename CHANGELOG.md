@@ -3,6 +3,31 @@
 Notable changes to Kratos MCP Server. Historical entries are reconstructed
 from repository tags and diffs; dates are the tagged commits' dates.
 
+## Unreleased
+
+### Added
+
+- **Interactive sessions**: a second execution model next to batch jobs. A
+  long-lived `session_worker` process keeps a live Kratos `Model` and
+  initialized `AnalysisStage` in memory; `sessions.py` drives it over JSON lines.
+  Twelve new tools — `session_start`, `session_advance` (steps or `until_time`,
+  mirroring `RunSolutionLoop`), `session_get_parameters`, `session_model_info`,
+  `session_field_summary` (nodal or element/Gauss-point fields with extreme
+  locations), `session_inspect_node`, `session_inspect_element`,
+  `session_set_nodal_values` (with fix/free), `session_exec_python`, `session_status`,
+  `session_list`, `session_close` — plus the `interactive_session` prompt.
+  Sessions are single-stage, serial/OpenMP, bounded (`KRATOS_MCP_MAX_SESSIONS`),
+  idle-timed-out, and do not survive a server restart.
+- `session_exec_python` runs arbitrary Python inside the session and is disabled
+  unless `KRATOS_MCP_ALLOW_EXEC=1`.
+- `kratos://examples/load-stepping-cantilever`: a cantilever with a time-ramped
+  tip load (`time_step` 0.125, 8 exact steps) with verified stepped results.
+- Tests: Kratos-free session manager tests with a fake line-protocol worker, and
+  integration tests checking the stepped result against a batch run.
+- Docs: [interactive sessions tool reference](docs/tools/sessions.md), tutorial,
+  architecture section, troubleshooting entries; notebooks
+  `interactive_session.ipynb` and `interactive_fluid.ipynb`.
+
 ## 0.7.0 — 2026-10-01
 
 ### Changed

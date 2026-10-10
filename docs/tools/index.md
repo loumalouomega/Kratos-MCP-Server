@@ -1,7 +1,7 @@
 # Tool reference
 
-The server exposes **52 tools**, **15 resources** (10 worked examples) and
-**5 prompts**, grouped by workflow stage:
+The server exposes **64 tools**, **16 resources** (11 worked examples) and
+**6 prompts**, grouped by workflow stage:
 
 | Category | Tools |
 | --- | --- |
@@ -9,6 +9,7 @@ The server exposes **52 tools**, **15 resources** (10 worked examples) and
 | [Project scaffolding](/tools/scaffolding) | `list_templates`, `create_project`, `create_multistage_project`, `create_project_parameters`, `create_materials`, `list_material_presets`, `list_linear_solver_presets`, `add_boundary_condition`, `add_output_process`, `validate_project_parameters` |
 | [Meshes](/tools/mesh) | `mdpa_create_structured_mesh`, `mdpa_inspect`, `mdpa_validate`, `mdpa_get_nodes` |
 | [Simulation & jobs](/tools/simulation) | `run_simulation`, `validate_case`, `job_status`, `job_list`, `job_logs`, `job_cancel`, `job_rerun`, `configure_checkpoints`, `job_checkpoints`, `job_resume` |
+| [Interactive sessions](/tools/sessions) | `session_start`, `session_advance`, `session_get_parameters`, `session_model_info`, `session_field_summary`, `session_inspect_node`, `session_inspect_element`, `session_set_nodal_values`, `session_exec_python` (opt-in), `session_status`, `session_list`, `session_close` |
 | [Parameter & mesh studies](/tools/studies) | `study_start`, `study_status`, `study_list`, `study_cancel`, `study_resume`, `study_results` |
 | [Post-processing](/tools/postprocessing) | `results_list`, `results_summary`, `results_probe`, `results_convergence`, `results_time_history`, `results_compare` |
 | [Visualization](/tools/visualization) | `results_render`, `results_animate` (optional `viz` extra) |
@@ -38,4 +39,11 @@ kratos_check_installation (→ kratos_install, if missing)
   → run_simulation → job_status / job_logs
   → results_list → results_summary / results_probe
   → results_render (inline PNG preview; results_animate for a GIF)
+```
+
+Or, to look at the model *between* steps instead of after the run:
+
+```
+session_start → session_advance(steps=N) → session_field_summary / session_inspect_node
+  → (session_set_nodal_values) → session_advance … → session_close
 ```
