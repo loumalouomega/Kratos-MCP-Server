@@ -119,7 +119,7 @@ results_probe(..., variable="DISPLACEMENT", point=[5.0, 0.5, 0.0])
 ```
 
 The final tip displacement of the stepped session equals the batch result to
-numerical precision: stepping changes *when you can look*, not what Kratos
+numerical precision (−7.866752e-03 m vs −7.866751e-03 m, relative difference 4e-8): stepping changes *when you can look*, not what Kratos
 computes — the worker runs the identical `AnalysisStage` step sequence that
 `Run()` does.
 
@@ -131,4 +131,6 @@ computes — the worker runs the identical `AnalysisStage` step sequence that
   restart, multi-stage cases, MPI, [studies](/tutorials/studies), checkpoints.
 
 A fluid variant — watching a lid-driven cavity approach steady state in chunks
-— is in the `interactive_fluid` notebook.
+(the probe velocity settles at −0.1155 m/s, matching the
+[documented −0.116](/tools/resources)) — is in the
+[`interactive_fluid` notebook](https://github.com/loumalouomega/Kratos-MCP-Server/blob/master/notebooks/interactive_fluid.ipynb).
