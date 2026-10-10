@@ -70,6 +70,27 @@ Jobs are detached processes; a server restart does not kill them.
 was reused and the state looks wrong, `job_cancel` forces the record to
 `cancelled`.
 
+## Interactive session is `busy`, `dead` or `lost`
+
+- **`busy: true`** (from `session_advance`): the call outlived its `timeout`
+  but the worker is still solving. It is not lost — poll `session_status` until
+  `busy` is `false`, then continue. Raise `timeout` for long steps.
+- **`dead`**: the Kratos process exited (usually a C++ abort on bad input or a
+  diverged solve). `session_status(session_id, log_tail=60)` shows the exit
+  code and the end of `session.log`; fix the case and `session_start` again.
+  The MCP server itself is unaffected.
+- **`lost`**: the session belonged to a previous server process. Sessions live
+  in memory and do not survive a restart; start a new one (use a batch job
+  with checkpoints for work that must survive).
+- **`session_exec_python is disabled`**: start the server with
+  `KRATOS_MCP_ALLOW_EXEC=1` (for example `claude mcp add kratos -e
+  KRATOS_MCP_ALLOW_EXEC=1 -- uvx kratos-mcp-server`). It runs arbitrary code as
+  your user, which is why it is opt-in.
+- **`Too many open sessions`**: close one with `session_close`, or raise
+  `KRATOS_MCP_MAX_SESSIONS` (default 4).
+- **`Multi-stage cases cannot be stepped` / `serial/OpenMP only`**: sessions
+  drive one `AnalysisStage`; use `run_simulation` for orchestrated or MPI cases.
+
 ## `No MPI launcher available` / `no MPI support`
 
 `run_simulation(mpi_ranks=N)` checks before creating a job that an MPI

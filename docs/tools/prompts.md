@@ -54,3 +54,16 @@ A diagnosis checklist: status/progress → log tail → common root causes
 
 Structured reporting: discover outputs → summarise fields → probe points of
 interest → convergence review → headline numbers with plausibility checks.
+
+## interactive_session
+
+| Argument | |
+| --- | --- |
+| `case_dir` | the case to drive |
+| `goal` | what to find out while stepping (optional) |
+
+Walks through the [session](/tools/sessions) workflow: validate → `session_start`
+(isolated) → check the live parameters → loop of `session_advance` /
+`session_field_summary` / `session_inspect_node` with convergence and
+plausibility checks → optional `session_set_nodal_values` → `session_close` →
+report.

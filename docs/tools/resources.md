@@ -13,6 +13,7 @@ MCP resources are read-only documents an assistant can pull into context.
 | `kratos://examples/lid-driven-cavity` | complete worked incompressible-flow case: lid-driven cavity (Re=100, monolithic), literal files + verified recirculation result |
 | `kratos://examples/plasticity-cube` | complete worked nonlinear-structural case: single-element von Mises plasticity (material preset), literal files + verified elastic→plastic result |
 | `kratos://examples/multistage-load-steps` | complete worked multi-stage case: cantilever solved in two orchestrated load steps sharing a mesh, literal files + verified per-stage result |
+| `kratos://examples/load-stepping-cantilever` | complete worked case for [interactive sessions](/tools/sessions): cantilever with a time-ramped tip load (`"1.0e6*t"`, 8 exact steps), literal files + verified step-by-step result |
 | `kratos://examples/channel-flow` | fractional-step incompressible channel flow (mesh recipe + rendered ProjectParameters) |
 | `kratos://examples/modal-box` | modal / eigenvalue analysis of a 3D block (mesh recipe + rendered ProjectParameters) |
 | `kratos://examples/dynamic-cantilever` | transient (implicit dynamic) cantilever (mesh recipe + rendered ProjectParameters) |
