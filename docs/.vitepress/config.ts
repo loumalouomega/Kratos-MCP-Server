@@ -57,6 +57,7 @@ export default defineConfig({
             { text: 'Lid-driven cavity', link: '/tutorials/lid-driven-cavity' },
             { text: 'Plasticity cube', link: '/tutorials/plasticity-cube' },
             { text: 'Multi-stage load steps', link: '/tutorials/multistage' },
+            { text: 'Coupled solvers (CoSimulation)', link: '/tutorials/cosimulation' },
             { text: 'Interactive session', link: '/tutorials/interactive-session' },
           ],
         },

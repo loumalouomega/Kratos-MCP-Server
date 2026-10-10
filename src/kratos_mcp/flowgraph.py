@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import project_explain
+from . import cosim, project_explain
 
 # Solver-settings sub-blocks that Flowgraph models as their own nodes.
 _SOLVER_COMPONENT_KEYS = (
@@ -158,6 +158,10 @@ def _camel(snake: str) -> str:
 
 def project_to_graph(params: dict[str, Any]) -> dict[str, Any]:
     """Serialize a ProjectParameters dict to a litegraph graph.json."""
+    if cosim.is_cosim(params):
+        raise ValueError("CoSimulation (coupled-solver) cases cannot be exported to a "
+                         "Flowgraph graph: the format has no coupled-solver nodes, so the "
+                         "conversion would not be lossless.")
     b = _GraphBuilder()
     if "orchestrator" in params and "stages" in params:
         orch = params["orchestrator"]

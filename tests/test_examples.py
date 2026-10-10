@@ -28,6 +28,7 @@ PLASTICITY_DIR = EXAMPLES_DIR / "plasticity_cube"
 MULTISTAGE_DIR = EXAMPLES_DIR / "multistage_load_steps"
 POTENTIAL_FLOW_DIR = EXAMPLES_DIR / "potential_flow"
 LOAD_STEPPING_DIR = EXAMPLES_DIR / "load_stepping_cantilever"
+COUPLED_SDOF_DIR = EXAMPLES_DIR / "coupled_sdof"
 
 
 def _run(case, timeout=120.0):
@@ -417,3 +418,59 @@ def test_potential_flow_fixture_is_valid():
     fields = [value for key, item in reference.items() if key.startswith("NODE_")
               for values in item.values() for value in values]
     assert fields and all(math.isfinite(float(value)) for value in fields)
+
+
+# ------------------------------------------------- coupled SDoF (CoSimulation) --
+
+def test_coupled_sdof_files_and_validation():
+    pp = json.loads((COUPLED_SDOF_DIR / "ProjectParameters.json").read_text())
+    assert pp["solver_settings"]["type"] == "coupled_solvers.gauss_seidel_strong"
+    assert set(pp["solver_settings"]["solvers"]) == {"sdof_1", "sdof_2"}
+    assert validate_case_files(COUPLED_SDOF_DIR, deep=False)["valid"]
+
+
+@pytest.mark.kratos
+def test_coupled_sdof_example_runs_and_exchanges_data(tmp_path, monkeypatch):
+    """The documented result: all 50 steps converge, sdof_2's root-point
+    displacement is exactly sdof_1's displacement of the previous step, and
+    the end state matches COUPLED_SDOF_RESULT. Needs CoSimulationApplication."""
+    import shutil
+
+    import numpy as np
+
+    from kratos_mcp import logparse
+
+    monkeypatch.setenv("KRATOS_MCP_HOME", str(tmp_path / "state"))
+    case = tmp_path / "cs"
+    shutil.copytree(COUPLED_SDOF_DIR, case)
+    meta, status = _run(case)
+    log = jobs.logs(meta.job_id, tail=2000)
+    assert status["state"] == "succeeded", log
+
+    assert "Analysis -END-" in log  # end marker the runner adds for orphan-job detection
+    conv = logparse.convergence(log)
+    assert conv["num_steps"] == 50 and conv["num_converged"] == 50
+    assert conv["max_iterations_in_a_step"] == 4
+    assert sum(s["iterations"] for s in conv["steps"]) == 125
+
+    one = np.loadtxt(case / "sdof_1_results.dat", skiprows=1)
+    two = np.loadtxt(case / "sdof_2_results.dat", skiprows=1)
+    assert one.shape == two.shape == (51, 11)
+    # columns: time, displacement, ..., root point displacement (4), ..., reaction (10)
+    assert np.array_equal(two[1:, 4], one[:-1, 1])
+    assert math.isclose(one[-1, 1], -6.165e-04, rel_tol=1e-3)
+    assert math.isclose(two[-1, 1], 2.285e-03, rel_tol=1e-3)
+    assert math.isclose(np.abs(one[:, 1]).max(), 1.779e-03, rel_tol=1e-3)
+    assert math.isclose(np.abs(two[:, 1]).max(), 2.605e-03, rel_tol=1e-3)
+
+
+@pytest.mark.kratos
+def test_cosim_case_rejected_by_sessions(tmp_path):
+    import shutil
+
+    from kratos_mcp import sessions
+
+    case = tmp_path / "cs"
+    shutil.copytree(COUPLED_SDOF_DIR, case)
+    with pytest.raises(sessions.SessionError, match="CoSimulation"):
+        sessions.start(str(case), timeout=120)

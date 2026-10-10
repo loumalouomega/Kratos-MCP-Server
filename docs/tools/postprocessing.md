@@ -56,7 +56,10 @@ nearest node was.
 
 ## results_convergence
 
-Extract nonlinear convergence data from a simulation log.
+Extract nonlinear convergence data from a simulation log. For CoSimulation
+logs the per-step `iterations` are coupling iterations and `converged` follows
+the coupled solver's own CONVERGENCE (NOT) ACHIEVED line (weak coupling prints
+none, so it stays `null`).
 
 | Parameter | Type | Description |
 | --- | --- | --- |

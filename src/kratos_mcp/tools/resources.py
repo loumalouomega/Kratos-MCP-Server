@@ -487,6 +487,80 @@ reference file checks the nodal velocity potential to `1e-6`; the numerical
 acceptance test checks the two scalar values independently."""
 
 
+COUPLED_SDOF_INTRO = """# Worked example: coupled solvers (CoSimulation, two SDoF oscillators)
+
+Two single-degree-of-freedom oscillators coupled as a mass-spring chain by
+Kratos' CoSimulationApplication -- the shape create_cosim_project produces.
+`sdof_1` (m = 2 kg, k = 800 N/m) hangs from a fixed wall; `sdof_2` (m = 1 kg,
+k = 400 N/m, initial acceleration 10 m/s^2 from `load_impulse`) hangs from
+`sdof_1`. Each step the two solvers exchange interface data:
+
+- `sdof_1.disp` -> `sdof_2.root_disp` (the lower spring's root point moves with
+  the upper mass), exchanged right after `sdof_1` solves;
+- `sdof_2.reaction` -> `sdof_1.force` (the lower spring's reaction loads the
+  upper mass), exchanged right before `sdof_1` solves.
+
+The coupling is `coupled_solvers.gauss_seidel_strong`: it iterates within each
+step, with an Aitken accelerator on `sdof_1.force`, until the force residual
+drops below `rel_tolerance` 1e-8 (or `abs_tolerance` 1e-10).
+
+No mesh is needed: the SDoF wrappers are Python-only, which makes this the
+cheapest way to see a coupling run. Real Kratos solvers use the same top-level
+structure with `solver_wrappers.kratos.*` types (needs
+KratosCoSimulationApplication; run_simulation drives it through
+CoSimulationAnalysis).
+
+Real files on disk (src/kratos_mcp/examples/coupled_sdof/): the CoSimulation
+ProjectParameters.json plus one parameters file per solver (sdof_1.json,
+sdof_2.json)."""
+
+COUPLED_SDOF_RESULT = """\
+## Verified result
+
+Running the case (50 steps of 0.01 s to t = 0.5 s, well under a second of
+wall-clock) and reading the job log and the two solvers' result files
+(`sdof_1_results.dat`, `sdof_2_results.dat`, 51 rows each):
+
+    coupling iterations: 125 in total, max 4 in a step, all 50 steps converged
+    t = 0.5 s:  u(sdof_1) = -6.165e-04 m,  u(sdof_2) = 2.285e-03 m
+    max |u|:    sdof_1 1.779e-03 m,        sdof_2 2.605e-03 m
+
+Interface data exchange check: in every step `sdof_2`'s root-point
+displacement equals `sdof_1`'s displacement from the PREVIOUS step, exactly
+(difference 0.0). That one-step lag is the SDoF wrapper's behaviour, not an
+error: it reports the last accepted displacement, so this example demonstrates
+the data flow rather than monolithic accuracy -- a partitioned run is not
+expected to match a monolithic two-DoF solve. The log shows the iteration
+pattern 1, 4, 1, 4, ... and a harmless Aitken warning when the relaxation
+factor reaches its lower bound.
+
+## Reproducing this with the tools
+
+```
+create_cosim_project(directory='case', coupled_solver='gauss_seidel_strong',
+    solvers=[{'name': 'sdof_1', 'type': 'sdof', 'parameters': {...},
+              'data': {'disp': {'variable_name': 'SCALAR_DISPLACEMENT'},
+                       'force': {'variable_name': 'SCALAR_FORCE'}}},
+             {'name': 'sdof_2', 'type': 'sdof', 'parameters': {...},
+              'data': {'root_disp': {'variable_name': 'SCALAR_ROOT_POINT_DISPLACEMENT'},
+                       'reaction': {'variable_name': 'SCALAR_REACTION'}}}],
+    couplings=[{'from_solver': 'sdof_1', 'from_data': 'disp',
+                'to_solver': 'sdof_2', 'to_data': 'root_disp'},
+               {'from_solver': 'sdof_2', 'from_data': 'reaction',
+                'to_solver': 'sdof_1', 'to_data': 'force'}],
+    end_time=0.5, num_coupling_iterations=30,
+    convergence_criteria=[{'type': 'relative_norm_initial_residual',
+        'solver': 'sdof_1', 'data_name': 'force',
+        'abs_tolerance': 1e-10, 'rel_tolerance': 1e-8}],
+    convergence_accelerators=[{'type': 'aitken', 'solver': 'sdof_1',
+                               'data_name': 'force'}])
+validate_case(case_dir='case')      # catches unknown solvers/data/operators
+run_simulation(case_dir='case', wait_seconds=60)
+results_convergence(job_id)         # coupling iterations per step
+```
+"""
+
+
 def _example_bundle(template: str, mesh_hint: str) -> str:
     registry = load_registry()
     values = dict(registry[template]["placeholders"])
@@ -680,6 +754,18 @@ def register(mcp) -> None:
                 f"## ProjectParameters.json\n\n```json\n{pp}```\n\n"
                 f"## reference_velocity_potential.json\n\n```json\n{reference}\n```\n\n"
                 f"{POTENTIAL_FLOW_RESULT}")
+
+    @mcp.resource("kratos://examples/coupled-sdof")
+    def coupled_sdof_example() -> str:
+        """Complete CoSimulation (coupled-solver) example: two Python-only
+        single-degree-of-freedom oscillators coupled as a mass-spring chain with
+        strong Gauss-Seidel iteration and an Aitken accelerator. Real files on
+        disk with a verified interface data exchange; no mesh needed."""
+        case_dir = EXAMPLES_DIR / "coupled_sdof"
+        files = "".join(
+            f"## {name}\n\n```json\n{(case_dir / name).read_text()}\n```\n\n"
+            for name in ("ProjectParameters.json", "sdof_1.json", "sdof_2.json"))
+        return f"{COUPLED_SDOF_INTRO}\n\n{files}{COUPLED_SDOF_RESULT}"
 
     @mcp.resource("kratos://jobs/{job_id}/log")
     def job_log_resource(job_id: str) -> str:

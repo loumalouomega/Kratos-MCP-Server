@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import cosim
+
 # solver_type prefix -> analysis type (aligned with runner._SOLVER_TYPE_HINTS).
 _ANALYSIS_HINTS: list[tuple[tuple[str, ...], str]] = [
     (("static", "dynamic", "eigen_value", "prebuckling", "harmonic", "formfinding"), "structural"),
@@ -106,7 +108,11 @@ def _explain_single(params: dict[str, Any]) -> dict[str, Any]:
 
 def explain(params: dict[str, Any]) -> dict[str, Any]:
     """Return a structured summary of a ProjectParameters dict. Handles both
-    single-stage cases and multi-stage (orchestrator/stages) cases."""
+    single-stage, multi-stage (orchestrator/stages) and CoSimulation cases."""
+    if cosim.is_cosim(params):
+        result = {"kind": "cosimulation"}
+        result.update(cosim.summarize(params))
+        return result
     if "orchestrator" in params and "stages" in params:
         orch = params["orchestrator"]
         settings = orch.get("settings", {}) if isinstance(orch, dict) else {}

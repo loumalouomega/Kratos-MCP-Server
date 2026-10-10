@@ -18,7 +18,9 @@ element simulations end to end:
 - **Scaffold** simulation cases from templates: structural
   (static/dynamic/modal), thermal (transient/stationary), fluid (monolithic
   or fractional-step incompressible) and potential flow — plus **multi-stage
-  orchestrated** cases that chain analyses. Curated material and linear-solver
+  orchestrated** cases that chain analyses and **CoSimulation** cases where
+  several solvers exchange interface data inside each step (weak/strong
+  Gauss–Seidel or Jacobi coupling). Curated material and linear-solver
   presets included. ProjectParameters.json, Materials.json and structured MDPA
   meshes with named boundary regions.
 - **Study** parameter sweeps and structured mesh convergence with isolated
@@ -44,7 +46,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-64 tools, 16 resources (11 worked examples) and 6 guided prompts. See the full documentation in
+65 tools, 17 resources (12 worked examples) and 6 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start

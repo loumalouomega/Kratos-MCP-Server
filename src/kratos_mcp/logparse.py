@@ -10,7 +10,15 @@ criterion; we capture the common patterns without depending on any one:
 
     ... ITERATION:  3
     RESIDUAL CRITERION ... :: [ Obtained ratio = 1.2e-05; Expected ratio = 0.0001; ...]
-    ... Convergence is achieved after 4 iterations"""
+    ... Convergence is achieved after 4 iterations
+
+CoSimulationAnalysis prints its own step banner and coupling-iteration lines
+(co_simulation_analysis.py / coupled_solvers/gauss_seidel_strong.py):
+
+    time=0.43 | step=43:
+    GaussSeidelStrongCoupledSolver: Coupling iteration: 4 / 30
+    GaussSeidelStrongCoupledSolver: ### CONVERGENCE WAS ACHIEVED ###
+    GaussSeidelStrongCoupledSolver: XXX CONVERGENCE WAS NOT ACHIEVED XXX"""
 
 from __future__ import annotations
 
@@ -19,11 +27,13 @@ from typing import Any
 
 _STEP_RE = re.compile(r"\bSTEP:\s*(\d+)")
 _TIME_RE = re.compile(r"\bTIME:\s*([-+0-9.eE]+)")
-_ITER_RE = re.compile(r"ITERATION:?\s*(\d+)", re.IGNORECASE)
+_COSIM_STEP_RE = re.compile(r"\btime=([-+0-9.eE]+)\s*\|\s*step=(\d+)")
+_ITER_RE = re.compile(r"(?:ITERATION:?|Coupling iteration:)\s*(\d+)", re.IGNORECASE)
 _RATIO_RE = re.compile(r"ratio\s*=\s*([-+0-9.eE]+)", re.IGNORECASE)
-_CONVERGED_RE = re.compile(r"convergence\s+is\s+achieved", re.IGNORECASE)
+_CONVERGED_RE = re.compile(r"convergence\s+(is|was)\s+achieved", re.IGNORECASE)
 _NOT_CONVERGED_RE = re.compile(
-    r"(not\s+achieve[d]?\s+convergence|max(imum)?\s+iterations?\s+(exceeded|reached))",
+    r"(not\s+achieve[d]?\s+convergence|convergence\s+was\s+not\s+achieved"
+    r"|max(imum)?\s+iterations?\s+(exceeded|reached))",
     re.IGNORECASE)
 _ERROR_RE = re.compile(r"\b(Error|ERROR|Traceback|KRATOS.*EXCEPTION|RuntimeError)\b")
 
@@ -32,6 +42,10 @@ def progress(text: str) -> dict[str, Any]:
     """Latest step/time seen in the log, plus error indicators."""
     steps = _STEP_RE.findall(text)
     times = _TIME_RE.findall(text)
+    cosim = _COSIM_STEP_RE.findall(text)
+    if cosim and len(cosim) >= len(steps):  # CoSimulationAnalysis banner instead of STEP:/TIME:
+        steps = [step for _, step in cosim]
+        times = [time for time, _ in cosim]
     error_lines = [ln.strip() for ln in text.splitlines() if _ERROR_RE.search(ln)]
     return {
         "current_step": int(steps[-1]) if steps else None,
@@ -47,6 +61,13 @@ def convergence(text: str) -> dict[str, Any]:
     current: dict[str, Any] | None = None
 
     for line in text.splitlines():
+        m = _COSIM_STEP_RE.search(line)
+        if m:
+            if current is not None:
+                steps.append(current)
+            current = {"step": int(m.group(2)), "time": float(m.group(1)),
+                       "iterations": 0, "residual_ratios": [], "converged": None}
+            continue
         m = _STEP_RE.search(line)
         if m:
             if current is not None:

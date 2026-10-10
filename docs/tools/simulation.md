@@ -28,7 +28,14 @@ from `solver_type`. **Multi-stage** cases (an `orchestrator` + `stages`
 ProjectParameters, e.g. from
 [`create_multistage_project`](/tools/scaffolding#create-multistage-project))
 are detected automatically and driven through Kratos' `SequentialOrchestrator`
-— same tool, same job lifecycle.
+— same tool, same job lifecycle. So are **CoSimulation** cases (a coupled
+solver in `solver_settings`, e.g. from
+[`create_cosim_project`](/tools/scaffolding#create-cosim-project)), which are
+driven through `CoSimulationAnalysis(cosim_settings)` instead of an
+`AnalysisStage(model, parameters)`; their sub-solvers' parameter files are
+resolved relative to the case directory. Such jobs write no
+`result-index.json`; the runner prints an `Analysis -END-` line after the run
+because `CoSimulationAnalysis` has no end banner of its own.
 
 **Returns**: the job status (below). For quick cases pass
 `wait_seconds: 60`–`120` and get the terminal state in one call; failed jobs
@@ -58,7 +65,7 @@ is `KRATOS_MPI_LAUNCHER`, else `mpiexec`, else `mpirun`. The call returns
 - the case's `problem_data.parallel_type` is not `"MPI"` (otherwise N copies
   of a serial run would write the same files), or is `"MPI"` and `mpi_ranks`
   is missing;
-- the case is multi-stage, or a rank/thread count is not a positive integer.
+- the case is multi-stage or CoSimulation, or a rank/thread count is not a positive integer.
 
 Rank 0 writes to the normal job log, so `job_status` progress works as for
 serial runs. Other ranks log to `ranks/rank-<N>.log`; `job_status` lists them
@@ -71,7 +78,7 @@ Thread settings reach ranks through the launcher's inherited environment
 (local launches). Cluster launches that do not forward the environment need
 the launcher's own flag via `KRATOS_MPI_ARGS`. MPI jobs have no result or
 checkpoint index (VTK output is per rank), and studies, checkpoints and
-multi-stage cases remain serial. Scheduler (Slurm etc.) integration is not
+multi-stage and CoSimulation cases remain serial. Scheduler (Slurm etc.) integration is not
 provided.
 
 ## validate_case

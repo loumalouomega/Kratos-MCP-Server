@@ -1,0 +1,20 @@
+{
+    "system_parameters": {
+        "mass": 2.0,
+        "stiffness": 800.0,
+        "damping": 0.0
+    },
+    "time_integration_parameters": {
+        "alpha_m": -0.3,
+        "start_time": 0.0,
+        "time_step": 0.01
+    },
+    "initial_values": {
+        "displacement": 0.0,
+        "velocity": 0.0
+    },
+    "output_parameters": {
+        "write_output_file": true,
+        "file_name": "sdof_1_results.dat"
+    }
+}

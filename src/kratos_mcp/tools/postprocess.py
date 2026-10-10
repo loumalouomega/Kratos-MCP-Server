@@ -147,7 +147,7 @@ def register(mcp) -> None:
         job_id: str | None = None, log_file: str | None = None
     ) -> dict[str, Any]:
         """Extract convergence information from a simulation log (by job_id
-        or explicit log file path): per-step nonlinear iteration counts,
+        or explicit log file path): per-step nonlinear (or CoSimulation coupling) iteration counts,
         residual ratios, and which steps converged."""
         if job_id:
             try:

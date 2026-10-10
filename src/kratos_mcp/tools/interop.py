@@ -49,7 +49,10 @@ def register(mcp) -> None:
         data, _path, err = _load_json(parameters_file)
         if err is not None:
             return err
-        graph = flowgraph.project_to_graph(data)
+        try:
+            graph = flowgraph.project_to_graph(data)
+        except ValueError as exc:
+            return {"error": str(exc)}
         out: dict[str, Any] = {"graph": graph}
         if output_file:
             path = Path(output_file).expanduser().resolve()

@@ -152,7 +152,11 @@ class KratosSession:
         if self.parameters.Has("orchestrator") and self.parameters.Has("stages"):
             raise ValueError("Multi-stage cases cannot be stepped interactively; "
                              "use run_simulation.")
-        problem_data = self.parameters["problem_data"] if self.parameters.Has("problem_data") else None
+        if self.parameters.Has("solver_settings") and \
+                self.parameters["solver_settings"].Has("coupling_sequence"):
+            raise ValueError("CoSimulation (coupled-solver) cases cannot be stepped "
+                             "interactively; use run_simulation.")
+        problem_data =self.parameters["problem_data"] if self.parameters.Has("problem_data") else None
         if problem_data is not None and problem_data.Has("parallel_type") \
                 and problem_data["parallel_type"].GetString() != "OpenMP":
             raise ValueError("Interactive sessions are serial/OpenMP only "

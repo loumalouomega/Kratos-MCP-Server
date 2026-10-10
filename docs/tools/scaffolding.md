@@ -76,6 +76,50 @@ structure; `run_simulation` and `validate_case` handle it transparently.
   "created": ["/tmp/ms/ProjectParameters.json", "/tmp/ms/Materials.json"], "next_steps": ["..."] }
 ```
 
+## create_cosim_project
+
+Scaffold a **CoSimulation (coupled-solver) case**: several solvers that
+exchange interface data inside every time step, driven by Kratos'
+`CoSimulationAnalysis` (needs `KratosCoSimulationApplication`). `run_simulation`
+detects the case (`solver_settings.type` starting `coupled_solvers.`, with a
+`coupling_sequence` and `solvers`) and launches it through that entry point —
+`CoSimulationAnalysis(cosim_settings)` has no `(model, parameters)`
+constructor, so it cannot go through the usual dispatch.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `directory` | string | case directory (created if missing) |
+| `solvers` | array | one entry per solver: `{"name", "type", "data", "parameters"?, "input_file"?}` (below) |
+| `couplings` | array | `{"from_solver", "from_data", "to_solver", "to_data", "operator"?="copy", "options"?=[]}` |
+| `order` | array | coupling sequence; defaults to the order of `solvers` |
+| `coupled_solver` | string | `gauss_seidel_weak` (default, one pass per step), `jacobi_weak`, or a strong variant (`gauss_seidel_strong`, `jacobi_strong`, `block_strong`) that iterates to convergence |
+| `start_time`, `end_time` | number | `problem_data` times |
+| `num_coupling_iterations` | int | iteration cap of the strong variants (default 10) |
+| `convergence_criteria` | array | required by strong variants, e.g. `{"type": "relative_norm_initial_residual", "solver": s, "data_name": d, "abs_tolerance": 1e-10, "rel_tolerance": 1e-8}` |
+| `convergence_accelerators` | array | e.g. `{"type": "aitken", "solver": s, "data_name": d}` |
+| `data_transfer_operators` | object | extra operators; `copy` is always defined (`kratos_mapping` etc. for non-matching interfaces) |
+
+A solver entry's `type` is a CoSimulation wrapper module
+(`solver_wrappers.kratos.structural_mechanics_wrapper`, …) or one of the
+shorthands `sdof` / `sdof_static` — the Python-only single-degree-of-freedom
+solvers, which need no mesh and are the cheapest way to try a coupling
+(`data` entries get `"location": "model_part"` automatically). Pass
+`parameters` to have the solver's own parameter file written to `<name>.json`,
+or `input_file` to reference one already in the directory.
+
+A coupling whose producer comes **first** in `order` is written as an
+*output* of the producer (exchanged right after it solves); otherwise as an
+*input* of the consumer (exchanged right before it solves, carrying the
+previous iteration's value) — the usual Gauss–Seidel semantics. The result is
+statically validated and returned under `validation`.
+
+Not supported for CoSimulation cases (clear errors instead): `mpi_ranks`,
+studies, checkpoints/resume, interactive sessions and Flowgraph export. The
+output-index instrumentation behind `result-index.json` is not installed, so
+`results_time_history` does not apply to them.
+
+See the worked example `kratos://examples/coupled-sdof`.
+
 ## create_project_parameters
 
 Render only a ProjectParameters.json (returned, and optionally written to
@@ -191,5 +235,16 @@ validated per stage (structure, execution list, per-stage mesh/material refs).
 Deep mode validates every executed stage against its solver defaults and
 prefixes failures with the stage settings path. If an optional application is
 unavailable, validation remains static and reports a warning.
+
+CoSimulation cases are recognised too and checked before launch: every name in
+`coupling_sequence` must be a declared solver, every `data` /
+`from_solver_data` / `to_solver_data` must be declared in the owning solver's
+`data`, every `data_transfer_operator` (and before/after operation) must be
+defined, strong coupled solvers need `convergence_criteria` whose `solver` /
+`data_name` exist, each sub-solver's input file must exist (SDoF input files
+are key-checked; Kratos-wrapped sub-solvers get the regular single-stage
+validation, including the deep Kratos-side check). Kratos reports these
+problems only mid-run, if at all. The interface `model_part_name`s of
+Kratos-wrapped solvers are not cross-checked against their meshes.
 
 **Returns**: `{valid, issues: [...], warnings: [...], deep_validated}`.

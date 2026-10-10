@@ -88,8 +88,9 @@ was reused and the state looks wrong, `job_cancel` forces the record to
   your user, which is why it is opt-in.
 - **`Too many open sessions`**: close one with `session_close`, or raise
   `KRATOS_MCP_MAX_SESSIONS` (default 4).
-- **`Multi-stage cases cannot be stepped` / `serial/OpenMP only`**: sessions
-  drive one `AnalysisStage`; use `run_simulation` for orchestrated or MPI cases.
+- **`Multi-stage cases cannot be stepped` / `CoSimulation ... cannot be stepped` /
+  `serial/OpenMP only`**: sessions drive one `AnalysisStage`; use
+  `run_simulation` for orchestrated, coupled-solver or MPI cases.
 
 ## `No MPI launcher available` / `no MPI support`
 
