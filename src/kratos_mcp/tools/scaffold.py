@@ -15,7 +15,7 @@ from typing import Any
 
 import anyio
 
-from .. import bridge, cosim, fsi, mdpa as mdpa_mod, process_catalog
+from .. import bridge, cosim, fsi, mdpa as mdpa_mod, process_catalog, remesh
 from .environment import KNOWN_SOLVERS
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -465,6 +465,18 @@ def validate_case_files(case_dir: str | Path, parameters_file: str = "ProjectPar
                 issues.append(
                     f"model_part_name '{ref}' does not match any SubModelPart in the mesh "
                     f"(available: {sorted(available)})")
+
+    if remesh.has_remeshing(params):
+        meshing_available = None
+        if deep:
+            try:
+                meshing_available = bool(bridge.run_op("meshing_support").get("mmg"))
+            except bridge.BridgeError as exc:
+                warnings.append(f"MMG availability not checked: {exc}")
+        remesh_issues, remesh_warnings = remesh.validate(params, solver.get("model_part_name"),
+                                                         meshing_available)
+        issues.extend(remesh_issues)
+        warnings.extend(remesh_warnings)
 
     result: dict[str, Any] = {"valid": not issues, "issues": issues, "warnings": warnings,
                               "deep_validated": False}
@@ -1065,6 +1077,58 @@ def register(mcp) -> None:
         target.append(block)
         path.write_text(json.dumps(params, indent=4))
         return {"written_to": str(path), "added": block}
+
+    @mcp.tool()
+    def add_remeshing_process(
+        parameters_file: str,
+        strategy: str = "hessian",
+        variable: str | None = None,
+        model_part: str | None = None,
+        min_size: float | None = None,
+        max_size: float | None = None,
+        freeze_sub_model_parts: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Add an MMG remeshing process (MeshingApplication's mmg_process) to a
+        ProjectParameters.json so the mesh is adapted while the case runs.
+        strategy 'hessian' adapts to the second derivatives of the nodal scalar
+        solution variable 'variable' (e.g. TEMPERATURE); 'levelset' refines around
+        the zero of the signed-distance variable 'variable' (its GRADIENT variable
+        must exist in the model part, e.g. via the solver's
+        auxiliary_variables_list). Without min_size/max_size the sizes are derived
+        from the current mesh. The mesh is remeshed ONCE at setup, before the solver
+        initializes (initial_remeshing); the field driving the metric must already
+        be on the nodes then (an mdpa NodalData block): processes that assign
+        values run later. Remeshing inside the solution loop crashes standard Kratos
+        solvers and is not offered. Remeshing renumbers nodes and elements, so such
+        cases are refused by studies, checkpoints/resume, MPI launch and interactive
+        sessions. Use mesh_remesh to refine an .mdpa offline instead - same result,
+        inspectable mesh."""
+        path = Path(parameters_file).expanduser().resolve()
+        if not path.is_file():
+            return {"error": f"{path} does not exist"}
+        params = json.loads(path.read_text())
+        if cosim.is_cosim(params) or fsi.is_fsi(params) or "stages" in params:
+            return {"error": "add_remeshing_process supports single-stage, single-solver "
+                             "cases (not CoSimulation, FSI or multi-stage)"}
+        root = params.get("solver_settings", {}).get("model_part_name")
+        model_part = model_part or root
+        try:
+            block = remesh.process_block(
+                model_part or "", strategy=strategy, variable=variable, min_size=min_size,
+                max_size=max_size, initial_remeshing=True,
+                freeze_sub_model_parts=freeze_sub_model_parts)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        processes = params.setdefault("processes", {})
+        processes.setdefault("list_other_processes", []).append(block)
+        issues, warnings = remesh.validate({"processes": {"x": [block]}}, root, None)
+        path.write_text(json.dumps(params, indent=4))
+        return {"written_to": str(path), "process_list": "list_other_processes",
+                "added": block, "warnings": warnings + issues,
+                "required_applications": list(remesh.REQUIRED_APPLICATIONS),
+                "next_steps": [f"Validate with validate_case('{path.parent}') (deep checks MMG "
+                               "availability)", "Remeshed runs are single-job only: no studies, "
+                               "checkpoints, MPI or sessions"]}
 
     @mcp.tool()
     async def validate_project_parameters(

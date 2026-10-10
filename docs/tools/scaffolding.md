@@ -175,6 +175,37 @@ Flowgraph export. See the worked example `kratos://examples/fsi-flexible-flap`
 (the Mok benchmark, reused from Kratos' own FSI tests) and the
 [FSI tutorial](/tutorials/fsi).
 
+## add_remeshing_process
+
+Add an MMG remeshing process (`mmg_process` from the MeshingApplication) to a
+ProjectParameters.json. The mesh is remeshed **once at setup**, before the solver
+initializes (`initial_remeshing: true`), then the case runs on the adapted mesh.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `parameters_file` | string | the ProjectParameters.json to edit |
+| `strategy` | string | `hessian` (second derivatives of the scalar `variable`) or `levelset` (zero of the signed-distance `variable`; `<variable>_GRADIENT` must exist too) |
+| `variable` | string | nodal scalar variable driving the metric, e.g. `DISTANCE` |
+| `model_part` | string? | root model part (default `solver_settings.model_part_name`) |
+| `min_size`, `max_size` | number? | forced element size bounds; without them MMG derives sizes from the current mesh (`automatic_remesh`) |
+| `freeze_sub_model_parts` | string[]? | sub model parts whose nodes are blocked |
+
+The field driving the metric must already be on the nodes when the process
+initializes: put it in the mesh as a `Begin NodalData DISTANCE` block and list
+`DISTANCE`/`DISTANCE_GRADIENT` in the solver's `auxiliary_variables_list` so the
+variables exist (processes that assign values run later, in
+`ExecuteBeforeSolutionLoop`). Remeshing **inside** the solution loop is not offered: a
+standard solver keeps its strategy bound to the old mesh and the run aborts with
+SIGSEGV after the first remesh (verified with the thermal solver);
+`validate_case` warns about such hand-written blocks.
+
+Remeshing renumbers nodes and elements, so cases with an `mmg_process` are
+rejected by studies, checkpoints/resume, `mpi_ranks`, interactive sessions;
+`validate_case(deep=true)` checks that MMG is available. Use
+[`mesh_remesh`](/tools/mesh#mesh-remesh) for an inspectable, offline refinement.
+Worked example: `kratos://examples/adaptive-remeshing` (`setup_remesh/`: 231 nodes →
+1608 nodes around a disk).
+
 ## create_project_parameters
 
 Render only a ProjectParameters.json (returned, and optionally written to

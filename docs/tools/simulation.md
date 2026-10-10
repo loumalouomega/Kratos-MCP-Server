@@ -72,7 +72,7 @@ is `KRATOS_MPI_LAUNCHER`, else `mpiexec`, else `mpirun`. The call returns
 - the case's `problem_data.parallel_type` is not `"MPI"` (otherwise N copies
   of a serial run would write the same files), or is `"MPI"` and `mpi_ranks`
   is missing;
-- the case is multi-stage, CoSimulation or FSI, or a rank/thread count is not a positive integer.
+- the case is multi-stage, CoSimulation, FSI or contains an `mmg_process`, or a rank/thread count is not a positive integer.
 
 Rank 0 writes to the normal job log, so `job_status` progress works as for
 serial runs. Other ranks log to `ranks/rank-<N>.log`; `job_status` lists them

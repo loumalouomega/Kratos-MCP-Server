@@ -730,6 +730,66 @@ step and settles at a floor deflection of about -2.05e-2 (2 % of the channel
 height) with an inlet pressure of about 14.7.
 """
 
+ADAPTIVE_REMESHING_INTRO = """# Worked example: adaptive remeshing (MeshingApplication / MMG)
+
+Two uses of MMG, both verified against Kratos 10.4.4 (KratosMeshingApplication
+wheel, which bundles MMG):
+
+1. **Offline, `mesh_remesh`** - a unit square (`plate.mdpa`: 10x10 cells split into
+   200 triangles, boundary parts `left/right/bottom/top`) is adapted to the sharp
+   front of an analytic field, `tanh(30*(x - 0.5))`, with the `hessian` strategy.
+   One pass on a coarse mesh under-resolves a feature narrower than the elements,
+   so `passes=3` repeats remeshing on the previous result (the field is
+   re-evaluated on every new mesh). `request.json` holds the exact arguments.
+2. **At setup, `add_remeshing_process`** - `setup_remesh/` is a transient thermal
+   case whose mesh carries a `Begin NodalData DISTANCE` block (distance to a disk).
+   An `mmg_process` with `strategy: levelset` and `initial_remeshing: true` refines
+   the mesh around the disk before the solver builds its strategy. The thermal
+   solver lists `DISTANCE`/`DISTANCE_GRADIENT` in `auxiliary_variables_list` so the
+   variables exist.
+
+Remeshing inside the solution loop is deliberately not offered: with a standard
+solver it crashes (SIGSEGV after the first remesh - the solver's strategy still
+points at the old mesh). Studies, checkpoints, MPI launch and sessions refuse cases
+with an `mmg_process`.
+"""
+
+ADAPTIVE_REMESHING_RESULT = """## Verified result
+
+Offline (`mesh_remesh(**request.json)`, hessian, 3 passes):
+
+| pass | nodes | elements |
+|-----:|------:|---------:|
+| 1 | 162 | 286 |
+| 2 | 269 | 496 |
+| 3 | 385 | 724 |
+
+- All four boundary parts keep their conditions and node bounding box
+  (`preserved.*.ok` is true); `issues` is empty.
+- Maximum P1 interpolation error of `tanh(30*(x - 0.5))` over a 201x201 sampling grid:
+  0.436 on `plate.mdpa`, **0.126 on the adapted 724-element mesh**, against 0.237 /
+  0.240 on UNIFORM meshes of 657 / 796 elements (`strategy="uniform"`,
+  `min_size=0.065` / `0.055`): at the same element count the adapted mesh is about
+  twice as accurate. A single pass (286 elements) is no better than the input
+  (0.43).
+- `check_fields=[{"variable": "TEMPERATURE", "expression": "x + 2*y"}]` reports a
+  transfer error of about 1e-15: MMG's interpolation reproduces linear fields to
+  round-off.
+- Counts vary by a few elements between MMG builds and thread counts; the
+  repository tests assert ratios, not exact numbers.
+
+At setup (`run_simulation('setup_remesh')`, 0.3 s in 3 steps, about one second):
+
+- The 231-node / 400-element input mesh (21x11 grid on 1.0 x 0.5, size 0.05) becomes
+  **1608 nodes / 3078 triangles** (`minimal_size` 0.02 inside the disk of radius 0.1
+  around (0.5, 0.25), growing to `maximal_size` 0.1); the VTK output has 1608 points.
+- The Dirichlet condition on `left` is kept (TEMPERATURE reaches 100.0 there).
+
+Use `mesh_remesh` when you want an inspectable adapted .mdpa to feed any later
+workflow; use `add_remeshing_process` only when the case must carry its own
+setup-time adaptation.
+"""
+
 def register(mcp) -> None:
 
     @mcp.resource("kratos://templates/{name}")
@@ -954,6 +1014,31 @@ def register(mcp) -> None:
             for name in ("ProjectParameters.json", "MaterialsFluid.json", "MaterialsStructure.json"))
         return (f"{FSI_FLEXIBLE_FLAP_INTRO}\n\n{summaries}{files}"
                 f"{FSI_FLEXIBLE_FLAP_RESULT}\n{FSI_FLEXIBLE_WALL_NOTE}")
+
+    @mcp.resource("kratos://examples/adaptive-remeshing")
+    def adaptive_remeshing_example() -> str:
+        """Worked adaptive-remeshing example (MeshingApplication/MMG): a
+        hessian-adapted mesh (mesh_remesh, 3 passes) that is twice as accurate as
+        a uniform mesh with the same element count, and a thermal case remeshed
+        at setup by an mmg_process (add_remeshing_process). Real files on disk
+        with verified counts."""
+        case_dir = EXAMPLES_DIR / "adaptive_remeshing"
+        setup = case_dir / "setup_remesh"
+        plate = json.dumps(mdpa_mod.read(case_dir / "plate.mdpa").inspect(), indent=2)
+        setup_mesh = json.dumps(mdpa_mod.read(setup / "mesh.mdpa").inspect(), indent=2)
+        return (
+            f"{ADAPTIVE_REMESHING_INTRO}\n"
+            f"## plate.mdpa summary (mdpa_inspect)\n\n```json\n{plate}\n```\n\n"
+            f"## request.json (arguments of mesh_remesh)\n\n```json\n"
+            f"{(case_dir / 'request.json').read_text()}```\n\n"
+            f"## setup_remesh/mesh.mdpa summary (mdpa_inspect; plus a NodalData DISTANCE "
+            f"block)\n\n```json\n{setup_mesh}\n```\n\n"
+            f"## setup_remesh/ProjectParameters.json\n\n```json\n"
+            f"{(setup / 'ProjectParameters.json').read_text()}\n```\n\n"
+            f"## setup_remesh/Materials.json\n\n```json\n"
+            f"{(setup / 'Materials.json').read_text()}\n```\n\n"
+            f"{ADAPTIVE_REMESHING_RESULT}"
+        )
 
     @mcp.resource("kratos://jobs/{job_id}/log")
     def job_log_resource(job_id: str) -> str:

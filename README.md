@@ -25,6 +25,11 @@ element simulations end to end:
   iteration). Curated material and linear-solver
   presets included. ProjectParameters.json, Materials.json and structured MDPA
   meshes with named boundary regions.
+- **Remesh** adaptively with MMG (MeshingApplication): `mesh_remesh` refines or
+  coarsens an `.mdpa` around a region, a level set or an analytic field
+  (hessian metric), keeps the named boundaries and reports the field transfer
+  error; `add_remeshing_process` adds a setup-time `mmg_process` to a case
+  ([tools](docs/tools/mesh.md#mesh-remesh), [tutorial](docs/tutorials/adaptive-remeshing.md)).
 - **Study** parameter sweeps and structured mesh convergence with isolated
   variants, a bounded background queue, and physical-location probe responses
   ([tools](docs/tools/studies.md), [tutorial](docs/tutorials/studies.md)).
@@ -48,7 +53,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-66 tools, 19 resources (14 worked examples) and 6 guided prompts. See the full documentation in
+68 tools, 20 resources (15 worked examples) and 6 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start

@@ -132,6 +132,20 @@ installed) via `-displayfd`.
   constructor, so `runner.py` just maps `partitioned*` to it via
   `ANALYSIS_CLASSES["fsi"]`. Studies, checkpoints (no FSI restart), MPI, sessions
   and Flowgraph export reject FSI cases.
+- `src/kratos_mcp/remesh.py` — Kratos-free adaptive remeshing support: `compile_expression`
+  (AST whitelist for the `x/y/z` expressions that are evaluated again in the worker),
+  `region_expression` (sphere/box → signed distance, `inside` clamps at 0), `build_request`
+  (validation + `mmg_process` settings + `assign`/`check` expression lists), `report`
+  (before/after `Mdpa` summaries, boundary preservation by node bounding box),
+  `process_block`/`validate`/`has_remeshing` for in-run `mmg_process` blocks (the single
+  detection point used by every rejection: studies, checkpoints, MPI, sessions).
+  Backs `mesh_remesh` (`tools/mesh.py`; worker ops `meshing_support`, `remesh_mdpa`) and
+  `add_remeshing_process` (`tools/scaffold.py`).
+- `src/kratos_mcp/examples/adaptive_remeshing/` — `plate.mdpa` + `request.json` (the
+  offline hessian example) and `setup_remesh/` (a thermal case whose mesh has a
+  `Begin NodalData DISTANCE` block, remeshed at setup). Served by
+  `kratos://examples/adaptive-remeshing` with verified numbers in
+  `ADAPTIVE_REMESHING_RESULT`. Same "re-verify with a real run" rule.
 - `src/kratos_mcp/project_explain.py` — pure-JSON structured summary of a
   ProjectParameters.json (analysis type, solver, processes, per-stage for
   multistage); backs `explain_project_parameters` and feeds `flowgraph.py`.
@@ -320,6 +334,19 @@ installed) via `-displayfd`.
   Kratos' `binary` VTK — FSI outputs use `ascii`. Float time accumulation:
   `end_time` 5.0 at dt 0.1 runs 51 steps, 3.0 runs 30.
 
+- Remeshing (MeshingApplication): the pip `KratosMeshingApplication` wheel bundles MMG.
+  `mmg_process` sub model part names (`fix_contour_model_parts`) are relative to the root
+  model part. Remeshing INSIDE the solution loop segfaults standard solvers (SIGSEGV after
+  the first remesh; their strategy is bound to the old mesh), so only `initial_remeshing`
+  is offered: process `ExecuteInitialize` runs before `AnalysisStage._InitializeInternals`.
+  The metric field must already be on the nodes then (`Begin NodalData`, listed in
+  `auxiliary_variables_list`); `assign_scalar_variable_process` runs later. A hessian
+  metric from one pass on a mesh coarser than the feature barely helps - `passes=3`
+  halves the interpolation error. `mdpa.parse` drops `NodalData`, and `ModelPartIO`
+  writes none, so `mesh_remesh` outputs carry geometry and sub model parts only (transfer
+  is verified inside the worker). MMG may coarsen straight boundaries; geometry
+  (bounding box) is what is preserved, `freeze_sub_model_parts` pins the nodes.
+
 ## MCP / pyvista gotchas
 
 - Tools that return a mixed `[dict, Image]` list (inline image + metadata)
@@ -449,4 +476,4 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   the tool and the worker. Other knobs: `KRATOS_MCP_MAX_SESSIONS` (4),
   `KRATOS_MCP_SESSION_IDLE_TIMEOUT` (3600 s).
 - Tool/resource/prompt counts are quoted in `README.md` and `docs/tools/index.md`
-  (currently 66 / 19 / 6) — bump both when adding any.
+  (currently 68 / 20 / 6) — bump both when adding any.

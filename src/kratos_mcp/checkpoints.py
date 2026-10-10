@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from typing import Any
 
-from . import cosim, fsi, jobs, kratos_env
+from . import cosim, fsi, jobs, kratos_env, remesh
 
 
 def serial_single(params: dict[str, Any]) -> None:
@@ -20,6 +20,9 @@ def serial_single(params: dict[str, Any]) -> None:
         raise ValueError('CoSimulation checkpoints are not supported')
     if fsi.is_fsi(params):
         raise ValueError('FSI checkpoints are not supported (FsiAnalysis has no restart)')
+    if remesh.has_remeshing(params):
+        raise ValueError('Checkpoints are not supported for cases with an mmg_process '
+                         '(a restart file cannot reproduce the remeshing history)')
     if params.get('problem_data', {}).get('parallel_type', 'OpenMP') != 'OpenMP':
         raise ValueError('MPI checkpoints are not supported')
 

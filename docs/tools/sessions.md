@@ -59,7 +59,7 @@ yet.
 `end_time`, `step`, node/element/condition counts, the main `model_part` and all
 `model_parts`, and the `log_file` that receives the Kratos banner and solver
 output. Multi-stage cases (`orchestrator` + `stages`), CoSimulation
-(coupled-solver) cases, partitioned FSI cases and `parallel_type: "MPI"` cases are rejected with an explanatory error — use
+(coupled-solver) cases, partitioned FSI cases, cases with an `mmg_process` and `parallel_type: "MPI"` cases are rejected with an explanatory error — use
 `run_simulation` for those.
 
 ```json

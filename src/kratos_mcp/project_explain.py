@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import cosim, fsi
+from . import cosim, fsi, remesh
 
 # solver_type prefix -> analysis type (aligned with runner._SOLVER_TYPE_HINTS).
 _ANALYSIS_HINTS: list[tuple[tuple[str, ...], str]] = [
@@ -103,6 +103,8 @@ def _explain_single(params: dict[str, Any]) -> dict[str, Any]:
         "processes": _flatten_processes(params.get("processes", {})),
         "output_processes": _flatten_processes(params.get("output_processes", {})),
     }
+    if remesh.has_remeshing(params.get("processes", {})):
+        summary["remeshing"] = remesh.summarize(params.get("processes", {}))
     return summary
 
 

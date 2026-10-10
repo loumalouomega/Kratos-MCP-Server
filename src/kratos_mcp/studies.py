@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from . import cosim, fsi, jobs, kratos_env, mdpa, result_series
+from . import cosim, fsi, jobs, kratos_env, mdpa, remesh, result_series
 from .job_supervisor import exclusive
 
 TERMINAL_STATES = {'succeeded', 'completed_with_errors', 'cancelled'}
@@ -228,6 +228,9 @@ def serial_case(params: dict[str, Any]) -> None:
         raise ValueError('Studies do not support CoSimulation (coupled-solver) cases')
     if fsi.is_fsi(params):
         raise ValueError('Studies do not support partitioned FSI cases')
+    if remesh.has_remeshing(params):
+        raise ValueError('Studies do not support cases with an mmg_process (remeshing '
+                         'renumbers nodes and elements, so runs are not comparable)')
     if any(not isinstance(params.get(key), dict) for key in ('problem_data', 'solver_settings')):
         raise ValueError('problem_data and solver_settings must be objects')
     if params.get('problem_data', {}).get('parallel_type', 'OpenMP') != 'OpenMP':

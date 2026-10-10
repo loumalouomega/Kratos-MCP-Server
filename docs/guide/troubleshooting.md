@@ -88,9 +88,21 @@ was reused and the state looks wrong, `job_cancel` forces the record to
   your user, which is why it is opt-in.
 - **`Too many open sessions`**: close one with `session_close`, or raise
   `KRATOS_MCP_MAX_SESSIONS` (default 4).
-- **`Multi-stage cases cannot be stepped` / `CoSimulation ... cannot be stepped` / `Partitioned FSI cases cannot be stepped` /
+- **`Multi-stage cases cannot be stepped` / `CoSimulation ... cannot be stepped` / `Partitioned FSI cases cannot be stepped` / `Cases with an mmg_process ... cannot be stepped` /
   `serial/OpenMP only`**: sessions drive one `AnalysisStage`; use
   `run_simulation` for orchestrated, coupled-solver or MPI cases.
+
+## `MMG remeshing is not available` / remeshed run dies with SIGSEGV
+
+- `mesh_remesh` and `validate_case` need a `KratosMeshingApplication` built with MMG.
+  The pip wheel has it: `kratos_install(applications=["MeshingApplication"])`; a local
+  build needs `-DUSE_MMG=ON`.
+- A job that crashes (`returncode -11`) right after `MMG Remeshing Process: Remesh
+  finished` has an `mmg_process` that remeshes inside the solution loop. Standard solvers
+  cannot survive that; use `initial_remeshing: true` or `mesh_remesh` on the `.mdpa`.
+- `There is no sub model part with name "X" in model part "Y"`: `freeze_sub_model_parts`
+  and `fix_contour_model_parts` take names relative to the root model part (`left`, not
+  `Main.left`).
 
 ## `No MPI launcher available` / `no MPI support`
 
