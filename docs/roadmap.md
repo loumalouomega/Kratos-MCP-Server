@@ -30,16 +30,9 @@ Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation
 
 These depend on optional applications and need small verified examples before being presented as supported templates.
 
-### CoSimulation: mesh-based coupling example and output indexing — S
-
-The runner adapter, coupled-case validation, `create_cosim_project` and a
-verified two-SDoF example are shipped. What remains is the mesh-based half: a small example coupling two `solver_wrappers.kratos.*` solvers through `kratos_mapping` (the static validator does not yet cross-check interface `model_part_name`s of Kratos-wrapped solvers against their meshes), and result/checkpoint indexing for the sub-solvers' VTK output, which the runner does not instrument for coupled cases.
-
-**Probe:** a two-Kratos-solver coupling through MCP with non-matching interfaces, where a `model_part_name` that is absent from a sub-solver's mesh is diagnosed before launch and `results_time_history` reads the sub-solver output.
-
 ### Partitioned FSI example — M
 
-Upstream: [FSIApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/FSIApplication). In `applications/FSIApplication/python_scripts/fsi_analysis.py`, `FsiAnalysis` keeps the standard `(model, parameters)` constructor, so unlike CoSimulation it needs no runner adapter. The gap is scaffolding and validation: nested `fluid_solver_settings` / `structure_solver_settings` plus mesh motion ([MeshMovingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MeshMovingApplication)) and non-matching interface mapping ([MappingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MappingApplication)). Add a fluid + structure + interface template, coupled-case validation (one shared interface pair, matching dimension, required applications compiled), and one small 2D example with interface data-exchange and mesh-motion checks.
+Upstream: [FSIApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/FSIApplication). In `applications/FSIApplication/python_scripts/fsi_analysis.py`, `FsiAnalysis` keeps the standard `(model, parameters)` constructor, so unlike CoSimulation it needs no runner adapter. The gap is scaffolding and validation: nested `fluid_solver_settings` / `structure_solver_settings` plus mesh motion ([MeshMovingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MeshMovingApplication)) and non-matching interface mapping ([MappingApplication](https://github.com/KratosMultiphysics/Kratos/tree/master/applications/MappingApplication)). The shipped `kratos://examples/coupled-blocks` already demonstrates mapping and interface-model-part validation between two Kratos solvers, so the FSI work can reuse them. Add a fluid + structure + interface template, coupled-case validation (one shared interface pair, matching dimension, required applications compiled), and one small 2D example with interface data-exchange and mesh-motion checks.
 
 **Probe:** run the minimal FSI example through MCP, verify interface transfer and mesh motion, and ensure a missing/mismatched interface is diagnosed before launch.
 

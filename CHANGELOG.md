@@ -45,12 +45,30 @@ from repository tags and diffs; dates are the tagged commits' dates.
 - Docs: [interactive sessions tool reference](docs/tools/sessions.md), tutorial,
   architecture section, troubleshooting entries; notebooks
   `interactive_session.ipynb` and `interactive_fluid.ipynb`.
+- `kratos://examples/coupled-blocks`: a mesh-based CoSimulation example — two
+  Kratos structural blocks on separate meshes with non-matching interfaces
+  (5 vs 7 nodes) coupled by Dirichlet–Neumann iteration through `kratos_mapping`
+  (displacement mapped, reaction returned with `swap_sign` + `use_transpose`,
+  strong Gauss–Seidel + Aitken). Verified against Kratos 10.4.4: both steps
+  converge, the force through the interface is conserved (999998.2 N of 1e6 N)
+  and the response is linear in the load ramp. Tutorial section 5 in
+  `docs/tutorials/cosimulation.md`.
+- `validate_case` / `validate_project_parameters` on a CoSimulation case now read
+  each Kratos-wrapped sub-solver's mesh and report any interface
+  `model_part_name` that is not its root model part or a SubModelPart, before
+  launch; mapped data with differing `dimension`s produce a warning.
+- Sub-solver VTK output of CoSimulation runs is indexed in `result-index.json`
+  (one series per sub-solver model part), so `results_time_history` and
+  `results_compare` apply to it.
 
 ### Changed
 
 - MPI launch, studies, checkpoints/resume, interactive sessions and Flowgraph
   export reject CoSimulation cases with an explicit message instead of failing
   with "Cannot infer analysis type".
+- `results_convergence` / `job_status` progress no longer count the `STEP:`/`TIME:`
+  banners that Kratos-wrapped sub-solvers print as extra coupling steps; the
+  `time=… | step=N` banner is authoritative in a coupled log.
 
 ## 0.7.0 — 2026-10-01
 

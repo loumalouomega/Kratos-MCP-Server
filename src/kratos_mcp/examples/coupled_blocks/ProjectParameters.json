@@ -1,0 +1,109 @@
+{
+    "problem_data": {
+        "problem_name": "coupled_blocks",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "echo_level": 1,
+        "print_colors": false,
+        "parallel_type": "OpenMP"
+    },
+    "solver_settings": {
+        "type": "coupled_solvers.gauss_seidel_strong",
+        "echo_level": 1,
+        "num_coupling_iterations": 30,
+        "convergence_accelerators": [
+            {
+                "type": "aitken",
+                "solver": "block_a",
+                "data_name": "disp",
+                "init_alpha": 0.5
+            }
+        ],
+        "convergence_criteria": [
+            {
+                "type": "relative_norm_initial_residual",
+                "solver": "block_a",
+                "data_name": "disp",
+                "abs_tolerance": 1e-12,
+                "rel_tolerance": 1e-06
+            }
+        ],
+        "data_transfer_operators": {
+            "mapper": {
+                "type": "kratos_mapping",
+                "mapper_settings": {
+                    "mapper_type": "nearest_element"
+                }
+            }
+        },
+        "coupling_sequence": [
+            {
+                "name": "block_b",
+                "input_data_list": [
+                    {
+                        "data": "disp",
+                        "from_solver": "block_a",
+                        "from_solver_data": "disp",
+                        "data_transfer_operator": "mapper",
+                        "data_transfer_operator_options": []
+                    }
+                ],
+                "output_data_list": [
+                    {
+                        "data": "reaction",
+                        "to_solver": "block_a",
+                        "to_solver_data": "load",
+                        "data_transfer_operator": "mapper",
+                        "data_transfer_operator_options": [
+                            "swap_sign",
+                            "use_transpose"
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "block_a",
+                "input_data_list": [],
+                "output_data_list": []
+            }
+        ],
+        "solvers": {
+            "block_b": {
+                "type": "solver_wrappers.kratos.structural_mechanics_wrapper",
+                "solver_wrapper_settings": {
+                    "input_file": "block_b"
+                },
+                "data": {
+                    "disp": {
+                        "model_part_name": "BlockB.left",
+                        "variable_name": "DISPLACEMENT",
+                        "dimension": 2
+                    },
+                    "reaction": {
+                        "model_part_name": "BlockB.left",
+                        "variable_name": "REACTION",
+                        "dimension": 2
+                    }
+                }
+            },
+            "block_a": {
+                "type": "solver_wrappers.kratos.structural_mechanics_wrapper",
+                "solver_wrapper_settings": {
+                    "input_file": "block_a"
+                },
+                "data": {
+                    "disp": {
+                        "model_part_name": "BlockA.right",
+                        "variable_name": "DISPLACEMENT",
+                        "dimension": 2
+                    },
+                    "load": {
+                        "model_part_name": "BlockA.right",
+                        "variable_name": "POINT_LOAD",
+                        "dimension": 2
+                    }
+                }
+            }
+        }
+    }
+}

@@ -43,7 +43,7 @@ def progress(text: str) -> dict[str, Any]:
     steps = _STEP_RE.findall(text)
     times = _TIME_RE.findall(text)
     cosim = _COSIM_STEP_RE.findall(text)
-    if cosim and len(cosim) >= len(steps):  # CoSimulationAnalysis banner instead of STEP:/TIME:
+    if cosim:  # CoSimulationAnalysis banner; Kratos-wrapped sub-solvers also print STEP:/TIME:
         steps = [step for _, step in cosim]
         times = [time for time, _ in cosim]
     error_lines = [ln.strip() for ln in text.splitlines() if _ERROR_RE.search(ln)]
@@ -59,6 +59,8 @@ def convergence(text: str) -> dict[str, Any]:
     """Per-step nonlinear iteration counts and residual ratios."""
     steps: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
+    # In a coupled run the sub-solvers' own STEP:/TIME: banners are not coupling steps.
+    cosim_log = _COSIM_STEP_RE.search(text) is not None
 
     for line in text.splitlines():
         m = _COSIM_STEP_RE.search(line)
@@ -68,7 +70,7 @@ def convergence(text: str) -> dict[str, Any]:
             current = {"step": int(m.group(2)), "time": float(m.group(1)),
                        "iterations": 0, "residual_ratios": [], "converged": None}
             continue
-        m = _STEP_RE.search(line)
+        m = None if cosim_log else _STEP_RE.search(line)
         if m:
             if current is not None:
                 steps.append(current)
@@ -77,7 +79,7 @@ def convergence(text: str) -> dict[str, Any]:
             continue
         if current is None:
             continue
-        m = _TIME_RE.search(line)
+        m = None if cosim_log else _TIME_RE.search(line)
         if m and current["time"] is None:
             current["time"] = float(m.group(1))
             continue

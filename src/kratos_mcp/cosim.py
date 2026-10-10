@@ -193,8 +193,52 @@ def _check_sdof(case: Path, name: str, solver: dict[str, Any], issues: list[str]
                     issues.append(f"solver '{name}': {path.name}: unknown key '{section}.{key}'")
 
 
+def _check_interface_model_parts(name: str, solver: dict[str, Any], root: str,
+                                 available: set[str], issues: list[str]) -> None:
+    """Each Kratos-wrapped data entry must name a model part of that solver's
+    mesh: the solver's root model part or one of its dotted SubModelParts
+    (Kratos otherwise fails in ``Initialize`` with a missing-model-part error)."""
+    for data_name, data in (solver.get("data") or {}).items():
+        ref = data.get("model_part_name")
+        if not isinstance(ref, str) or not ref:
+            issues.append(f"solver '{name}': data '{data_name}' has no model_part_name")
+            continue
+        if ref == root:
+            continue
+        local = ref[len(root) + 1:] if root and ref.startswith(root + ".") else ref
+        if local not in available:
+            issues.append(
+                f"solver '{name}': data '{data_name}' model_part_name '{ref}' is not in the "
+                f"solver's mesh (root '{root}', SubModelParts: {sorted(available)})")
+
+
+def _check_mapped_dimensions(settings: dict[str, Any], warnings: list[str]) -> None:
+    """Both ends of a ``kratos_mapping`` transfer should be the same size."""
+    solvers = settings.get("solvers") or {}
+    operators = settings.get("data_transfer_operators") or {}
+
+    def dimension(solver: str, data: str) -> Any:
+        return ((solvers.get(solver) or {}).get("data") or {}).get(data, {}).get("dimension")
+
+    for entry in settings.get("coupling_sequence") or []:
+        owner = entry.get("name")
+        pairs = [(item.get("from_solver"), item.get("from_solver_data"), owner, item.get("data"), item)
+                 for item in entry.get("input_data_list") or []]
+        pairs += [(owner, item.get("data"), item.get("to_solver"), item.get("to_solver_data"), item)
+                  for item in entry.get("output_data_list") or []]
+        for src, src_data, dst, dst_data, item in pairs:
+            op = operators.get(item.get("data_transfer_operator"), {})
+            if op.get("type") != "kratos_mapping":
+                continue
+            a, b = dimension(src, src_data), dimension(dst, dst_data)
+            if a is not None and b is not None and a != b:
+                warnings.append(f"kratos_mapping {src}.{src_data} (dimension {a}) -> "
+                                f"{dst}.{dst_data} (dimension {b}): dimensions differ")
+
+
 def validate(case_dir: str | Path, params: dict[str, Any],
-             validate_kratos_solver: Callable[[str, Path, dict[str, Any]], dict[str, Any]] | None = None
+             validate_kratos_solver: Callable[[str, Path, dict[str, Any]], dict[str, Any]] | None = None,
+             kratos_model_parts: Callable[[Path], tuple[str, set[str]] | None] | None = None
              ) -> dict[str, Any]:
     """Static validation of a CoSimulation case.
 
@@ -203,6 +247,11 @@ def validate(case_dir: str | Path, params: dict[str, Any],
     exists and must return ``{"issues": [...], "warnings": [...]}``; it is how
     ``scaffold`` plugs in the regular single-stage mesh/material validation
     (and, with ``deep``, the Kratos-side check) without a circular import.
+
+    ``kratos_model_parts(input_file)`` returns ``(root_model_part_name,
+    {SubModelPart paths})`` for a sub-solver's mesh (``None`` when it cannot be
+    read -- that is reported by the regular validation); it enables the
+    cross-check of every interface ``model_part_name`` against the mesh.
     """
     case = Path(case_dir)
     issues: list[str] = []
@@ -225,6 +274,7 @@ def validate(case_dir: str | Path, params: dict[str, Any],
 
     _check_sequence(settings, issues)
     _check_convergence(settings, issues, warnings)
+    _check_mapped_dimensions(settings, warnings)
 
     for op_name, op in (settings.get("data_transfer_operators") or {}).items():
         if op.get("type") not in DATA_TRANSFER_OPERATORS:
@@ -245,6 +295,10 @@ def validate(case_dir: str | Path, params: dict[str, Any],
                 sub = validate_kratos_solver(name, path, solver)
                 issues.extend(f"solver '{name}': {i}" for i in sub.get("issues", []))
                 warnings.extend(f"solver '{name}': {w}" for w in sub.get("warnings", []))
+            if path is not None and path.is_file() and kratos_model_parts is not None:
+                parts = kratos_model_parts(path)
+                if parts is not None:
+                    _check_interface_model_parts(name, solver, parts[0], parts[1], issues)
         else:
             warnings.append(f"solver '{name}': wrapper type '{stype}' has no static checks")
 

@@ -561,6 +561,83 @@ results_convergence(job_id)         # coupling iterations per step
 """
 
 
+COUPLED_BLOCKS_INTRO = """# Worked example: coupled solvers (CoSimulation, two meshes, non-matching interface)
+
+Two elastic blocks, each a real Kratos StructuralMechanicsApplication solver
+(`solver_wrappers.kratos.structural_mechanics_wrapper`) on its own mesh, split at
+x = 1 m and coupled by Dirichlet-Neumann iteration -- the mesh-based counterpart of
+the SDoF example. Plane strain, E = 210 GPa, nu = 0.3, each block 1 m x 1 m.
+
+- `block_a` (BlockA, x in [0, 1], 4 x 4 quads) is clamped at x = 0 and is the
+  Neumann side: it receives `POINT_LOAD` on its `right` edge.
+- `block_b` (BlockB, x in [1, 2], 4 x 6 quads) carries a tension line load
+  `1.0e6*t` N/m on its `right` edge and is the Dirichlet side: its `left` edge
+  displacement is imposed from `block_a`, and its `REACTION` there is returned.
+
+The interfaces do not match: `BlockA.right` has 5 nodes, `BlockB.left` has 7.
+The `kratos_mapping` operator (`nearest_element`) maps `block_a.disp` onto
+`block_b`'s nodes, and the same mapper's transpose (`use_transpose` +
+`swap_sign`) distributes `block_b`'s nodal reactions onto `block_a`'s nodes, so
+the transmitted force is conserved.
+
+Coupling is `coupled_solvers.gauss_seidel_strong` with an Aitken accelerator and a
+`relative_norm_initial_residual` criterion, both on `block_a.disp`.
+
+Things this example gets right that are easy to get wrong:
+
+- the interface of the load-receiving block needs `PointLoadCondition2D1N`
+  conditions (the nodal `POINT_LOAD` only reaches the right-hand side through
+  them); the mapper additionally needs line conditions on both interfaces;
+- vector data needs `"dimension": 2`;
+- `BlockB.left` is constrained in the Dirichlet process; the coupling then
+  overwrites the (fixed) values every iteration;
+- the convergence criterion and accelerator watch the data the Neumann side
+  PRODUCES. On the imposed side the first iteration's residual is 0/0, which the
+  criterion reports as convergence -- a silent false success;
+- validate_case cross-checks every `model_part_name` against its solver's mesh
+  before launch.
+
+Real files on disk (src/kratos_mcp/examples/coupled_blocks/). Needs
+CoSimulationApplication, MappingApplication, StructuralMechanicsApplication and
+LinearSolversApplication."""
+
+COUPLED_BLOCKS_RESULT = """\
+## Verified result
+
+Running the case (2 steps of 0.5 s, about a second of wall-clock) with Kratos
+10.4.4:
+
+    coupling iterations: 13 per step, both steps converged
+    force transmitted through the interface:
+        t = 0.5 s:  5.000e+05 N  (block_a POINT_LOAD sum 499999.6, block_b REACTION sum -499999.5)
+        t = 1.0 s:  1.000e+06 N  (999998.2 / -999998.1)  -- the applied traction x 1 m
+    interface x-displacement at t = 1 s, block_a (5 nodes):
+        4.291e-06, 4.101e-06, 4.268e-06, 4.101e-06, 4.291e-06 m
+    block_b (7 nodes): 4.291e-06 at both ends, 4.157e-06 .. 4.268e-06 inside
+    response at t = 1 s is 2.000 x the response at t = 0.5 s (linear elasticity)
+
+The ends of the interface coincide in both blocks and agree to 7 digits; between
+them the two discretisations differ by a few percent (4.10e-06 vs 4.16e-06),
+which is the mapping error of the non-matching interface, not a coupling error.
+
+Both blocks write VTK files (`vtk_output_block_a/`, `vtk_output_block_b/`) and the
+runner records them in `result-index.json` as two series
+(`BlockA:vtk_output_block_a:BlockA_0`, `BlockB:vtk_output_block_b:BlockB_0`), so
+`results_time_history(source=<index>, variable='DISPLACEMENT', series=...)` works
+on either block.
+
+## Reproducing this with the tools
+
+```
+validate_case(case_dir='case')            # model parts checked against both meshes
+run_simulation(case_dir='case', wait_seconds=60)
+results_convergence(job_id)               # 13 coupling iterations per step
+results_time_history(source='case/result-index.json', variable='DISPLACEMENT',
+                     series='BlockB:vtk_output_block_b:BlockB_0', point=[2.0, 0.0, 0.0])
+```
+"""
+
+
 def _example_bundle(template: str, mesh_hint: str) -> str:
     registry = load_registry()
     values = dict(registry[template]["placeholders"])
@@ -766,6 +843,21 @@ def register(mcp) -> None:
             f"## {name}\n\n```json\n{(case_dir / name).read_text()}\n```\n\n"
             for name in ("ProjectParameters.json", "sdof_1.json", "sdof_2.json"))
         return f"{COUPLED_SDOF_INTRO}\n\n{files}{COUPLED_SDOF_RESULT}"
+
+    @mcp.resource("kratos://examples/coupled-blocks")
+    def coupled_blocks_example() -> str:
+        """Complete mesh-based CoSimulation example: two Kratos structural
+        blocks with non-matching interfaces coupled by Dirichlet-Neumann
+        iteration through kratos_mapping, with verified force conservation and
+        indexed sub-solver output. Real files on disk."""
+        case_dir = EXAMPLES_DIR / "coupled_blocks"
+        files = []
+        for name in ("ProjectParameters.json", "block_a.json", "block_b.json",
+                     "block_a_materials.json", "block_b_materials.json"):
+            files.append(f"## {name}\n\n```json\n{(case_dir / name).read_text()}\n```\n\n")
+        for name in ("block_a.mdpa", "block_b.mdpa"):
+            files.append(f"## {name}\n\n```\n{(case_dir / name).read_text()}```\n\n")
+        return f"{COUPLED_BLOCKS_INTRO}\n\n{''.join(files)}{COUPLED_BLOCKS_RESULT}"
 
     @mcp.resource("kratos://jobs/{job_id}/log")
     def job_log_resource(job_id: str) -> str:
