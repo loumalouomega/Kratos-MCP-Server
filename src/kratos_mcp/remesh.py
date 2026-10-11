@@ -176,14 +176,7 @@ def summarize_mesh(mesh: mdpa_mod.Mdpa) -> dict[str, Any]:
 
 
 def _find_part(mesh: mdpa_mod.Mdpa, path: str) -> mdpa_mod.SubModelPart | None:
-    part: mdpa_mod.SubModelPart | None = None
-    parts = mesh.sub_model_parts
-    for segment in path.split("."):
-        part = parts.get(segment)
-        if part is None:
-            return None
-        parts = part.children
-    return part
+    return mdpa_mod.find_part(mesh, path)
 
 
 def part_signature(mesh: mdpa_mod.Mdpa, path: str) -> dict[str, Any] | None:

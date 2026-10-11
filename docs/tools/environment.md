@@ -108,6 +108,17 @@ List Kratos variables grouped by type, from the live kernel.
 
 **Returns**: `{type: [names]}` — e.g. `{"array_1d_3": ["DISPLACEMENT", ...]}`.
 
+## kratos_get_variable_info
+
+Look up specific variables by name in the live build (*needs Kratos*; cached).
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `names` | string[] | variable names, e.g. `["DISPLACEMENT", "DISPLACEMENT_X", "TEMPRATURE"]` |
+
+**Returns**: `{name: {exists, type, component_of?}}`; unknown names list similar
+existing ones. Use it before putting names into ProjectParameters.
+
 ## kratos_list_solvers
 
 List known `solver_type` values per analysis type with the Python module

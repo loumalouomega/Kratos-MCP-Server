@@ -65,7 +65,16 @@ End SubModelPart
 | `Nodes` | `id x y z`, one per line |
 | `Elements <TypeName>` | `id property_id node_ids...` |
 | `Conditions <TypeName>` | same layout; boundary entities for loads/fluxes |
+| `Geometries <TypeName>` | `id node_ids...` (no property id); read, edited and written, also as `SubModelPartGeometries` |
+| `NodalData <VARIABLE>` | `id fixed value`; only scalar blocks are kept |
 | `SubModelPart <name>` | named entity sets, may be nested; how processes target regions |
+
+::: warning Blocks that are not kept
+`Tables`, `ElementalData`, `ConditionalData`, vector `NodalData` and
+data inside a `SubModelPart` are skipped when a file is read (`mdpa_inspect`
+works regardless). The [mesh editing](/tools/mesh-editing) tools therefore
+refuse to overwrite such a file in place and name the skipped blocks.
+:::
 
 ## Naming conventions
 

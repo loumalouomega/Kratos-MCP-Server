@@ -251,14 +251,10 @@ def register(mcp) -> None:
 
         selected: list[int]
         if sub_model_part:
-            part = None
-            parts = m.sub_model_parts
-            for name in sub_model_part.split("."):
-                part = parts.get(name)
-                if part is None:
-                    return {"error": f"SubModelPart '{sub_model_part}' not found",
-                            "available": sorted(parts)}
-                parts = part.children
+            part = mdpa_mod.find_part(m, sub_model_part)
+            if part is None:
+                return {"error": f"SubModelPart '{sub_model_part}' not found",
+                        "available": mdpa_mod.part_paths(m)}
             selected = part.nodes
         elif node_ids:
             selected = node_ids

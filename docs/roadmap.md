@@ -46,6 +46,16 @@ Build these separate experiments on the existing sweeps and response extraction.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
+### Mesh editing: data the editor cannot represent — M
+
+The `mdpa_*` editing tools, `mesh_import`/`mesh_export` and the gmsh route are shipped. Gaps that remain:
+
+- **Blocks the model drops.** `Tables`, `ElementalData`, `ConditionalData`, vector `NodalData` and per-sub-model-part data are skipped by `mdpa.parse`; the editing tools refuse in-place edits of such files (they name the blocks and ask for `output=`), but nothing can edit or preserve that data. Needs the entities in `Mdpa` plus rewrite rules when ids change (renumber, merge, delete).
+- **Higher-order cells.** Quality, boundary extraction, extrusion, cell conversion and meshio import handle linear line/triangle/quad/tetra/prism/hexahedron only; 6-, 8- and 10-node cells are rejected rather than converted.
+- **Unstructured generation without gmsh.** `mdpa_create_geometry_mesh` only has structured/polar generators and an ear-clipping polygon mesher; holes, graded sizes and CAD need the optional gmsh extra, which is not exercised in CI.
+
+**Probe:** round-trip a mesh with an `ElementalData` block and a quadratic triangle through `mdpa_renumber` and `mesh_import` without losing either.
+
 ## Non-goals and decisions taken
 
 Recorded so they are not re-proposed as gaps.

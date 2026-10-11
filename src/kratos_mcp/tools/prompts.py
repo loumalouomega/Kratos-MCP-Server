@@ -142,3 +142,52 @@ run_simulation when you want to look at the state between steps:
 6. session_close(session_id) — runs Finalize() so VTK/GiD output is flushed.
 7. Report the history (time, converged) and headline numbers with units.
 """
+
+    @mcp.prompt()
+    def build_mesh_from_geometry(
+        description: str,
+        output_dir: str,
+        element_type: str = "SmallDisplacementElement2D3N",
+    ) -> str:
+        """Guided workflow to build a mesh for an arbitrary geometry and name its
+        boundaries, then turn it into a runnable case."""
+        return f"""Build a Kratos mesh for: {description}
+Work in '{output_dir}'; use element type {element_type}.
+
+1. Pick the generator: mdpa_create_structured_mesh (line/rectangle/box),
+   mdpa_create_geometry_mesh (annulus, disc, cylinder, sphere, polygon), or --
+   for holes, graded sizes or CAD files -- mesh_generate_gmsh (needs the
+   optional gmsh extra) / mesh_import for a mesh made elsewhere.
+2. Need 3D from 2D? mdpa_extrude; simplices for a thermal or fluid solver?
+   mdpa_convert_cells (quad_to_tri / hex_to_tet); two blocks to join?
+   mdpa_transform + mdpa_merge(merge_tolerance=...).
+3. Name the boundaries: mdpa_select_nodes to check a selector (plane, box,
+   sphere, expression), then mdpa_create_sub_model_part (include=['condition']
+   for load surfaces) or mdpa_extract_boundary to create the conditions on the
+   free faces.
+4. Check it: mdpa_inspect, mdpa_quality (no inverted cells!) and mdpa_validate.
+5. Build the case: create_project, project_update_solver(mesh_file=...),
+   add_boundary_condition / project_add_process, materials_set_property, then
+   materials_check and validate_case before run_simulation.
+6. Report the mesh size, the parts you created and any quality warnings.
+"""
+
+    @mcp.prompt()
+    def edit_existing_case(case_dir: str, change: str) -> str:
+        """Guided workflow to modify an existing case (mesh, processes, solver,
+        materials) safely."""
+        return f"""Modify the Kratos case in '{case_dir}': {change}
+
+1. explain_project_parameters('{case_dir}/ProjectParameters.json') and
+   project_list_processes to see what is configured; mdpa_inspect on the mesh.
+2. Make the change with the narrowest tool: project_set_setting /
+   project_update_solver for settings, project_add_process /
+   project_update_process / project_remove_process for processes,
+   materials_set_property for materials, mdpa_* tools for the mesh (pass
+   output=<new file> to keep the original). Multi-stage cases need stage=.
+3. If the mesh changed: mdpa_quality, mdpa_validate, and make sure every
+   model_part_name in the processes and Materials.json still exists
+   (materials_check).
+4. validate_case('{case_dir}'), then run_simulation and compare the result
+   with the previous run (results_compare) when one exists.
+"""

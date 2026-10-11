@@ -15,7 +15,7 @@ from typing import Any
 
 import anyio
 
-from .. import bridge, cosim, fsi, mdpa as mdpa_mod, process_catalog, remesh
+from .. import bridge, cosim, fsi, mdpa as mdpa_mod, process_catalog, project_edit, remesh
 from .environment import KNOWN_SOLVERS
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -170,6 +170,11 @@ BC_KINDS: dict[str, tuple[str, str, str]] = {
     "surface_heat_flux":  ("scalar_to_conditions", "FACE_HEAT_FLUX", "fluxes_process_list"),
     "volume_heat_source": ("scalar", "HEAT_FLUX", "fluxes_process_list"),
     "self_weight":        ("direction", "VOLUME_ACCELERATION", "loads_process_list"),
+    # generic: any variable (pass `variable`); fix_* constrains the DOFs, assign_* only sets values
+    "fix_scalar":         ("scalar", "", "constraints_process_list"),
+    "assign_scalar":      ("scalar", "", "list_other_processes"),
+    "fix_vector":         ("vector", "", "constraints_process_list"),
+    "assign_vector":      ("vector", "", "list_other_processes"),
 }
 
 
@@ -203,17 +208,7 @@ def infer_solver_module(parameters: dict[str, Any]) -> str | None:
 
 
 def _submodelpart_paths(m: mdpa_mod.Mdpa) -> set[str]:
-    paths: set[str] = set()
-
-    def walk(part: mdpa_mod.SubModelPart, prefix: str) -> None:
-        path = f"{prefix}{part.name}"
-        paths.add(path)
-        for child in part.children.values():
-            walk(child, path + ".")
-
-    for part in m.sub_model_parts.values():
-        walk(part, "")
-    return paths
+    return set(mdpa_mod.part_paths(m))
 
 
 def _case_model_parts(params_path: Path) -> tuple[str, set[str]] | None:
@@ -958,27 +953,37 @@ def register(mcp) -> None:
         direction: list[float] | None = None,
         interval: list | None = None,
         process_list: str | None = None,
+        variable: str | None = None,
+        stage: str | None = None,
     ) -> dict[str, Any]:
         """Insert a boundary condition / load process block into an existing
         ProjectParameters.json. kind is one of: fix_displacement,
         prescribed_displacement, fix_velocity, inlet_velocity, outlet_pressure,
         fix_temperature, point_load, line_load, surface_load, pressure_load,
-        surface_heat_flux, volume_heat_source, self_weight. Loads with
-        modulus+direction (point/line/surface_load, self_weight) apply along a
-        direction vector; the others take 'value' (vector or scalar)."""
+        surface_heat_flux, volume_heat_source, self_weight, or the generic
+        fix_scalar / assign_scalar / fix_vector / assign_vector (which need
+        'variable', e.g. DISTANCE). fix_* constrain the DOFs, assign_* only set
+        the values. Loads with modulus+direction (point/line/surface_load,
+        self_weight) apply along a direction vector; the others take 'value'
+        (vector or scalar). 'variable' overrides the kind's default variable.
+        For multi-stage (orchestrator) files pass 'stage'. Use
+        project_add_process for any other Kratos process."""
         if kind not in BC_KINDS:
             return {"error": f"Unknown kind '{kind}'. Available: {sorted(BC_KINDS)}"}
-        builder, variable, default_list = BC_KINDS[kind]
+        builder, default_variable, default_list = BC_KINDS[kind]
+        variable = variable or default_variable
+        if not variable:
+            return {"error": f"kind '{kind}' needs 'variable' (e.g. 'DISTANCE')"}
         interval = interval if interval is not None else [0.0, "End"]
 
         if builder == "vector":
             vec = value if isinstance(value, list) else [0.0, 0.0, 0.0]
             constrained = kind in ("fix_displacement", "prescribed_displacement",
-                                   "fix_velocity", "inlet_velocity")
+                                   "fix_velocity", "inlet_velocity", "fix_vector")
             block = _vector_process(model_part, variable, vec, constrained, interval)
         elif builder == "scalar":
             scalar = float(value) if value is not None else 0.0
-            constrained = kind in ("fix_temperature", "outlet_pressure")
+            constrained = kind in ("fix_temperature", "outlet_pressure", "fix_scalar")
             block = _scalar_process(model_part, variable, scalar, constrained, interval)
         elif builder == "scalar_to_conditions":
             scalar = float(value) if value is not None else 0.0
@@ -995,11 +1000,14 @@ def register(mcp) -> None:
 
         _merge_process_defaults(block)
         path = Path(parameters_file).expanduser().resolve()
-        params = json.loads(path.read_text())
-        processes = params.setdefault("processes", {})
+        try:
+            params = project_edit.load_json(path)
+            processes = project_edit.scope(params, stage).setdefault("processes", {})
+        except ValueError as exc:
+            return {"error": str(exc)}
         list_name = process_list or default_list
         processes.setdefault(list_name, []).append(block)
-        path.write_text(json.dumps(params, indent=4))
+        project_edit.save_json(path, params)
         return {"written_to": str(path), "process_list": list_name, "added": block}
 
     @mcp.tool()
