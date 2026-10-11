@@ -3,6 +3,16 @@
 Notable changes to Kratos MCP Server. Historical entries are reconstructed
 from repository tags and diffs; dates are the tagged commits' dates.
 
+## Unreleased
+
+### Changed
+
+- Updated the documentation dependency lock to clear the two open Dependabot
+  high-severity alerts: `vue` and `@vue/server-renderer` 3.5.43 (from 3.5.39,
+  GHSA-g2v6-rqmx-r4w6, XSS in server rendering) and `source-map-js` 1.2.2 (from
+  1.2.1, GHSA-68fv-2mgg-jv7q, event-loop denial of service). Both are VitePress
+  build dependencies only; the Python server is unaffected.
+
 ## 0.8.0 — 2026-10-11
 
 ### Added
