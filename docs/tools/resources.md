@@ -5,6 +5,7 @@ MCP resources are read-only documents an assistant can pull into context.
 | URI | Content |
 | --- | --- |
 | `kratos://docs/mdpa-format` | the MDPA mesh format guide |
+| `kratos://docs/mesh-editing` | how to build and edit meshes with the `mdpa_*` / `mesh_*` tools: selectors, recipes, conventions |
 | `kratos://docs/project-parameters` | ProjectParameters.json structure and process-block pattern |
 | `kratos://docs/materials` | Materials.json structure + common constitutive laws |
 | `kratos://examples/cantilever` | complete worked structural case: literal, verified mesh.mdpa + ProjectParameters.json + Materials.json + result, hardcoded (not rendered from templates at request time) |

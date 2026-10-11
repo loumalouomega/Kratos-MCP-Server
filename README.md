@@ -25,6 +25,15 @@ element simulations end to end:
   iteration). Curated material and linear-solver
   presets included. ProjectParameters.json, Materials.json and structured MDPA
   meshes with named boundary regions.
+- **Build and edit** meshes and cases: add, move and delete nodes, elements,
+  conditions and geometries; create sub model parts from geometric selectors;
+  transform, merge, extrude, convert quads/hexes to simplices, extract boundary
+  conditions on free faces and check mesh quality; parametric shapes
+  (annulus, disc, cylinder, sphere, polygon), meshio import/export and, with
+  the optional `gmsh` extra, arbitrary geometry. Edit ProjectParameters and
+  Materials generically: get/set any setting, add/update/remove any process,
+  stage-aware ([mesh](docs/tools/mesh-editing.md),
+  [geometry](docs/tools/geometry.md), [project](docs/tools/project-editing.md)).
 - **Remesh** adaptively with MMG (MeshingApplication): `mesh_remesh` refines or
   coarsens an `.mdpa` around a region, a level set, an analytic field or a
   solved VTK result field (hessian metric, transferred field written as `NodalData`), keeps the named boundaries and reports the field transfer
@@ -53,7 +62,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-68 tools, 20 resources (15 worked examples) and 6 guided prompts. See the full documentation in
+105 tools, 21 resources (15 worked examples) and 8 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start

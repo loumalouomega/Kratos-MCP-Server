@@ -67,3 +67,26 @@ Walks through the [session](/tools/sessions) workflow: validate → `session_sta
 `session_field_summary` / `session_inspect_node` with convergence and
 plausibility checks → optional `session_set_nodal_values` → `session_close` →
 report.
+
+## build_mesh_from_geometry
+
+| Argument | Default |
+| --- | --- |
+| `description` | — |
+| `output_dir` | — |
+| `element_type` | `SmallDisplacementElement2D3N` |
+
+Chooses a generator (structured, parametric, gmsh, import), shapes it
+(extrude, convert cells, transform + merge), names the boundaries with
+selectors, checks quality and turns the mesh into a runnable case.
+
+## edit_existing_case
+
+| Argument | Default |
+| --- | --- |
+| `case_dir` | — |
+| `change` | — |
+
+Modifies a case with the narrowest tool (`project_*`, `materials_*`, `mdpa_*`),
+re-checks model-part references and quality, then validates and re-runs.
+

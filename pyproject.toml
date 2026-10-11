@@ -17,6 +17,9 @@ viz = [
     "pyvista>=0.44",
     "imageio>=2.31",
 ]
+gmsh = [
+    "gmsh>=4.11",
+]
 
 [project.scripts]
 kratos-mcp = "kratos_mcp.server:main"

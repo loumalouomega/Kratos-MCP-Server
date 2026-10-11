@@ -20,6 +20,7 @@ The mdpa format is line/block based:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
@@ -32,12 +33,15 @@ class SubModelPart:
     elements: list[int] = field(default_factory=list)
     conditions: list[int] = field(default_factory=list)
     children: dict[str, "SubModelPart"] = field(default_factory=dict)
+    geometries: list[int] = field(default_factory=list)
 
     def tree(self) -> dict[str, Any]:
+        extra = {"geometries": len(self.geometries)} if self.geometries else {}
         return {
             "nodes": len(self.nodes),
             "elements": len(self.elements),
             "conditions": len(self.conditions),
+            **extra,
             "sub_model_parts": {c.name: c.tree() for c in self.children.values()},
         }
 
@@ -54,6 +58,12 @@ class Mdpa:
     # Scalar ``Begin NodalData VAR`` blocks: variable name -> {node id: value}. The
     # fixed flag is not kept (written back as 0); vector blocks are skipped.
     nodal_data: dict[str, dict[int, float]] = field(default_factory=dict)
+    # Geometry type name -> {id: [node ids]} (``Begin Geometries <Type>``).
+    geometries: dict[str, dict[int, list[int]]] = field(default_factory=dict)
+    # Blocks present in the file that this model cannot represent (Tables,
+    # ElementalData, vector NodalData, ...); they are lost when the mesh is
+    # written back, so editing tools warn about them.
+    skipped_blocks: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------ info
 
@@ -63,6 +73,9 @@ class Mdpa:
     def condition_ids(self) -> set[int]:
         return {cid for by_id in self.conditions.values() for cid in by_id}
 
+    def geometry_ids(self) -> set[int]:
+        return {gid for by_id in self.geometries.values() for gid in by_id}
+
     def bounding_box(self) -> dict[str, list[float]] | None:
         if not self.nodes:
             return None
@@ -70,7 +83,12 @@ class Mdpa:
         return {"min": [min(xs), min(ys), min(zs)], "max": [max(xs), max(ys), max(zs)]}
 
     def inspect(self) -> dict[str, Any]:
+        extra: dict[str, Any] = {}
+        if self.geometries:
+            extra = {"num_geometries": sum(len(v) for v in self.geometries.values()),
+                     "geometries_by_type": {k: len(v) for k, v in self.geometries.items()}}
         return {
+            **extra,
             "num_nodes": len(self.nodes),
             "num_elements": sum(len(v) for v in self.elements.values()),
             "num_conditions": sum(len(v) for v in self.conditions.values()),
@@ -94,8 +112,34 @@ class Mdpa:
                     missing = [n for n in conn if n not in node_ids]
                     if missing:
                         issues.append(f"{kind} {eid} ({type_name}) references missing nodes {missing}")
+        for type_name, by_id in self.geometries.items():
+            for gid, conn in by_id.items():
+                missing = [n for n in conn if n not in node_ids]
+                if missing:
+                    issues.append(f"Geometry {gid} ({type_name}) references missing nodes {missing}")
+        for kind, groups in (("Element", self.elements), ("Condition", self.conditions),
+                             ("Geometry", self.geometries)):
+            for type_name, by_id in groups.items():
+                expected = expected_node_count(type_name)
+                if expected is None:
+                    continue
+                for eid, entry in by_id.items():
+                    conn = entry[1] if isinstance(entry, tuple) else entry
+                    if len(conn) != expected:
+                        issues.append(f"{kind} {eid} ({type_name}) has {len(conn)} nodes, "
+                                      f"the type name implies {expected}")
+        for kind, groups in (("element", self.elements), ("condition", self.conditions),
+                             ("geometry", self.geometries)):
+            seen: dict[int, str] = {}
+            for type_name, by_id in groups.items():
+                for eid in by_id:
+                    if eid in seen:
+                        issues.append(f"Duplicate {kind} id {eid} in '{seen[eid]}' and '{type_name}'")
+                    else:
+                        seen[eid] = type_name
         elem_ids = self.element_ids()
         cond_ids = self.condition_ids()
+        geom_ids = self.geometry_ids()
 
         def walk(part: SubModelPart, prefix: str) -> None:
             path = f"{prefix}{part.name}"
@@ -108,7 +152,11 @@ class Mdpa:
             for c in part.conditions:
                 if c not in cond_ids:
                     issues.append(f"SubModelPart {path} references missing condition {c}")
-            if not (part.nodes or part.elements or part.conditions or part.children):
+            for g in part.geometries:
+                if g not in geom_ids:
+                    issues.append(f"SubModelPart {path} references missing geometry {g}")
+            if not (part.nodes or part.elements or part.conditions or part.geometries
+                    or part.children):
                 issues.append(f"SubModelPart {path} is empty")
             for child in part.children.values():
                 walk(child, path + ".")
@@ -148,6 +196,12 @@ class Mdpa:
                     out.append(f"    {nid} 0 {values[nid]:.17g}")
             out.append("End NodalData\n")
 
+        for type_name in sorted(self.geometries):
+            out.append(f"Begin Geometries {type_name}")
+            for gid in sorted(self.geometries[type_name]):
+                out.append(f"    {gid} " + " ".join(str(n) for n in self.geometries[type_name][gid]))
+            out.append("End Geometries\n")
+
         for kind, groups in (("Elements", self.elements), ("Conditions", self.conditions)):
             for type_name in sorted(groups):
                 out.append(f"Begin {kind} {type_name}")
@@ -159,8 +213,11 @@ class Mdpa:
 
         def emit(part: SubModelPart, indent: str) -> None:
             out.append(f"{indent}Begin SubModelPart {part.name}")
-            for block, ids in (("Nodes", part.nodes), ("Elements", part.elements),
-                               ("Conditions", part.conditions)):
+            blocks = [("Nodes", part.nodes), ("Elements", part.elements),
+                      ("Conditions", part.conditions)]
+            if part.geometries:
+                blocks.insert(1, ("Geometries", part.geometries))
+            for block, ids in blocks:
                 out.append(f"{indent}    Begin SubModelPart{block}")
                 out.extend(f"{indent}        {i}" for i in ids)
                 out.append(f"{indent}    End SubModelPart{block}")
@@ -180,6 +237,42 @@ class Mdpa:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(self.dumps())
         return p
+
+
+_NODE_COUNT_RE = re.compile(r"\dD(\d+)N$")
+
+
+def expected_node_count(type_name: str) -> int | None:
+    """Node count implied by Kratos' naming convention (``...Element3D8N`` -> 8),
+    or None for names that do not follow it."""
+    m = _NODE_COUNT_RE.search(type_name)
+    return int(m.group(1)) if m else None
+
+
+def find_part(mesh: "Mdpa", path: str) -> SubModelPart | None:
+    """Look up a SubModelPart by dotted path (``outer.inner``)."""
+    part: SubModelPart | None = None
+    parts = mesh.sub_model_parts
+    for segment in path.split("."):
+        part = parts.get(segment)
+        if part is None:
+            return None
+        parts = part.children
+    return part
+
+
+def part_paths(mesh: "Mdpa") -> list[str]:
+    """Dotted paths of every SubModelPart, parents before children."""
+    paths: list[str] = []
+
+    def walk(part: SubModelPart, prefix: str) -> None:
+        paths.append(f"{prefix}{part.name}")
+        for child in part.children.values():
+            walk(child, f"{prefix}{part.name}.")
+
+    for part in mesh.sub_model_parts.values():
+        walk(part, "")
+    return paths
 
 
 # ---------------------------------------------------------------------- parse
@@ -257,6 +350,16 @@ def parse(text: str) -> Mdpa:
             i += 1
             if scalar:
                 m.nodal_data[t[2]] = values
+            else:
+                m.skipped_blocks.append(f"NodalData {t[2]} (vector)")
+        elif block == "Geometries" and not smp_stack:
+            by_id_g = m.geometries.setdefault(t[2], {})
+            i += 1
+            while tokens[i][0] != "End":
+                row = tokens[i]
+                by_id_g[int(row[0])] = [int(n) for n in row[1:]]
+                i += 1
+            i += 1
         elif block in ("Elements", "Conditions") and not smp_stack:
             type_name = t[2]
             target = m.elements if block == "Elements" else m.conditions
@@ -275,9 +378,11 @@ def parse(text: str) -> Mdpa:
                 m.sub_model_parts[part.name] = part
             smp_stack.append(part)
             i += 1
-        elif block in ("SubModelPartNodes", "SubModelPartElements", "SubModelPartConditions") and smp_stack:
+        elif block in ("SubModelPartNodes", "SubModelPartElements", "SubModelPartConditions",
+                       "SubModelPartGeometries") and smp_stack:
             attr = {"SubModelPartNodes": "nodes", "SubModelPartElements": "elements",
-                    "SubModelPartConditions": "conditions"}[block]
+                    "SubModelPartConditions": "conditions",
+                    "SubModelPartGeometries": "geometries"}[block]
             ids = getattr(smp_stack[-1], attr)
             i += 1
             while tokens[i][0] != "End":
@@ -285,7 +390,8 @@ def parse(text: str) -> Mdpa:
                 i += 1
             i += 1
         elif t[0] == "Begin":
-            # Unknown block (Tables, Geometries, ...): skip it wholesale.
+            # Unknown block (Tables, ElementalData, ...): skip it wholesale.
+            m.skipped_blocks.append(" ".join(t[1:3]))
             i = skip_block(i + 1, block)
 
         # Pop SubModelPart ends (they arrive as separate 'End SubModelPart' tokens).

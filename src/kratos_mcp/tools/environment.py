@@ -216,6 +216,29 @@ def register(mcp) -> None:
         return out
 
     @mcp.tool()
+    async def kratos_get_variable_info(names: list[str]) -> dict[str, Any]:
+        """Look up specific Kratos variables by name in the live build: whether
+        each exists and its type (double, array_1d_3, bool, int, vector, matrix,
+        string, flags ...). Vector components such as DISPLACEMENT_X resolve to
+        their array variable ('component_of'). Use it to check names before
+        putting them in ProjectParameters (variable_name, output variables,
+        nodal_solution_step_data_variables)."""
+        listed = await _bridge_op("list_variables")
+        if not isinstance(listed, dict) or "error" in listed:
+            return listed
+        where = {name: type_name for type_name, group in listed.items() for name in group}
+        out: dict[str, Any] = {}
+        for name in names:
+            if name in where:
+                out[name] = {"exists": True, "type": where[name]}
+            elif name[-2:] in ("_X", "_Y", "_Z") and where.get(name[:-2]) == "array_1d_3":
+                out[name] = {"exists": True, "type": "double", "component_of": name[:-2]}
+            else:
+                near = [v for v in where if name.lower() in v.lower()][:8]
+                out[name] = {"exists": False, "similar": near}
+        return out
+
+    @mcp.tool()
     def kratos_list_solvers(analysis_type: str | None = None) -> dict[str, Any]:
         """List the known solver_type values per analysis type (structural,
         thermal, fluid, potential_flow) together with the Python solver

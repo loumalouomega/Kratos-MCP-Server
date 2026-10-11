@@ -256,6 +256,8 @@ ProjectParameters.json.
 | `modulus`, `direction` | number, number[3] | for directional loads |
 | `interval` | [start, end]? | default `[0.0, "End"]` |
 | `process_list` | string? | override the target list |
+| `variable` | string? | override the kind's variable (required for the generic kinds) |
+| `stage` | string? | stage name for multi-stage (orchestrator) files |
 
 | kind | variable | typical use |
 | --- | --- | --- |
@@ -268,6 +270,10 @@ ProjectParameters.json.
 | `surface_heat_flux` | FACE_HEAT_FLUX | thermal Neumann on conditions |
 | `volume_heat_source` | HEAT_FLUX | volumetric heating |
 | `self_weight` | VOLUME_ACCELERATION | gravity (`modulus` defaults to 9.81) |
+| `fix_scalar` / `assign_scalar` | *`variable`* | any scalar (or vector component such as `DISPLACEMENT_Y`): constrain the DOF / only set the value |
+| `fix_vector` / `assign_vector` | *`variable`* | any vector variable: constrain / only set |
+
+For any other process use [`project_add_process`](/tools/project-editing).
 
 ```json
 // add_boundary_condition(file, "line_load", "Structure.right",

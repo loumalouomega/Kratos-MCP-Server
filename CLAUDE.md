@@ -80,6 +80,7 @@ installed) via `-displayfd`.
 
 - `uv sync` — install deps (`mcp`, `meshio`, `numpy`; dev: pytest, ipykernel,
   nbclient, nbformat)
+- `uv sync --extra gmsh` — adds gmsh for `mesh_generate_gmsh` (optional)
 - `uv sync --extra viz` — adds pyvista + imageio for `results_render`/
   `results_animate` (optional; without it those tools return an install hint)
 - `uv run kratos-mcp` — run the server (stdio)
@@ -94,7 +95,7 @@ installed) via `-displayfd`.
 
 - `src/kratos_mcp/server.py` — FastMCP instance + main()
 - `src/kratos_mcp/tools/` — one module per tool category (`environment`,
-  `scaffold`, `mesh`, `simulation`, `postprocess`, `visualize`, `resources`,
+  `scaffold`, `mesh`, `mesh_edit`, `geometry`, `project`, `simulation`, `postprocess`, `visualize`, `resources`,
   `prompts`), each exposing `register(mcp)`; `register_all` in `__init__.py`
 - `src/kratos_mcp/session_worker.py` / `sessions.py` / `tools/sessions.py` —
   interactive stateful sessions (see "Interactive sessions"); the first is the
@@ -103,6 +104,29 @@ installed) via `-displayfd`.
   (see above)
 - `src/kratos_mcp/mdpa.py` — pure-Python MDPA parse/write/inspect/validate +
   structured mesh generators (line/rectangle/box with named boundary parts)
+- `src/kratos_mcp/mesh_edit.py` — Kratos-free editing of an `Mdpa` (nodes, elements/conditions/
+  geometries, sub model parts, selectors, transform/merge/renumber/extract, `extrude`,
+  `convert_cells`, `extract_boundary`, `quality`). Raises `ValueError`; `tools/mesh_edit.py`
+  wraps every tool in `_tool_errors` and writes in place or to `output=` (refusing in-place
+  edits when `Mdpa.skipped_blocks` is non-empty: Tables/ElementalData/vector NodalData are not
+  modelled and would be lost). `mdpa.py` also owns `find_part`/`part_paths` (the one dotted-path
+  lookup), `expected_node_count` (type-name suffix -> node count, used by `validate`) and
+  geometries (`Mdpa.geometries`, `SubModelPart.geometries`). Boundary conditions it creates are
+  oriented with the domain on the LEFT; Kratos 10.4 then treats a positive
+  `POSITIVE_FACE_PRESSURE` as tension (verified: plate + Lame cylinder), so compressive
+  pressure needs a negative value.
+- `src/kratos_mcp/geometry.py` — numpy-only parametric generators (annulus, disc, cylinder via
+  `extrude`, sphere, ear-clipped polygon) following `create_rectangle_mesh`'s part naming.
+- `src/kratos_mcp/mesh_io.py` + `gmsh_worker.py` — meshio import/export (`from_meshio`/
+  `to_meshio`, physical groups <-> sub model parts) and the optional gmsh generator.
+  `gmsh_worker.py` is the ONLY module that imports gmsh (native library; same subprocess +
+  `--result-file` rule as `render_worker.py`; needs libGLU/libXft on Linux). `gmsh` is the
+  `gmsh` extra; tests skip when it is missing.
+- `src/kratos_mcp/project_edit.py` — Kratos-free ProjectParameters/Materials editing used by
+  `tools/project.py` (`scope(params, stage)` resolves `stages.<n>.stage_settings`, JSON Pointer
+  get/set/delete, process list helpers, `build_process_block` merging `process_catalog`
+  defaults, lenient `//`-comment reader, atomic writer, materials upsert/remove).
+  `add_boundary_condition` reuses `scope`/`save_json`.
 - `src/kratos_mcp/source_catalog.py` — parses `KRATOS_REGISTER_ELEMENT/
   CONDITION/CONSTITUTIVE_LAW` macros from the Kratos C++ sources (there is no
   runtime registry for these); also enumerates `*_process.py` / `*_solver.py`
@@ -484,4 +508,4 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   the tool and the worker. Other knobs: `KRATOS_MCP_MAX_SESSIONS` (4),
   `KRATOS_MCP_SESSION_IDLE_TIMEOUT` (3600 s).
 - Tool/resource/prompt counts are quoted in `README.md` and `docs/tools/index.md`
-  (currently 68 / 20 / 6) — bump both when adding any.
+  (currently 105 / 21 / 8) — bump both when adding any.

@@ -7,6 +7,35 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ### Added
 
+- **Mesh building and editing (37 new tools)**. `mdpa_*` editing tools
+  (`mdpa_get_entities`, `mdpa_select_nodes`, `mdpa_add/move/delete_nodes`,
+  `mdpa_add/delete_entities`, `mdpa_set_entity_properties`,
+  `mdpa_create/edit_sub_model_part`, `mdpa_transform`, `mdpa_merge`,
+  `mdpa_renumber`, `mdpa_extract`, `mdpa_extrude`, `mdpa_convert_cells`,
+  `mdpa_extract_boundary`, `mdpa_set_properties`, `mdpa_set_nodal_data`,
+  `mdpa_quality`) with geometric node selectors; in-place or `output=` writes, and
+  in-place edits are refused when the file holds blocks the model drops.
+  `mdpa.py` now reads/writes `Begin Geometries` and `SubModelPartGeometries`, and
+  `validate()` also checks connectivity length against the `...2D3N` name suffix and
+  duplicate ids. New pure-Python modules `mesh_edit.py`, `geometry.py`, `mesh_io.py`.
+- **Geometry and interchange**: `mdpa_create_geometry_mesh` (annulus, disc,
+  cylinder, sphere, polygon), `mesh_import`/`mesh_export` (meshio) and
+  `mesh_generate_gmsh` (polygon with holes, box/cylinder/sphere solids, CAD files)
+  behind the new optional `gmsh` extra; gmsh runs in the `gmsh_worker.py`
+  subprocess, never in the server.
+- **Project and materials editing**: `project_get/set/delete_setting` (JSON Pointer,
+  multi-stage aware), `project_list/add/update/remove_process` (any Kratos process,
+  defaults merged), `project_update_solver`, `materials_get/set_property/
+  remove_property/check`, `kratos_get_variable_info`. `add_boundary_condition` gained
+  `stage`, `variable` and the generic kinds `fix_/assign_scalar` and `fix_/assign_vector`.
+- Resource `kratos://docs/mesh-editing`; prompts `build_mesh_from_geometry` and
+  `edit_existing_case`.
+- Tests: `test_mesh_edit.py`, `test_geometry.py`, `test_mesh_io.py`,
+  `test_edit_tools.py` (Kratos-free) and kratos-marked `test_edit_integration.py`
+  (cantilever from a plain mesh, Lame thick cylinder within 3 %, extruded hex/tet beams).
+- Verified: in Kratos 10.4 a positive `POSITIVE_FACE_PRESSURE` on conditions with the
+  domain on their left acts as tension; compressive pressure needs a negative value.
+
 - **CoSimulation (coupled-solver) cases**: `run_simulation` now detects a
   coupled solver (`solver_settings.type` `coupled_solvers.*` with a
   `coupling_sequence` and `solvers`) and drives it through

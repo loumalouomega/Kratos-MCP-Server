@@ -190,6 +190,13 @@ Kratos, so mesh tools work even where no build is available and unit tests
 run anywhere. `mdpa_validate(deep=true)` additionally round-trips the file
 through the real `ModelPartIO` in a worker.
 
+Around it sit more pure-Python modules: `mesh_edit.py` (node/entity/sub model
+part editing, transforms, extrusion, cell conversion, boundary extraction,
+quality), `geometry.py` (parametric generators), `mesh_io.py` (meshio
+import/export) and `project_edit.py` (JSON-Pointer, process and materials
+editing of ProjectParameters/Materials). The one native piece, gmsh, runs in
+`gmsh_worker.py` — a plain subprocess like the renderer, never in the server.
+
 ## Templates as data
 
 Case templates live in `src/kratos_mcp/templates/` as JSON files with

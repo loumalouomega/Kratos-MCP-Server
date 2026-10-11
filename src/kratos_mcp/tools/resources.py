@@ -11,6 +11,39 @@ from .scaffold import TEMPLATES_DIR, load_registry, render_template_file
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
+MESH_EDITING_GUIDE = """\
+# Building and editing meshes with the mdpa_* / mesh_* tools
+
+All editing tools read a .mdpa, apply ONE operation and write it back (in place by
+default, or to `output`; an existing `output` is only replaced with overwrite=true).
+They return the operation summary, the mesh summary and validation `issues`.
+A file that contains blocks the editor cannot represent (Tables, ElementalData,
+ConditionalData, vector NodalData) is refused for in-place edits -- give `output`.
+
+## Selecting nodes
+`selector` = intersection of: ids, part, box {min,max}, sphere {center,radius},
+plane {point,normal}, expression (<= 0, in x/y/z), tolerance, all.
+Check it with mdpa_select_nodes before writing anything.
+
+## Typical recipes
+- Named boundary:   mdpa_create_sub_model_part(name, selector=..., include=['condition'])
+- Load surface:     mdpa_extract_boundary(condition_name, sub_model_part, selector=plane)
+- Plate -> solid:   mdpa_extrude(heights=[...]) ; solid -> tets: mdpa_convert_cells('hex_to_tet')
+- Join blocks:      mdpa_transform(translate) ; mdpa_merge(merge_tolerance=1e-9)
+- Odd shapes:       mdpa_create_geometry_mesh | mesh_generate_gmsh (optional) | mesh_import
+- Inspect:          mdpa_get_entities, mdpa_quality (inverted cells), mdpa_validate
+
+## Conventions worth knowing
+- Conditions from mdpa_extract_boundary and the generators are oriented with the domain
+  on their LEFT (outward normal on the right). In Kratos a positive
+  POSITIVE_FACE_PRESSURE then acts along that outward normal (a tension); a compressive
+  pressure needs a NEGATIVE value (verified on a plate and a Lame thick cylinder).
+- Mirrors / negative scales re-order connectivity so measures stay positive.
+- hex_to_tet is a Kuhn split: conforming on structured meshes with consistent node order.
+- extrude puts cap nodes in parts zmin / zmax; give cap_condition_names for cap conditions.
+- Geometries (`Begin Geometries`) are read, edited and written; SubModelPartGeometries too.
+"""
+
 MDPA_FORMAT_GUIDE = """\
 # Kratos MDPA mesh format
 
@@ -808,6 +841,11 @@ def register(mcp) -> None:
     def mdpa_format_doc() -> str:
         """Guide to the Kratos MDPA mesh file format."""
         return MDPA_FORMAT_GUIDE
+
+    @mcp.resource("kratos://docs/mesh-editing")
+    def mesh_editing_doc() -> str:
+        """Guide to building and editing meshes with the mdpa_* / mesh_* tools."""
+        return MESH_EDITING_GUIDE
 
     @mcp.resource("kratos://docs/project-parameters")
     def project_parameters_doc() -> str:
