@@ -20,7 +20,7 @@ These proposals were checked against server 0.4.0 and the local Kratos source at
 
 Extend the managed-job workflow before introducing new application families.
 
-### MPI: real-build verification and scheduler integration — M
+### 1.1 MPI: real-build verification and scheduler integration — M
 
 Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation, capability checks) is shipped and unit-tested with a fake launcher. What remains is the part that needs a distributed build: run `tests/test_mpi_integration.py` against a Kratos build with `KratosMultiphysics.mpi` and TrilinosApplication, fix whatever the first real run exposes (MPI import of a plain `.mdpa`, `point_output_process` file naming), and bake a verified reference case into an example. After that, add cluster launch: environment forwarding to remote ranks, a Slurm/`srun` launcher mode, and MPI-aware results (per-rank VTK partitions are not indexed today).
 
@@ -30,7 +30,7 @@ Local MPI launch (`mpi_ranks`, `omp_threads`, rank logs, group-wide cancellation
 
 These depend on optional applications and need small verified examples before being presented as supported templates. The shipped CoSimulation (`create_cosim_project`) and partitioned FSI (`create_fsi_project`) support is the pattern to follow: pure-Python static validation, a scaffold tool, and a worked example verified against real numbers.
 
-### Remeshing inside the solution loop and from solved fields — L
+### 2.1 Remeshing inside the solution loop and from solved fields — L
 
 One-shot `mesh_remesh` (levelset, analytic or solved-field hessian with the transferred field written as `NodalData`, uniform; repeatable passes) and setup-time `add_remeshing_process` are shipped. What remains:
 
@@ -40,13 +40,13 @@ One-shot `mesh_remesh` (levelset, analytic or solved-field hessian with the tran
 
 **Probe:** adapt a 3D tetrahedral mesh to a solved structural field read from VTK and show the transferred stress/temperature error against a uniformly refined mesh.
 
-### Optimization and reduced-order studies — XL
+### 2.2 Optimization and reduced-order studies — XL
 
 Build these separate experiments on the existing sweeps and response extraction. Kratos provides `applications/OptimizationApplication/python_scripts/optimization_analysis.py` and `applications/RomApplication/python_scripts/rom_manager.py`. The former already has a `(model, parameters)` constructor compatible with generic dispatch; the missing work is scaffolding, validation, response histories, and examples. ROM needs a separate lifecycle for training, validation, and online runs.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
-### Mesh editing: data the editor cannot represent — M
+### 2.3 Mesh editing: data the editor cannot represent — M
 
 The `mdpa_*` editing tools, `mesh_import`/`mesh_export` and the gmsh route are shipped. Gaps that remain:
 
