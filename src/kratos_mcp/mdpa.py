@@ -27,6 +27,15 @@ from typing import Any, Iterator
 
 
 @dataclass
+class Table:
+    """A top-level ``Begin Table <id> <x_variable> <y_variable>`` block."""
+    id: int
+    x_variable: str
+    y_variable: str
+    rows: list[tuple[float, float]] = field(default_factory=list)
+
+
+@dataclass
 class SubModelPart:
     name: str
     nodes: list[int] = field(default_factory=list)
@@ -34,6 +43,12 @@ class SubModelPart:
     conditions: list[int] = field(default_factory=list)
     children: dict[str, "SubModelPart"] = field(default_factory=dict)
     geometries: list[int] = field(default_factory=list)
+    # ``Begin SubModelPartData`` key-value pairs (variable name -> raw value).
+    data: dict[str, str] = field(default_factory=dict)
+    # ``Begin SubModelPartTables`` table ids (references into ``Mdpa.tables``).
+    tables: list[int] = field(default_factory=list)
+    # ``Begin SubModelPartProperties`` property ids.
+    properties: list[int] = field(default_factory=list)
 
     def tree(self) -> dict[str, Any]:
         extra = {"geometries": len(self.geometries)} if self.geometries else {}
@@ -55,14 +70,29 @@ class Mdpa:
     properties: dict[int, dict[str, str]] = field(default_factory=dict)
     sub_model_parts: dict[str, SubModelPart] = field(default_factory=dict)
     model_part_data: dict[str, str] = field(default_factory=dict)
-    # Scalar ``Begin NodalData VAR`` blocks: variable name -> {node id: value}. The
-    # fixed flag is not kept (written back as 0); vector blocks are skipped.
+    # Scalar ``Begin NodalData VAR`` blocks: variable name -> {node id: value}.
+    # The fixed flag of each row is kept separately in ``nodal_data_fixed``.
     nodal_data: dict[str, dict[int, float]] = field(default_factory=dict)
+    # Fixed flags of scalar NodalData rows: variable name -> fixed node ids.
+    nodal_data_fixed: dict[str, set[int]] = field(default_factory=dict)
+    # Vector ``Begin NodalData VAR`` blocks: variable name -> {node id:
+    # (fixed, raw value, e.g. "[3](1.0, 0.0, 0.0)")}. The value is kept
+    # verbatim so any vector/matrix type round-trips.
+    vector_nodal_data: dict[str, dict[int, tuple[bool, str]]] = field(default_factory=dict)
+    # Flag ``Begin NodalData FLAG`` blocks (one node id per line, no value).
+    nodal_flags: dict[str, list[int]] = field(default_factory=dict)
     # Geometry type name -> {id: [node ids]} (``Begin Geometries <Type>``).
     geometries: dict[str, dict[int, list[int]]] = field(default_factory=dict)
-    # Blocks present in the file that this model cannot represent (Tables,
-    # ElementalData, vector NodalData, ...); they are lost when the mesh is
-    # written back, so editing tools warn about them.
+    # ``Begin Table <id> <x_var> <y_var>`` blocks.
+    tables: dict[int, Table] = field(default_factory=dict)
+    # ``Begin ElementalData VAR`` / ``Begin ConditionalData VAR`` blocks:
+    # variable name -> {entity id: raw value}. Values are kept verbatim (scalar
+    # numbers and ``[n](...)`` vectors alike) so ids can be rewritten.
+    elemental_data: dict[str, dict[int, str]] = field(default_factory=dict)
+    conditional_data: dict[str, dict[int, str]] = field(default_factory=dict)
+    # Blocks present in the file that this model cannot represent (Constraints,
+    # CommunicatorData, ...); they are lost when the mesh is written back, so
+    # editing tools warn about them.
     skipped_blocks: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------ info
@@ -101,6 +131,11 @@ class Mdpa:
             ),
             "bounding_box": self.bounding_box(),
             "sub_model_parts": {s.name: s.tree() for s in self.sub_model_parts.values()},
+            "num_tables": len(self.tables),
+            "elemental_data_by_variable": {k: len(v) for k, v in self.elemental_data.items()},
+            "conditional_data_by_variable": {k: len(v) for k, v in self.conditional_data.items()},
+            "vector_nodal_data_by_variable": {k: len(v) for k, v in self.vector_nodal_data.items()},
+            "nodal_flags_by_variable": {k: len(v) for k, v in self.nodal_flags.items()},
         }
 
     def validate(self) -> list[str]:
@@ -140,6 +175,22 @@ class Mdpa:
         elem_ids = self.element_ids()
         cond_ids = self.condition_ids()
         geom_ids = self.geometry_ids()
+        for var, by_id in self.elemental_data.items():
+            for eid in by_id:
+                if eid not in elem_ids:
+                    issues.append(f"ElementalData {var} references missing element {eid}")
+        for var, by_id in self.conditional_data.items():
+            for cid in by_id:
+                if cid not in cond_ids:
+                    issues.append(f"ConditionalData {var} references missing condition {cid}")
+        for var, by_id in self.vector_nodal_data.items():
+            for nid in by_id:
+                if nid not in node_ids:
+                    issues.append(f"NodalData {var} references missing node {nid}")
+        for var, ids in self.nodal_flags.items():
+            for nid in ids:
+                if nid not in node_ids:
+                    issues.append(f"NodalData {var} references missing node {nid}")
 
         def walk(part: SubModelPart, prefix: str) -> None:
             path = f"{prefix}{part.name}"
@@ -155,8 +206,11 @@ class Mdpa:
             for g in part.geometries:
                 if g not in geom_ids:
                     issues.append(f"SubModelPart {path} references missing geometry {g}")
+            for t in part.tables:
+                if t not in self.tables:
+                    issues.append(f"SubModelPart {path} references missing table {t}")
             if not (part.nodes or part.elements or part.conditions or part.geometries
-                    or part.children):
+                    or part.children or part.data or part.tables or part.properties):
                 issues.append(f"SubModelPart {path} is empty")
             for child in part.children.values():
                 walk(child, path + ".")
@@ -182,19 +236,42 @@ class Mdpa:
             out += [f"    {k} {v}" for k, v in self.properties.get(pid, {}).items()]
             out.append("End Properties\n")
 
+        for tid in sorted(self.tables):
+            table = self.tables[tid]
+            out.append(f"Begin Table {tid} {table.x_variable} {table.y_variable}")
+            for x, y in table.rows:
+                out.append(f"    {x!r} {y!r}")
+            out.append("End Table\n")
+
         out.append("Begin Nodes")
         for nid in sorted(self.nodes):
             x, y, z = self.nodes[nid]
             out.append(f"    {nid} {x:.10g} {y:.10g} {z:.10g}")
         out.append("End Nodes\n")
 
-        for variable in sorted(self.nodal_data):
-            values = self.nodal_data[variable]
-            out.append(f"Begin NodalData {variable}")
-            for nid in sorted(values):
-                if nid in self.nodes:
-                    out.append(f"    {nid} 0 {values[nid]:.17g}")
-            out.append("End NodalData\n")
+        for variable in sorted(set(self.nodal_data) | set(self.vector_nodal_data)
+                               | set(self.nodal_flags)):
+            if variable in self.nodal_data:
+                values = self.nodal_data[variable]
+                fixed = self.nodal_data_fixed.get(variable, set())
+                out.append(f"Begin NodalData {variable}")
+                for nid in sorted(values):
+                    if nid in self.nodes:
+                        out.append(f"    {nid} {1 if nid in fixed else 0} {values[nid]:.17g}")
+                out.append("End NodalData\n")
+            if variable in self.vector_nodal_data:
+                out.append(f"Begin NodalData {variable}")
+                for nid in sorted(self.vector_nodal_data[variable]):
+                    if nid in self.nodes:
+                        is_fixed, raw = self.vector_nodal_data[variable][nid]
+                        out.append(f"    {nid} {1 if is_fixed else 0} {raw}")
+                out.append("End NodalData\n")
+            if variable in self.nodal_flags:
+                out.append(f"Begin NodalData {variable}")
+                for nid in sorted(self.nodal_flags[variable]):
+                    if nid in self.nodes:
+                        out.append(f"    {nid}")
+                out.append("End NodalData\n")
 
         for type_name in sorted(self.geometries):
             out.append(f"Begin Geometries {type_name}")
@@ -211,8 +288,32 @@ class Mdpa:
                     out.append(f"    {eid} {pid} " + " ".join(str(n) for n in conn))
                 out.append(f"End {kind}\n")
 
+        for variable in sorted(self.elemental_data):
+            out.append(f"Begin ElementalData {variable}")
+            for eid in sorted(self.elemental_data[variable]):
+                out.append(f"    {eid} {self.elemental_data[variable][eid]}")
+            out.append("End ElementalData\n")
+
+        for variable in sorted(self.conditional_data):
+            out.append(f"Begin ConditionalData {variable}")
+            for cid in sorted(self.conditional_data[variable]):
+                out.append(f"    {cid} {self.conditional_data[variable][cid]}")
+            out.append("End ConditionalData\n")
+
         def emit(part: SubModelPart, indent: str) -> None:
             out.append(f"{indent}Begin SubModelPart {part.name}")
+            if part.data:
+                out.append(f"{indent}    Begin SubModelPartData")
+                out.extend(f"{indent}        {k} {v}" for k, v in part.data.items())
+                out.append(f"{indent}    End SubModelPartData")
+            if part.tables:
+                out.append(f"{indent}    Begin SubModelPartTables")
+                out.extend(f"{indent}        {t}" for t in part.tables)
+                out.append(f"{indent}    End SubModelPartTables")
+            if part.properties:
+                out.append(f"{indent}    Begin SubModelPartProperties")
+                out.extend(f"{indent}        {p}" for p in part.properties)
+                out.append(f"{indent}    End SubModelPartProperties")
             blocks = [("Nodes", part.nodes), ("Elements", part.elements),
                       ("Conditions", part.conditions)]
             if part.geometries:
@@ -277,6 +378,10 @@ def part_paths(mesh: "Mdpa") -> list[str]:
 
 # ---------------------------------------------------------------------- parse
 
+def _is_fixed(token: str) -> bool:
+    return token in ("1", "true", "True", "TRUE")
+
+
 def _clean_lines(text: str) -> Iterator[list[str]]:
     for raw in text.splitlines():
         line = raw.split("//", 1)[0].strip()
@@ -324,6 +429,11 @@ def parse(text: str) -> Mdpa:
             props: dict[str, str] = {}
             i += 1
             while not (tokens[i][0] == "End" and tokens[i][1] == "Properties"):
+                if tokens[i][0] == "Begin":
+                    nested = tokens[i][1] if len(tokens[i]) > 1 else ""
+                    m.skipped_blocks.append(f"Properties {pid} {nested}".strip())
+                    i = skip_block(i + 1, nested)
+                    continue
                 if len(tokens[i]) >= 2:
                     props[tokens[i][0]] = " ".join(tokens[i][1:])
                 i += 1
@@ -337,21 +447,53 @@ def parse(text: str) -> Mdpa:
                 i += 1
             i += 1
         elif block == "NodalData" and not smp_stack and len(t) > 2:
-            values: dict[int, float] = {}
-            scalar = True
+            var = t[2]
             i += 1
             while tokens[i][0] != "End":
                 row = tokens[i]
-                if len(row) == 3:
-                    values[int(row[0])] = float(row[2])
+                if len(row) == 1:
+                    # Flag block: one node id per line, no value.
+                    m.nodal_flags.setdefault(var, []).append(int(row[0]))
+                elif len(row) == 3:
+                    try:
+                        value = float(row[2])
+                    except ValueError:
+                        # Vector value without inner spaces, e.g. "[3](1,0,0)".
+                        m.vector_nodal_data.setdefault(var, {})[int(row[0])] = (
+                            _is_fixed(row[1]), row[2])
+                    else:
+                        m.nodal_data.setdefault(var, {})[int(row[0])] = value
+                        if _is_fixed(row[1]):
+                            m.nodal_data_fixed.setdefault(var, set()).add(int(row[0]))
                 else:
-                    scalar = False
+                    m.vector_nodal_data.setdefault(var, {})[int(row[0])] = (
+                        _is_fixed(row[1]), " ".join(row[2:]))
                 i += 1
             i += 1
-            if scalar:
-                m.nodal_data[t[2]] = values
-            else:
-                m.skipped_blocks.append(f"NodalData {t[2]} (vector)")
+        elif block == "Table" and not smp_stack:
+            tid = int(t[2])
+            x_var = t[3] if len(t) > 3 else ""
+            y_var = t[4] if len(t) > 4 else ""
+            rows: list[tuple[float, float]] = []
+            i += 1
+            while i < len(tokens) and tokens[i][0] != "End":
+                rows.append((float(tokens[i][0]), float(tokens[i][1])))
+                i += 1
+            if i >= len(tokens):
+                raise ValueError("Unterminated 'Begin Table' block")
+            i += 1
+            m.tables[tid] = Table(tid, x_var, y_var, rows)
+        elif block in ("ElementalData", "ConditionalData") and not smp_stack and len(t) > 2:
+            target = m.elemental_data if block == "ElementalData" else m.conditional_data
+            bucket = target.setdefault(t[2], {})
+            i += 1
+            while i < len(tokens) and tokens[i][0] != "End":
+                row = tokens[i]
+                bucket[int(row[0])] = " ".join(row[1:])
+                i += 1
+            if i >= len(tokens):
+                raise ValueError(f"Unterminated 'Begin {block}' block")
+            i += 1
         elif block == "Geometries" and not smp_stack:
             by_id_g = m.geometries.setdefault(t[2], {})
             i += 1
@@ -379,18 +521,30 @@ def parse(text: str) -> Mdpa:
             smp_stack.append(part)
             i += 1
         elif block in ("SubModelPartNodes", "SubModelPartElements", "SubModelPartConditions",
-                       "SubModelPartGeometries") and smp_stack:
+                        "SubModelPartGeometries", "SubModelPartTables",
+                        "SubModelPartProperties") and smp_stack:
             attr = {"SubModelPartNodes": "nodes", "SubModelPartElements": "elements",
                     "SubModelPartConditions": "conditions",
-                    "SubModelPartGeometries": "geometries"}[block]
+                    "SubModelPartGeometries": "geometries",
+                    "SubModelPartTables": "tables",
+                    "SubModelPartProperties": "properties"}[block]
             ids = getattr(smp_stack[-1], attr)
             i += 1
             while tokens[i][0] != "End":
                 ids.extend(int(x) for x in tokens[i])
                 i += 1
             i += 1
+        elif block == "SubModelPartData" and smp_stack:
+            data = smp_stack[-1].data
+            i += 1
+            while tokens[i][0] != "End":
+                row = tokens[i]
+                if len(row) >= 2:
+                    data[row[0]] = " ".join(row[1:])
+                i += 1
+            i += 1
         elif t[0] == "Begin":
-            # Unknown block (Tables, ElementalData, ...): skip it wholesale.
+            # Unknown block (Constraints, CommunicatorData, ...): skip it wholesale.
             m.skipped_blocks.append(" ".join(t[1:3]))
             i = skip_block(i + 1, block)
 

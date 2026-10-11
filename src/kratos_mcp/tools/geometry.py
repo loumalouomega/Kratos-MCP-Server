@@ -48,10 +48,14 @@ def register(mcp) -> None:
           'cylinder' {radius, height, n_radial, n_theta, n_z, inner_radius=None}
                      prisms (solid) or hexahedra (hollow); parts lateral, zmin, zmax
           'sphere'   {radius, divisions}  hexahedra, radially mapped cube; part surface
-          'polygon'  {vertices: [[x, y], ...], refinements=0}  triangles by ear
-                     clipping + midpoint subdivision; parts side_0, side_1, ...
+          'polygon'  {vertices: [[x, y], ...], refinements=0, holes=None,
+                     target_size=None}  triangles by ear clipping + midpoint
+                     subdivision; parts side_0, side_1, ... plus hole_<k> per hole
+                     loop; holes is a list of vertex loops strictly inside the
+                     polygon; target_size adds subdivision rounds until no edge
+                     is longer than it (at most 6 rounds total, best effort)
         element_name overrides the element type (default: SmallDisplacement
-        elements of matching node count). For holes, graded sizes or CAD input
+        elements of matching node count). For graded sizes or CAD input
         use mesh_generate_gmsh."""
         if kind not in geo.GENERATORS:
             raise ValueError(f"Unknown kind '{kind}'. Use {sorted(geo.GENERATORS)}")
@@ -89,8 +93,10 @@ def register(mcp) -> None:
         Abaqus .inp, Nastran, XDMF, ... anything meshio reads) into a Kratos
         .mdpa. The highest-dimension cells become elements, the next lower
         dimension conditions; named physical groups / cell sets become sub model
-        parts (a 'domain' part with everything is added). Only linear line,
-        triangle, quad, tetra, hexahedron and wedge cells are converted.
+        parts (a 'domain' part with everything is added). Linear and quadratic
+        line, triangle, quad, tetra, hexahedron and wedge cells are converted
+        (15-node wedges cannot be represented by meshio itself and are refused
+        on export; cubic and higher Lagrange cells are rejected).
         element_name / condition_name set the Kratos types (defaults are generic
         Element2D3N ... SurfaceCondition3D4N, fine for thermal or fluid solvers
         that replace elements; give e.g. SmallDisplacementElement2D3N for

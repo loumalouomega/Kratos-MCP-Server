@@ -46,15 +46,25 @@ Build these separate experiments on the existing sweeps and response extraction.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
-### 2.3 Mesh editing: data the editor cannot represent — M
+### 2.3 Mesh editing: remaining gaps — M
 
-The `mdpa_*` editing tools, `mesh_import`/`mesh_export` and the gmsh route are shipped. Gaps that remain:
+The `mdpa_*` editing tools, `mesh_import`/`mesh_export`, `Tables`,
+`ElementalData`/`ConditionalData`, vector/flag `NodalData`, per-sub-model-part
+data, quadratic cells and hole-capable polygon meshing are shipped. Gaps that remain:
 
-- **Blocks the model drops.** `Tables`, `ElementalData`, `ConditionalData`, vector `NodalData` and per-sub-model-part data are skipped by `mdpa.parse`; the editing tools refuse in-place edits of such files (they name the blocks and ask for `output=`), but nothing can edit or preserve that data. Needs the entities in `Mdpa` plus rewrite rules when ids change (renumber, merge, delete).
-- **Higher-order cells.** Quality, boundary extraction, extrusion, cell conversion and meshio import handle linear line/triangle/quad/tetra/prism/hexahedron only; 6-, 8- and 10-node cells are rejected rather than converted.
-- **Unstructured generation without gmsh.** `mdpa_create_geometry_mesh` only has structured/polar generators and an ear-clipping polygon mesher; holes, graded sizes and CAD need the optional gmsh extra, which is not exercised in CI.
+- **Higher-order cells past quadratic.** Quality, boundary extraction, extrusion,
+  cell conversion and meshio import handle linear and quadratic
+  line/triangle/quad/tetra/hexahedron/wedge cells; cubic and higher Lagrange
+  cells (10+ node triangles/tetrahedra, 18-node wedges, …), pyramids and meshio
+  export of 15-node wedges (meshio 5.3 itself has no `wedge15` cell type) are
+  rejected rather than converted.
+- **Graded unstructured generation without gmsh.** `mdpa_create_geometry_mesh`
+  `polygon` handles holes (bridged slits, `hole_<k>` parts) and uniform
+  `target_size` subdivision; spatially graded sizes and CAD need the optional
+  gmsh extra, which is not exercised in CI.
 
-**Probe:** round-trip a mesh with an `ElementalData` block and a quadratic triangle through `mdpa_renumber` and `mesh_import` without losing either.
+**Probe:** round-trip a cubic (10-node) triangle through `mesh_import` without
+losing it; mesh a polygon with a graded (non-uniform) size field without gmsh.
 
 ## Non-goals and decisions taken
 

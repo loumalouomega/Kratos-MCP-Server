@@ -73,3 +73,47 @@ def test_polygon_convex_and_concave():
         geo.create_polygon_mesh([[0, 0], [1, 1]])
     with pytest.raises(ValueError):
         geo.create_polygon_mesh([[0, 0], [1, 1], [1, 0], [0, 1]])  # bow tie
+
+
+def test_polygon_with_hole():
+    hole = [[1, 0.5], [2, 0.5], [2, 1.5], [1, 1.5]]
+    m = geo.create_polygon_mesh([[0, 0], [4, 0], [4, 2], [0, 2]], holes=[hole])
+    assert m.validate() == []
+    assert area(m) == pytest.approx(8.0 - 1.0)
+    assert set(m.sub_model_parts) == {"domain", "side_0", "side_1", "side_2", "side_3",
+                                      "hole_0"}
+    assert len(m.sub_model_parts["hole_0"].conditions) == 4
+    assert me.quality(m)["elements"]["SmallDisplacementElement2D3N"]["measure"]["min"] > 0
+    # hole boundary nodes sit exactly on the hole loop
+    ring = m.sub_model_parts["hole_0"].nodes
+    assert len(ring) == 4
+    for nid in ring:
+        x, y, _ = m.nodes[nid]
+        assert min(abs(x - 1), abs(x - 2), abs(y - 0.5), abs(y - 1.5)) < 1e-9
+    # clockwise inputs work too
+    cw = geo.create_polygon_mesh([[0, 0], [0, 2], [4, 2], [4, 0]],
+                                 holes=[[[1, 0.5], [1, 1.5], [2, 1.5], [2, 0.5]]])
+    assert cw.validate() == [] and area(cw) == pytest.approx(7.0)
+    # two holes
+    two = geo.create_polygon_mesh(
+        [[0, 0], [4, 0], [4, 2], [0, 2]],
+        holes=[[[0.5, 0.5], [1.0, 0.5], [1.0, 1.0], [0.5, 1.0]],
+               [[2.5, 0.5], [3.0, 0.5], [3.0, 1.0], [2.5, 1.0]]])
+    assert two.validate() == [] and area(two) == pytest.approx(8.0 - 0.5)
+    assert {"hole_0", "hole_1"} <= set(two.sub_model_parts)
+    with pytest.raises(ValueError, match="inside"):
+        geo.create_polygon_mesh([[0, 0], [1, 0], [1, 1], [0, 1]],
+                                holes=[[[5, 5], [6, 5], [6, 6]]])
+    with pytest.raises(ValueError, match="at least 3"):
+        geo.create_polygon_mesh([[0, 0], [1, 0], [1, 1], [0, 1]], holes=[[[0, 0], [1, 1]]])
+
+
+def test_polygon_target_size():
+    m = geo.create_polygon_mesh([[0, 0], [4, 0], [4, 2], [0, 2]], target_size=0.5)
+    assert m.validate() == []
+    longest = max(d for t, by in m.elements.items() for _, c in by.values()
+                  for d in me.edge_lengths(m, t, c))
+    assert longest <= 0.5 * (1 + 1e-9)
+    assert area(m) == pytest.approx(8.0)
+    with pytest.raises(ValueError, match="target_size"):
+        geo.create_polygon_mesh([[0, 0], [1, 0], [0, 1]], target_size=0.0)

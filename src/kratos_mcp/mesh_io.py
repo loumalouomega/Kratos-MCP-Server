@@ -19,15 +19,34 @@ import numpy as np
 from . import mesh_edit
 from .mdpa import Mdpa, SubModelPart, find_part, part_paths
 
-# meshio cell type -> (topological dimension, linear cell kind)
-_CELL_DIM = {"vertex": 0, "line": 1, "triangle": 2, "quad": 2,
-             "tetra": 3, "hexahedron": 3, "wedge": 3}
-_KIND_TO_MESHIO = {"line": "line", "tri": "triangle", "quad": "quad", "tet": "tetra",
-                   "hex": "hexahedron", "prism": "wedge"}
-_DEFAULT_ELEMENT = {"line": "Element2D2N", "triangle": "Element2D3N", "quad": "Element2D4N",
-                    "tetra": "Element3D4N", "hexahedron": "Element3D8N", "wedge": "Element3D6N"}
-_DEFAULT_CONDITION = {"line": "LineCondition2D2N", "triangle": "SurfaceCondition3D3N",
-                      "quad": "SurfaceCondition3D4N"}
+# meshio cell type -> topological dimension (linear and quadratic cells)
+_CELL_DIM = {"vertex": 0, "line": 1, "line3": 1,
+             "triangle": 2, "triangle6": 2, "quad": 2, "quad8": 2, "quad9": 2,
+             "tetra": 3, "tetra10": 3, "hexahedron": 3, "hexahedron20": 3,
+             "hexahedron27": 3, "wedge": 3, "wedge15": 3}
+# (linear cell kind, node count) -> meshio cell type. Note: ("prism", 15) is
+# deliberately absent: meshio 5.3 has no "wedge15" CellBlock (its
+# topological_dimension lacks it, so neither meshio.read nor meshio.Mesh can
+# carry 15-node wedges); to_meshio raises an informative error for those.
+_MESHIO_BY_NODES = {
+    ("line", 2): "line", ("line", 3): "line3",
+    ("tri", 3): "triangle", ("tri", 6): "triangle6",
+    ("quad", 4): "quad", ("quad", 8): "quad8", ("quad", 9): "quad9",
+    ("tet", 4): "tetra", ("tet", 10): "tetra10",
+    ("hex", 8): "hexahedron", ("hex", 20): "hexahedron20", ("hex", 27): "hexahedron27",
+    ("prism", 6): "wedge",
+}
+_DEFAULT_ELEMENT = {"line": "Element2D2N", "line3": "Element2D3N",
+                    "triangle": "Element2D3N", "triangle6": "Element2D6N",
+                    "quad": "Element2D4N", "quad8": "Element2D8N", "quad9": "Element2D9N",
+                    "tetra": "Element3D4N", "tetra10": "Element3D10N",
+                    "hexahedron": "Element3D8N", "hexahedron20": "Element3D20N",
+                    "hexahedron27": "Element3D27N",
+                    "wedge": "Element3D6N", "wedge15": "Element3D15N"}
+_DEFAULT_CONDITION = {"line": "LineCondition2D2N", "line3": "LineCondition2D3N",
+                      "triangle": "SurfaceCondition3D3N", "triangle6": "SurfaceCondition3D6N",
+                      "quad": "SurfaceCondition3D4N", "quad8": "SurfaceCondition3D8N",
+                      "quad9": "SurfaceCondition3D9N"}
 
 
 class GmshUnavailable(RuntimeError):
@@ -52,9 +71,9 @@ def from_meshio(mesh, element_name: str | None = None, condition_name: str | Non
     dims = [_CELL_DIM[t] for t, _ in blocks if t in _CELL_DIM and t != "vertex"]
     unsupported = sorted({t for t, _ in blocks if t not in _CELL_DIM})
     if unsupported:
-        raise ValueError(f"Unsupported cell types {unsupported}; only linear line, triangle, "
-                         "quad, tetra, hexahedron and wedge cells are converted "
-                         "(set the mesh order to 1)")
+        raise ValueError(f"Unsupported cell types {unsupported}; only linear and quadratic "
+                         "line, triangle, quad, tetra, hexahedron and wedge cells are "
+                         "converted (no cubic or higher-order Lagrange cells)")
     if not dims:
         raise ValueError("The mesh has no line/surface/volume cells")
     top = max(dims)
@@ -140,8 +159,13 @@ def import_mesh(path: str | Path, file_format: str | None = None, **kwargs: Any)
 def to_meshio(mesh: Mdpa):
     """Mdpa -> meshio.Mesh with elements first, then conditions. Cell data:
     ``kratos:id``, ``kratos:property_id`` and ``kratos:entity`` (0 element, 1
-    condition); sub model parts become cell_sets, scalar nodal data point_data."""
+    condition); sub model parts become cell_sets, scalar nodal data point_data
+    (vector nodal data as (n, d) arrays when the raw value parses as
+    ``[d](...)``). Quadratic cells map to their meshio type (triangle6,
+    quad8/quad9, tetra10, hexahedron20/27, wedge15, line3)."""
     import meshio
+
+    import re
 
     index = {nid: i for i, nid in enumerate(sorted(mesh.nodes))}
     points = np.array([mesh.nodes[n] for n in sorted(mesh.nodes)], dtype=float)
@@ -150,10 +174,17 @@ def to_meshio(mesh: Mdpa):
         for type_name, by_id in sorted(store.items()):
             for eid, (pid, conn) in sorted(by_id.items()):
                 kind = mesh_edit.cell_kind(mesh, type_name, conn)
-                if kind is None:
-                    raise ValueError(f"{type_name} {eid} ({len(conn)} nodes) has no linear "
-                                     "meshio cell type")
-                blocks.setdefault((_KIND_TO_MESHIO[kind], entity), []).append((eid, pid, conn))
+                cell_type = _MESHIO_BY_NODES.get((kind or "", len(conn)))
+                if cell_type is None:
+                    if (kind, len(conn)) == ("prism", 15):
+                        raise ValueError(
+                            f"{type_name} {eid} is a 15-node wedge, which meshio cannot "
+                            "represent (no wedge15 cell type); export the .mdpa directly or "
+                            "run mdpa_convert_cells mode='quadratic_to_linear' first")
+                    raise ValueError(f"{type_name} {eid} ({len(conn)} nodes) has no "
+                                     "meshio cell type (only linear and quadratic line, "
+                                     "triangle, quad, tetra, hexahedron and wedge cells)")
+                blocks.setdefault((cell_type, entity), []).append((eid, pid, conn))
     cells, ids, pids, ent, locator = [], [], [], [], {}
     for block, ((cell_type, entity), rows) in enumerate(sorted(blocks.items(), key=lambda kv: kv[0][1])):
         cells.append((cell_type, np.array([[index[n] for n in c] for _, _, c in rows], dtype=int)))
@@ -175,6 +206,23 @@ def to_meshio(mesh: Mdpa):
             cell_sets[path] = [np.array(p, dtype=int) for p in per_block]
     point_data = {var: np.array([vals.get(n, 0.0) for n in sorted(mesh.nodes)])
                   for var, vals in mesh.nodal_data.items()}
+    for var, by_id in mesh.vector_nodal_data.items():
+        parsed = {}
+        for nid, (_, raw) in by_id.items():
+            m = re.fullmatch(r"\[\d+\]\((.*)\)", raw.strip())
+            if m:
+                try:
+                    parsed[nid] = [float(x) for x in m.group(1).split(",")]
+                except ValueError:
+                    parsed = {}
+                    break
+            else:
+                parsed = {}
+                break
+        if parsed and len({len(v) for v in parsed.values()}) == 1:
+            dim = len(next(iter(parsed.values())))
+            point_data[var] = np.array(
+                [parsed.get(n, [0.0] * dim) for n in sorted(mesh.nodes)])
     return meshio.Mesh(points, cells, point_data=point_data,
                        cell_data={"kratos:id": ids, "kratos:property_id": pids,
                                   "kratos:entity": ent},

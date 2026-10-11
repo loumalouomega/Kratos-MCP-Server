@@ -42,15 +42,75 @@ def test_export_import_files(tmp_path):
         assert back.validate() == []
 
 
-def test_from_meshio_rejects_second_order_and_empty():
+def test_from_meshio_quadratic_and_rejections():
     import meshio
 
     pts = np.array([[0, 0], [1, 0], [0, 1], [0.5, 0], [0.5, 0.5], [0, 0.5]], dtype=float)
-    mesh = meshio.Mesh(pts, [("triangle6", np.array([[0, 1, 2, 3, 4, 5]]))])
+    m = mesh_io.from_meshio(meshio.Mesh(pts, [("triangle6", np.array([[0, 1, 2, 3, 4, 5]]))]))
+    assert m.inspect()["elements_by_type"] == {"Element2D6N": 1}
+    assert m.validate() == []
     with pytest.raises(ValueError, match="Unsupported"):
-        mesh_io.from_meshio(mesh)
+        mesh_io.from_meshio(meshio.Mesh(pts, [("triangle10", np.array([[0, 1, 2] * 3 + [0]]))]))
     with pytest.raises(ValueError, match="no line"):
         mesh_io.from_meshio(meshio.Mesh(pts, [("vertex", np.array([[0], [1]]))]))
+
+
+def test_quadratic_meshio_round_trips(tmp_path):
+    import meshio
+
+    # triangle6 + line3 through real files
+    m = mdpa_mod.Mdpa()
+    m.nodes = {1: (0, 0, 0), 2: (1, 0, 0), 3: (1, 1, 0), 4: (0, 1, 0),
+               5: (0.5, 0, 0), 6: (1, 0.5, 0), 7: (0.5, 1, 0), 8: (0, 0.5, 0)}
+    m.elements["SmallDisplacementElement2D6N"] = {1: (1, [1, 2, 4, 5, 6, 7])}
+    m.conditions["LineCondition2D3N"] = {1: (1, [1, 2, 5])}
+    m.sub_model_parts["domain"] = mdpa_mod.SubModelPart("domain", nodes=list(m.nodes),
+                                                       elements=[1], conditions=[1])
+    me.set_nodal_data(m, "DISP", [1], "[3](1.0, 0.0, 0.0)")
+    path = mesh_io.export_mesh(m, tmp_path / "q.vtk")
+    back = mesh_io.import_mesh(path, element_name="SmallDisplacementElement2D6N",
+                               condition_name="LineCondition2D3N")
+    assert back.elements["SmallDisplacementElement2D6N"][1] == (1, [1, 2, 4, 5, 6, 7])
+    assert back.conditions["LineCondition2D3N"][1] == (1, [1, 2, 5])
+    assert back.validate() == []
+    assert len(back.sub_model_parts["domain"].elements) == 1
+    # each supported quadratic type round-trips in memory
+    for cell_type, n in [("quad8", 8), ("quad9", 9), ("tetra10", 10),
+                         ("hexahedron20", 20), ("hexahedron27", 27), ("line3", 3)]:
+        pts = np.zeros((n, 3))
+        pts[:, 0] = np.arange(n)
+        src = meshio.Mesh(pts, [(cell_type, np.array([list(range(n))]))])
+        got = mesh_io.from_meshio(src)
+        assert got.validate() == [], cell_type
+        assert [c.type for c in mesh_io.to_meshio(got).cells] == [cell_type], cell_type
+
+
+def test_wedge15_import_export_limits():
+    from types import SimpleNamespace
+
+    # meshio 5.3 cannot construct wedge15 blocks itself, but from_meshio
+    # handles them when present (e.g. from a fixed meshio or a hand-built mesh)
+    cells = [SimpleNamespace(type="wedge15", data=np.array([list(range(15))]))]
+    fake = SimpleNamespace(cells=cells, points=np.zeros((15, 3)), cell_sets={},
+                           cell_data={}, point_sets={})
+    m = mesh_io.from_meshio(fake)
+    assert m.inspect()["elements_by_type"] == {"Element3D15N": 1}
+    assert m.validate() == []
+    with pytest.raises(ValueError, match="15-node wedge"):
+        mesh_io.to_meshio(m)
+
+
+def test_vector_nodal_data_export(tmp_path):
+    import meshio
+
+    m = mdpa_mod.create_rectangle_mesh(1.0, 1.0, 1, 1)
+    me.set_nodal_data(m, "DISP", [1, 2], "[3](1.0, 2.0, 3.0)")
+    mio = mesh_io.to_meshio(m)
+    assert mio.point_data["DISP"].shape == (len(m.nodes), 3)
+    assert list(mio.point_data["DISP"][0]) == [1.0, 2.0, 3.0]
+    # unparsable raw values are skipped, never break the export
+    m.vector_nodal_data["ODD"] = {1: (False, "not-a-vector")}
+    assert "ODD" not in mesh_io.to_meshio(m).point_data
 
 
 def test_physical_tags_without_names():

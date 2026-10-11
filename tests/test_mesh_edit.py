@@ -331,3 +331,214 @@ def test_quality_flags_inverted():
     q = me.quality(m)["elements"]["SmallDisplacementElement2D4N"]
     assert q["non_positive_or_invalid"]["count"] >= 1
     assert q["aspect_ratio"]["max"] > 1
+
+
+# ------------------------------------------------------- data block rewrites
+
+def data_mesh():
+    m = rect()
+    me.set_nodal_data(m, "TEMP", [1, 2], 5.0, fixed=True)
+    me.set_nodal_data(m, "DISP", [1], "[3](1.0, 0.0, 0.0)")
+    me.set_elemental_data(m, "elemental", "DENSITY", {1: 7850.0, 2: "[3](0, 1, 0)"})
+    me.set_elemental_data(m, "conditional", "X", {1: 3.0})
+    me.set_table(m, 0, "TIME", "VELOCITY", [[0, 0], [1, 2.5]])
+    m.nodal_flags["ACTIVE"] = [1, 2]
+    m.sub_model_parts["left"].tables.append(0)
+    m.sub_model_parts["left"].data["FLAG"] = "on"
+    return m
+
+
+def test_data_blocks_follow_renumber():
+    m = data_mesh()
+    me.renumber(m, start=10)
+    assert set(m.elemental_data["DENSITY"]) <= set(m.element_ids())
+    assert set(m.conditional_data["X"]) <= set(m.condition_ids())
+    assert set(m.nodal_data["TEMP"]) <= set(m.nodes)
+    assert m.nodal_data_fixed["TEMP"] == set(m.nodal_data["TEMP"])
+    assert set(m.vector_nodal_data["DISP"]) <= set(m.nodes)
+    assert set(m.nodal_flags["ACTIVE"]) <= set(m.nodes)
+    assert m.sub_model_parts["left"].tables == [0]
+    assert m.validate() == []
+    assert mdpa_mod.parse(m.dumps()).validate() == []
+
+
+def test_data_blocks_follow_delete_and_extract():
+    m = data_mesh()
+    e = min(m.element_ids())
+    me.delete_entities(m, "element", [e])
+    assert e not in m.elemental_data["DENSITY"]
+    me.delete_nodes(m, [1], cascade=True)
+    assert 1 not in m.nodal_data["TEMP"] and 1 not in m.vector_nodal_data["DISP"]
+    assert 1 not in m.nodal_flags["ACTIVE"]
+    sub = me.extract_part(m, "left")
+    assert set(sub.tables) == {0}
+    assert set(sub.elemental_data.get("DENSITY", {})) <= sub.element_ids()
+    assert sub.validate() == []
+
+
+def test_data_blocks_merge_with_table_collision():
+    a, b = data_mesh(), data_mesh()
+    me.set_table(b, 0, "TIME", "OTHER", [[0, 0]])
+    me.merge_meshes(a, b)
+    assert sorted(a.tables) == [0, 1]
+    assert a.validate() == []
+    assert mdpa_mod.parse(a.dumps()).validate() == []
+
+
+def test_set_elemental_data_and_tables():
+    m = rect()
+    out = me.set_elemental_data(m, "elemental", "DENSITY", {1: 2.0, 2: [0, 1, 0]})
+    assert out == {"updated": 2, "removed": 0}
+    assert m.elemental_data["DENSITY"][2] == "0 1 0"
+    with pytest.raises(ValueError, match="Missing element 999"):
+        me.set_elemental_data(m, "elemental", "DENSITY", {999: 1.0})
+    with pytest.raises(ValueError, match="kind"):
+        me.set_elemental_data(m, "bogus", "D", {1: 1.0})
+    out = me.set_elemental_data(m, "elemental", "DENSITY", {}, remove_ids=[1])
+    assert out["removed"] == 1 and 1 not in m.elemental_data["DENSITY"]
+    me.set_table(m, 3, "X", "Y", [[0, 1]])
+    assert m.tables[3].rows == [(0.0, 1.0)]
+    m.sub_model_parts["left"].tables.append(3)
+    with pytest.raises(ValueError, match="referenced"):
+        me.delete_table(m, 3)
+    m.sub_model_parts["left"].tables.clear()
+    me.delete_table(m, 3)
+    with pytest.raises(ValueError, match="Missing table"):
+        me.delete_table(m, 3)
+
+
+# ------------------------------------------------------------- higher order
+
+def tri6_mesh():
+    m = mdpa_mod.Mdpa()
+    m.nodes = {1: (0, 0, 0), 2: (1, 0, 0), 3: (1, 1, 0), 4: (0, 1, 0),
+               5: (0.5, 0, 0), 6: (1, 0.5, 0), 7: (0.5, 1, 0),
+               8: (0, 0.5, 0), 9: (0.5, 0.5, 0)}
+    m.elements["Element2D6N"] = {1: (1, [1, 2, 3, 5, 6, 9]),
+                                 2: (1, [1, 3, 4, 9, 7, 8])}
+    m.sub_model_parts["domain"] = mdpa_mod.SubModelPart(
+        "domain", nodes=list(m.nodes), elements=[1, 2])
+    return m
+
+
+def test_quadratic_quality_uses_corners():
+    m = tri6_mesh()
+    assert m.validate() == []
+    q = me.quality(m)["elements"]["Element2D6N"]
+    assert "skipped_unsupported" not in q
+    assert q["measure"] == {"min": 0.5, "max": 0.5, "mean": 0.5, "total": 1.0}
+    assert me.cell_kind(m, "Element2D6N", [1, 2, 3, 5, 6, 9]) == "tri"
+    assert me.corner_nodes(m, "Element2D6N", [1, 2, 3, 5, 6, 9]) == [1, 2, 3]
+
+
+def test_quadratic_boundary_and_linearize():
+    m = tri6_mesh()
+    out = me.extract_boundary(m, {"3": "LineCondition2D3N"}, "skin")
+    assert out["conditions_created"] == 4
+    assert all(len(c) == 3 for _, c in m.conditions["LineCondition2D3N"].values())
+    assert m.validate() == []
+    # shared diagonal (1, 3, 9) is not a boundary
+    assert all(9 not in c for _, c in m.conditions["LineCondition2D3N"].values()
+               if set(c) != {1, 3, 9})
+    out = me.convert_cells(m, "quadratic_to_linear")
+    assert out["elements"] == 2 and list(m.elements) == ["Element2D3N"]
+    assert all(len(c) == 3 for _, c in m.elements["Element2D3N"].values())
+    assert m.validate() == []
+    assert total(m) == pytest.approx(1.0)
+
+
+def test_quadratic_extrude_tri6_quad8_line3():
+    e = me.extrude(tri6_mesh(), [0.5], cap_condition_names={"6": "SurfaceCondition3D6N"})
+    assert list(e.elements) == ["Element3D15N"] and len(e.elements["Element3D15N"]) == 2
+    assert e.validate() == []
+    vols = me.quality(e)["elements"]["Element3D15N"]["measure"]
+    assert vols["total"] == pytest.approx(0.5)
+    assert len(e.sub_model_parts["zmax"].conditions) == 2
+
+    m = mdpa_mod.Mdpa()
+    m.nodes = {1: (0, 0, 0), 2: (1, 0, 0), 3: (1, 1, 0), 4: (0, 1, 0),
+               5: (0.5, 0, 0), 6: (1, 0.5, 0), 7: (0.5, 1, 0), 8: (0, 0.5, 0)}
+    m.elements["Element2D8N"] = {1: (1, [1, 2, 3, 4, 5, 6, 7, 8])}
+    m.conditions["LineCondition2D3N"] = {1: (1, [1, 2, 5])}
+    m.sub_model_parts["domain"] = mdpa_mod.SubModelPart(
+        "domain", nodes=list(m.nodes), elements=[1], conditions=[1])
+    e = me.extrude(m, [0.5])
+    assert list(e.elements) == ["Element3D20N"]
+    assert list(e.conditions) == ["LineCondition3D8N"]
+    assert e.validate() == []
+    assert me.quality(e)["elements"]["Element3D20N"]["measure"]["total"] == pytest.approx(0.5)
+
+    q9 = mdpa_mod.Mdpa(nodes=dict(m.nodes), properties=dict(m.properties))
+    q9.nodes[9] = (0.5, 0.5, 0.0)
+    q9.elements["Element2D9N"] = {1: (1, [1, 2, 3, 4, 5, 6, 7, 8, 9])}
+    with pytest.raises(ValueError, match="quadratic_to_linear"):
+        me.extrude(q9, [0.5])
+
+
+def test_quadratic_boundary_3d():
+    # single tet10: volume 1/6, four 6-node faces
+    m = mdpa_mod.Mdpa()
+    m.nodes = {1: (0, 0, 0), 2: (1, 0, 0), 3: (0, 1, 0), 4: (0, 0, 1),
+               5: (0.5, 0, 0), 6: (0.5, 0.5, 0), 7: (0, 0.5, 0),
+               8: (0, 0, 0.5), 9: (0.5, 0, 0.5), 10: (0, 0.5, 0.5)}
+    m.elements["Element3D10N"] = {1: (1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])}
+    m.sub_model_parts["domain"] = mdpa_mod.SubModelPart(
+        "domain", nodes=list(m.nodes), elements=[1])
+    assert me.measure(m, "Element3D10N", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) == \
+        pytest.approx(1 / 6)
+    out = me.extract_boundary(m, {"6": "SurfaceCondition3D6N"}, "skin")
+    assert out["conditions_created"] == 4 and m.validate() == []
+    assert all(len(c) == 6 for _, (_, c) in m.conditions["SurfaceCondition3D6N"].items())
+    # single hex20: volume 1, six 8-node faces
+    m = mdpa_mod.Mdpa()
+    corners = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
+               (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]
+    edges = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6),
+             (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
+    for i, p in enumerate(corners + [
+            ((corners[a][0] + corners[b][0]) / 2, (corners[a][1] + corners[b][1]) / 2,
+             (corners[a][2] + corners[b][2]) / 2) for a, b in edges]):
+        m.nodes[i + 1] = (float(p[0]), float(p[1]), float(p[2]))
+    m.elements["Element3D20N"] = {1: (1, list(range(1, 21)))}
+    m.sub_model_parts["domain"] = mdpa_mod.SubModelPart(
+        "domain", nodes=list(m.nodes), elements=[1])
+    assert me.measure(m, "Element3D20N", list(range(1, 21))) == pytest.approx(1.0)
+    out = me.extract_boundary(m, {"8": "SurfaceCondition3D8N"}, "skin")
+    assert out["conditions_created"] == 6 and m.validate() == []
+    # hex27 faces carry the face center (bottom: corners + mids + node 21)
+    m2 = mdpa_mod.Mdpa(nodes=dict(m.nodes))
+    for i, p in enumerate([(0.5, 0.5, 0), (0.5, 0.5, 1), (0.5, 0, 0.5), (1, 0.5, 0.5),
+                           (0.5, 1, 0.5), (0, 0.5, 0.5), (0.5, 0.5, 0.5)]):
+        m2.nodes[21 + i] = p
+    m2.elements["Element3D27N"] = {1: (1, list(range(1, 28)))}
+    m2.sub_model_parts["domain"] = mdpa_mod.SubModelPart(
+        "domain", nodes=list(m2.nodes), elements=[1])
+    out = me.extract_boundary(m2, {"9": "SurfaceCondition3D9N"}, "skin")
+    assert out["conditions_created"] == 6 and m2.validate() == []
+    bottom = [c for _, (_, c) in m2.conditions["SurfaceCondition3D9N"].items()
+              if set(c[:4]) == {1, 2, 3, 4}]
+    assert bottom == [[1, 4, 3, 2, 12, 11, 10, 9, 21]]
+
+
+def test_split_modes_refuse_quadratic():
+    m = mdpa_mod.Mdpa(nodes={i: (float(i % 3), float(i // 3), 0.0) for i in range(1, 9)})
+    m.elements["Element2D8N"] = {1: (1, list(range(1, 9)))}
+    with pytest.raises(ValueError, match="quadratic_to_linear"):
+        me.convert_cells(m, "quad_to_tri")
+    m = mdpa_mod.Mdpa(nodes={i: (float(i), 0, 0) for i in range(1, 21)})
+    m.elements["Element3D20N"] = {1: (1, list(range(1, 21)))}
+    with pytest.raises(ValueError, match="quadratic_to_linear"):
+        me.convert_cells(m, "hex_to_tet")
+
+
+def test_quadratic_mirror_keeps_positive_measure():
+    m = tri6_mesh()
+    original = {e: list(c) for e, (_, c) in m.elements["Element2D6N"].items()}
+    me.transform(m, "mirror", point=[0, 0, 0], normal=[1, 0, 0])
+    assert min(me.measure(m, t, c) for t, by in m.elements.items()
+               for _, c in by.values()) > 0
+    assert m.validate() == []
+    # flip twice restores the connectivity
+    me.transform(m, "mirror", point=[0, 0, 0], normal=[1, 0, 0])
+    assert {e: list(c) for e, (_, c) in m.elements["Element2D6N"].items()} == original
+    assert me.quality(m)["elements"]["Element2D6N"]["measure"]["total"] == pytest.approx(1.0)

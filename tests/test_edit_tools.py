@@ -58,6 +58,8 @@ def test_tool_inventory_and_schemas():
                 "mdpa_edit_sub_model_part", "mdpa_transform", "mdpa_merge", "mdpa_renumber",
                 "mdpa_extract", "mdpa_extrude", "mdpa_convert_cells", "mdpa_extract_boundary",
                 "mdpa_set_properties", "mdpa_set_nodal_data", "mdpa_quality",
+                "mdpa_get_data_blocks", "mdpa_set_elemental_data", "mdpa_set_table",
+                "mdpa_delete_table", "mdpa_set_sub_model_part_data",
                 "mdpa_create_geometry_mesh", "mesh_import", "mesh_export", "mesh_generate_gmsh",
                 "project_get_setting", "project_set_setting", "project_delete_setting",
                 "project_list_processes", "project_add_process", "project_update_process",
@@ -85,15 +87,30 @@ def test_in_place_and_output_semantics(mesh_file, tmp_path):
     assert "exactly one" in T.mdpa_move_nodes(mesh_file, offset=[1, 0, 0])["error"]
 
 
-def test_unsupported_blocks_block_in_place_edit(tmp_path):
+def test_data_blocks_preserved_and_editable_in_place(tmp_path):
     path = tmp_path / "t.mdpa"
     mdpa_mod.create_rectangle_mesh(1, 1, 1, 1).write(path)
-    path.write_text(path.read_text() + "\nBegin ElementalData DENSITY\n1 0 1.0\nEnd ElementalData\n")
-    assert mdpa_mod.read(path).skipped_blocks == ["ElementalData DENSITY"]
+    path.write_text(path.read_text() + "\nBegin ElementalData DENSITY\n1 7850.0\nEnd ElementalData\n"
+                    "Begin Table 0 TIME VELOCITY\n0.0 0.0\n1.0 2.0\nEnd Table\n")
+    mesh = mdpa_mod.read(path)
+    assert mesh.skipped_blocks == []
+    assert mesh.elemental_data == {"DENSITY": {1: "7850.0"}}
+    out = T.mdpa_add_nodes(str(path), [[5, 5]])
+    assert out["in_place"] and "warnings" not in out
+    again = mdpa_mod.read(path)
+    assert again.elemental_data == {"DENSITY": {1: "7850.0"}}
+    assert again.tables[0].rows == [(0.0, 0.0), (1.0, 2.0)]
+
+
+def test_unknown_blocks_still_block_in_place_edit(tmp_path):
+    path = tmp_path / "t.mdpa"
+    mdpa_mod.create_rectangle_mesh(1, 1, 1, 1).write(path)
+    path.write_text(path.read_text() + "\nBegin Constraints Foo\n1 2\nEnd Constraints\n")
+    assert mdpa_mod.read(path).skipped_blocks == ["Constraints Foo"]
     err = T.mdpa_add_nodes(str(path), [[5, 5]])["error"]
-    assert "ElementalData" in err and "output" in err
+    assert "Constraints" in err and "output" in err
     out = T.mdpa_add_nodes(str(path), [[5, 5]], output=str(tmp_path / "ok.mdpa"))
-    assert out["warnings"] and "ElementalData" in out["warnings"][0]
+    assert out["warnings"] and "Constraints" in out["warnings"][0]
 
 
 def test_select_create_part_and_loads(mesh_file):
@@ -204,6 +221,71 @@ def test_import_export_tools(mesh_file, tmp_path):
                         condition_name="LineLoadCondition2D2N")
     assert out["valid"] and out["mesh"]["num_elements"] == 8
     assert "does not exist" in T.mesh_import(str(tmp_path / "x.msh"), "y.mdpa")["error"]
+
+
+def test_data_block_tools(tmp_path):
+    path = str(tmp_path / "d.mdpa")
+    mdpa_mod.create_rectangle_mesh(1, 1, 1, 1).write(path)
+    out = T.mdpa_set_elemental_data(path, "elemental", "DENSITY", {"1": 7850.0})
+    assert out["result"] == {"updated": 1, "removed": 0}
+    out = T.mdpa_set_elemental_data(path, "elemental", "AXIS", {"1": "[3](0, 1, 0)"})
+    assert "error" not in out
+    assert "Missing element" in T.mdpa_set_elemental_data(
+        path, "elemental", "DENSITY", {"999": 1.0})["error"]
+    assert "kind" in T.mdpa_set_elemental_data(path, "x", "D", {"1": 1.0})["error"]
+    out = T.mdpa_set_nodal_data(path, "DISP", "[3](1.0, 0.0, 0.0)", node_ids=[1],
+                                fixed=True)
+    assert out["result"]["set"] == 1
+    out = T.mdpa_set_nodal_data(path, "TEMP", 20.0, node_ids=[1, 2], fixed=True)
+    assert mdpa_mod.read(path).nodal_data_fixed["TEMP"] == {1, 2}
+    out = T.mdpa_set_table(path, 0, "TIME", "VELOCITY", [[0, 0], [1, 2.0]])
+    assert out["result"] == {"table": 0, "rows": 2}
+    out = T.mdpa_set_sub_model_part_data(path, "left", data={"FLAG": "on"}, tables=[0])
+    assert out["result"]["tables"] == [0]
+    assert "Missing tables" in T.mdpa_set_sub_model_part_data(
+        path, "left", tables=[9])["error"]
+    got = T.mdpa_get_data_blocks(path)
+    assert got["tables"] == {0: {"x_variable": "TIME", "y_variable": "VELOCITY", "rows": 2}}
+    assert got["elemental_data"] == {"DENSITY": 1, "AXIS": 1}
+    assert got["vector_nodal_data"] == {"DISP": 1}
+    assert got["sub_model_part_data"]["left"] == {"data": {"FLAG": "on"}, "tables": [0],
+                                                  "properties": []}
+    assert got["skipped_blocks"] == []
+    assert "referenced" in T.mdpa_delete_table(path, 0)["error"]
+    T.mdpa_set_sub_model_part_data(path, "left", tables=[])
+    assert T.mdpa_delete_table(path, 0)["result"] == {"deleted": 0}
+    assert "Missing table" in T.mdpa_delete_table(path, 0)["error"]
+
+
+def test_probe_elemental_quadratic_survives_renumber_and_import(tmp_path):
+    """Roadmap 2.3 probe: an ElementalData block and a quadratic triangle
+    round-trip through mdpa_renumber and mesh_import without losing either."""
+    src = str(tmp_path / "q.mdpa")
+    m = mdpa_mod.Mdpa()
+    m.nodes = {1: (0, 0, 0), 2: (1, 0, 0), 3: (1, 1, 0), 4: (0, 1, 0),
+               5: (0.5, 0, 0), 6: (1, 0.5, 0), 7: (0.5, 1, 0), 8: (0, 0.5, 0)}
+    m.elements["SmallDisplacementElement2D6N"] = {1: (1, [1, 2, 4, 5, 6, 7])}
+    m.conditions["LineCondition2D3N"] = {1: (1, [1, 2, 5])}
+    m.sub_model_parts["domain"] = mdpa_mod.SubModelPart("domain", nodes=list(m.nodes),
+                                                       elements=[1], conditions=[1])
+    me.set_elemental_data(m, "elemental", "DENSITY", {1: 7850.0})
+    m.write(src)
+    ren = str(tmp_path / "r.mdpa")
+    out = T.mdpa_renumber(src, 10, output=ren)
+    assert "error" not in out
+    reread = mdpa_mod.read(ren)
+    assert reread.elemental_data == {"DENSITY": {10: "7850.0"}}
+    assert reread.elements["SmallDisplacementElement2D6N"][10][1] == [10, 11, 13, 14, 15, 16]
+    vtk = T.mesh_export(ren, str(tmp_path / "q.vtk"))
+    assert "written_to" in vtk
+    back = T.mesh_import(vtk["written_to"], str(tmp_path / "b.mdpa"),
+                         element_name="SmallDisplacementElement2D6N",
+                         condition_name="LineCondition2D3N")
+    assert back["valid"] and back["mesh"]["elements_by_type"] == \
+        {"SmallDisplacementElement2D6N": 1}
+    reimported = mdpa_mod.read(str(tmp_path / "b.mdpa"))
+    assert reimported.elements["SmallDisplacementElement2D6N"][1] == (1, [1, 2, 4, 5, 6, 7])
+    assert reimported.conditions["LineCondition2D3N"][1] == (1, [1, 2, 5])
 
 
 def test_gmsh_tool_validation_and_unavailable(tmp_path, monkeypatch):

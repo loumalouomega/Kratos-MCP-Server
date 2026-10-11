@@ -219,9 +219,97 @@ def _check_simple(poly: list[tuple[float, float]]) -> None:
                 raise ValueError("the polygon is self-intersecting")
 
 
-def ear_clip(poly: list[tuple[float, float]]) -> list[tuple[int, int, int]]:
-    """Triangulate a simple polygon (counter-clockwise or clockwise, no holes)
-    by ear clipping; returns index triples, counter-clockwise."""
+def _point_in_polygon(p: tuple[float, float], poly: list[tuple[float, float]]) -> bool:
+    """Ray casting (even-odd); points on the boundary count as outside."""
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % n]
+        if (y0 > p[1]) != (y1 > p[1]) and \
+                p[0] < (x1 - x0) * (p[1] - y0) / (y1 - y0) + x0:
+            inside = not inside
+    return inside
+
+
+def _segments_cross(a, b, c, d) -> bool:
+    """True when the open segments (a, b) and (c, d) properly intersect."""
+
+    def orient(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    return orient(a, b, c) * orient(a, b, d) < 0 and orient(c, d, a) * orient(c, d, b) < 0
+
+
+def _bridge_holes(outer: list[tuple[float, float]],
+                  holes: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
+    """Merge holes into one (weakly simple) polygon by zero-width slits: each
+    hole is spliced into the loop as ``..., p, h, <hole loop back to h>, p,
+    ...`` where (p, h) is the shortest visible outer-hole vertex pair. The
+    slit is traversed out and back along the same segment, so it needs no
+    triangulation; the outer loop runs counter-clockwise and each hole
+    clockwise around its interior, keeping hole interiors outside."""
+    merged = list(outer)
+    if _signed_area(merged) < 0:
+        merged.reverse()
+    oriented = []
+    for hole in holes:
+        h = list(hole)
+        if _signed_area(h) > 0:
+            h.reverse()
+        oriented.append(h)
+
+    def loop_edges(loop: list[tuple[float, float]]):
+        return [(loop[i], loop[(i + 1) % len(loop)]) for i in range(len(loop))]
+
+    for k, hole in enumerate(oriented):
+        # Edges the slit must not cross: the current loop plus later holes.
+        blockers = loop_edges(merged) + [e for h in oriented[k + 1:] for e in loop_edges(h)]
+        hole_edges = loop_edges(hole)
+        best: tuple[float, int, int] | None = None
+        for i, p in enumerate(merged):
+            for j, q in enumerate(hole):
+                dist = math.dist(p, q)
+                if best is not None and dist >= best[0]:
+                    continue
+                if any(_segments_cross(p, q, a, b) for a, b in blockers + hole_edges):
+                    continue
+                mid = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+                if not _point_in_polygon(mid, outer):
+                    continue
+                if any(_point_in_polygon(mid, h) for h in oriented):
+                    continue
+                best = (dist, i, j)
+        if best is None:
+            raise ValueError(f"hole {k} cannot be bridged to the polygon "
+                             "(it may touch the boundary or another hole)")
+        _, i, j = best
+        order = [(j + t) % len(hole) for t in range(len(hole) + 1)]
+        merged = merged[:i + 1] + [hole[t] for t in order] + merged[i:]
+    return merged
+    n = len(poly)
+
+    def orient(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        for j in range(i + 1, n):
+            if j == i or (j + 1) % n == i or (i + 1) % n == j:
+                continue
+            c, d = poly[j], poly[(j + 1) % n]
+            if orient(a, b, c) * orient(a, b, d) < 0 and orient(c, d, a) * orient(c, d, b) < 0:
+                raise ValueError("the polygon is self-intersecting")
+
+
+def ear_clip(poly: list[tuple[float, float]],
+             walls: list[tuple[tuple[float, float], tuple[float, float]]] | None = None
+             ) -> list[tuple[int, int, int]]:
+    """Triangulate a simple polygon (counter-clockwise or clockwise; holes must
+    be bridged into the loop first, see ``_bridge_holes``); returns index
+    triples, counter-clockwise. ``walls`` are segments an ear diagonal must not
+    cross: for a plain loop they default to its own edges (always satisfied),
+    for a bridged loop pass the outer plus hole edges, since clipped hole
+    vertices no longer block invalid diagonals."""
     n = len(poly)
     if n < 3:
         raise ValueError("a polygon needs at least 3 vertices")
@@ -229,6 +317,8 @@ def ear_clip(poly: list[tuple[float, float]]) -> list[tuple[int, int, int]]:
     if abs(_signed_area(poly)) < 1e-14:
         raise ValueError("the polygon has zero area (or is self-intersecting)")
     _check_simple(poly)
+    if walls is None:
+        walls = [(poly[i], poly[(i + 1) % n]) for i in range(n)]
     if _signed_area(poly) < 0:
         idx.reverse()
     tris: list[tuple[int, int, int]] = []
@@ -245,6 +335,8 @@ def ear_clip(poly: list[tuple[float, float]]) -> list[tuple[int, int, int]]:
             if any(_point_in_tri(poly[j], a, b, c) for j in idx
                    if j not in (i0, i1, i2) and poly[j] not in (a, b, c)):
                 continue
+            if any(_segments_cross(a, c, w0, w1) for w0, w1 in walls):
+                continue  # diagonal across a hole or outside the polygon
             tris.append((i0, i1, i2))
             idx.pop(k)
             break
@@ -257,17 +349,46 @@ def ear_clip(poly: list[tuple[float, float]]) -> list[tuple[int, int, int]]:
 def create_polygon_mesh(vertices: list[list[float]], refinements: int = 0,
                         element_name: str = "SmallDisplacementElement2D3N",
                         condition_name: str | None = "LineLoadCondition2D2N",
-                        property_id: int = 1, root_part: str = "domain") -> Mdpa:
-    """Triangle mesh of a simple polygon (no holes): ear clipping, then
-    ``refinements`` rounds of midpoint subdivision (each splits a triangle in 4).
-    One boundary part ``side_<i>`` per polygon edge (edge i joins vertex i and
-    i+1). Triangle quality is whatever ear clipping gives; use gmsh for a
-    graded, good-quality mesh."""
+                        property_id: int = 1, root_part: str = "domain",
+                        holes: list[list[list[float]]] | None = None,
+                        target_size: float | None = None) -> Mdpa:
+    """Triangle mesh of a simple polygon, optionally with holes: ear clipping,
+    then ``refinements`` rounds of midpoint subdivision (each splits a triangle
+    in 4). One boundary part ``side_<i>`` per outer edge (edge i joins vertex i
+    and i+1) plus ``hole_<k>`` per hole loop. ``target_size`` adds uniform
+    subdivision rounds until no edge is longer than it (at most 6 rounds total;
+    best effort). Triangle quality is whatever ear clipping gives; use gmsh for
+    graded or CAD-driven meshes."""
     poly = [(float(v[0]), float(v[1])) for v in vertices]
     if not 0 <= refinements <= 6:
         raise ValueError("refinements must be between 0 and 6")
-    tris = ear_clip(poly)
+    hole_loops = [[(float(v[0]), float(v[1])) for v in h] for h in (holes or [])]
+    for k, hole in enumerate(hole_loops):
+        if len(hole) < 3:
+            raise ValueError(f"hole {k} needs at least 3 vertices")
+        if abs(_signed_area(hole)) < 1e-14:
+            raise ValueError(f"hole {k} has zero area")
+        if any(not _point_in_polygon(p, poly) for p in hole):
+            raise ValueError(f"hole {k} is not strictly inside the polygon")
+    if hole_loops:
+        poly = _bridge_holes(poly, hole_loops)
+        walls = ([(vertices[i], vertices[(i + 1) % len(vertices)]) for i in range(len(vertices))] +
+                 [(h[i], h[(i + 1) % len(h)]) for h in (holes or []) for i in range(len(h))])
+        tris = ear_clip(poly, walls=walls)
+    else:
+        tris = ear_clip(poly)
     points = list(poly)
+    if target_size is not None:
+        if target_size <= 0:
+            raise ValueError("target_size must be positive")
+        longest = 0.0
+        for a, b, c in tris:
+            for u, v in ((a, b), (b, c), (c, a)):
+                longest = max(longest, math.dist(points[u], points[v]))
+        extra = 0
+        while longest / (2 ** extra) > target_size and refinements + extra < 6:
+            extra += 1
+        refinements += extra
     mid_cache: dict[tuple[int, int], int] = {}
 
     def midpoint(a: int, b: int) -> int:
@@ -283,35 +404,68 @@ def create_polygon_mesh(vertices: list[list[float]], refinements: int = 0,
             ab, bc, ca = midpoint(a, b), midpoint(b, c), midpoint(c, a)
             new += [(a, ab, ca), (ab, b, bc), (ca, bc, c), (ab, bc, ca)]
         tris = new
+    # Collapse repeated points to single nodes (bridged hole loops repeat the
+    # slit vertices; subdivision may also land on existing vertices). Degenerate
+    # triangles along the slit are dropped.
+    seen: dict[tuple[float, float], int] = {}
+    remap: list[int] = []
+    unique: list[tuple[float, float]] = []
+    for p in points:
+        if p in seen:
+            remap.append(seen[p])
+        else:
+            seen[p] = len(unique)
+            unique.append(p)
+            remap.append(seen[p])
+    tris = [(remap[a], remap[b], remap[c]) for a, b, c in tris]
+    tris = [t for t in tris if len(set(t)) == 3]
+    points = unique
     m = Mdpa()
     for i, (x, y) in enumerate(points):
         m.nodes[i + 1] = (x, y, 0.0)
     elems = m.elements.setdefault(element_name, {})
     for k, tri in enumerate(tris):
         elems[k + 1] = (property_id, [i + 1 for i in tri])
-    # boundary: free edges, assigned to the polygon side that contains them
+    # boundary: free edges, assigned to the outer side or hole loop containing them
     counts: dict[tuple[int, int], int] = {}
     for a, b, c in tris:
         for e in ((a, b), (b, c), (c, a)):
             key = (min(e), max(e))
             counts[key] = counts.get(key, 0) + 1
-    sides: dict[str, list[list[int]]] = {f"side_{i}": [] for i in range(len(poly))}
+    sides: dict[str, list[list[int]]] = {f"side_{i}": [] for i in range(len(vertices))}
+    sides.update({f"hole_{k}": [] for k in range(len(hole_loops))})
     for tri in tris:
         for e in zip(tri, tri[1:] + tri[:1]):
             if counts[(min(e), max(e))] != 1:
                 continue
             pa, pb = np.array(points[e[0]]), np.array(points[e[1]])
             mid = (pa + pb) / 2
-            for i in range(len(poly)):
-                s0, s1 = np.array(poly[i]), np.array(poly[(i + 1) % len(poly)])
-                d = s1 - s0
-                t = float((mid - s0) @ d / (d @ d))
-                dist = float(np.linalg.norm(s0 + t * d - mid))
+            for name, (s0, s1) in _boundary_segments(vertices, holes):
+                s0a, s1a = np.array(s0), np.array(s1)
+                d = s1a - s0a
+                denom = float(d @ d)
+                if denom == 0:
+                    continue
+                t = float((mid - s0a) @ d / denom)
+                dist = float(np.linalg.norm(s0a + t * d - mid))
                 if 0 <= t <= 1 and dist <= 1e-9 * max(1.0, float(np.linalg.norm(d))):
-                    sides[f"side_{i}"].append([e[0] + 1, e[1] + 1])
+                    sides[name].append([e[0] + 1, e[1] + 1])
                     break
     return _attach_boundaries(m, {k: v for k, v in sides.items() if v}, condition_name,
                               property_id, root_part)
+
+
+def _boundary_segments(vertices: list[list[float]], holes: list[list[list[float]]] | None
+                       ) -> list[tuple[str, tuple[tuple[float, float], tuple[float, float]]]]:
+    out = []
+    for i in range(len(vertices)):
+        a, b = vertices[i], vertices[(i + 1) % len(vertices)]
+        out.append((f"side_{i}", ((float(a[0]), float(a[1])), (float(b[0]), float(b[1])))))
+    for k, hole in enumerate(holes or []):
+        for j in range(len(hole)):
+            a, b = hole[j], hole[(j + 1) % len(hole)]
+            out.append((f"hole_{k}", ((float(a[0]), float(a[1])), (float(b[0]), float(b[1])))))
+    return out
 
 
 GENERATORS: dict[str, Any] = {

@@ -62,7 +62,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-105 tools, 21 resources (15 worked examples) and 8 guided prompts. See the full documentation in
+110 tools, 21 resources (15 worked examples) and 8 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start

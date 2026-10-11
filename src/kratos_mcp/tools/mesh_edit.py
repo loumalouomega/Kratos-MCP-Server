@@ -373,8 +373,8 @@ def register(mcp) -> None:
         given). operation: 'translate' (vector), 'rotate' (angle in degrees about
         axis, default z, through origin), 'scale' (factors: one number or per
         axis, about origin) or 'mirror' (across the plane through point with
-        normal). Mirror and negative scaling re-order the connectivity of linear
-        elements/conditions so they keep a positive measure."""
+        normal). Mirror and negative scaling re-order the connectivity (including
+        quadratic mid-edge and face nodes) so cells keep a positive measure."""
         src, mesh = _load(path)
         dst = _target(src, mesh, output, overwrite)
         chosen = None
@@ -395,10 +395,13 @@ def register(mcp) -> None:
     ) -> dict[str, Any]:
         """Append the mesh in 'other' to the one in 'path' and write 'output'
         (the inputs are untouched). Ids of 'other' are shifted past the first
-        mesh's; sub model parts with the same name are united. With
+        mesh's; sub model parts with the same name are united (their data, table
+        and property references too). Tables, elemental/conditional data and all
+        nodal data are carried over (colliding table ids are shifted). With
         merge_tolerance, coincident nodes (e.g. along a shared interface) are
         merged afterwards, so two blocks transformed into place become one
-        conforming mesh. Both inputs must be free of unsupported blocks."""
+        conforming mesh. Inputs with blocks the editor cannot represent
+        (Constraints, ...) are still refused: inspect skipped_blocks first."""
         src, base = _load(path)
         _, extra = _load(other)
         dst = _target(src, base, output, overwrite, required=True)
@@ -477,7 +480,10 @@ def register(mcp) -> None:
         element into 2 triangles (e.g. SmallDisplacementElement2D4N ->
         ...2D3N); 'hex_to_tet' splits hexahedra into 6 tetrahedra (Kuhn split,
         conforming for structured meshes with consistent node ordering) and the
-        boundary quads into triangles matching the tet faces. Sub model parts
+        boundary quads into triangles matching the tet faces; 'quadratic_to_linear'
+        drops the mid-edge/face nodes of quadratic cells (tri6->tri, quad8/9->quad,
+        tet10->tet, hex20/27->hex, wedge15->prism, line3->line; ids and sub model
+        parts unchanged, mid nodes kept as unused nodes). Sub model parts
         follow. element_name / condition_name override the derived new type
         names. Other cell kinds are left alone. Needed e.g. for the
         convection-diffusion solver, which requires simplices."""
@@ -501,14 +507,17 @@ def register(mcp) -> None:
         the way to get load/flux surfaces on a mesh that has none -- and put them
         in sub_model_part (created if needed). condition_name is a Kratos type
         (e.g. 'LineLoadCondition2D2N', 'SurfaceLoadCondition3D4N') or a map
-        {"2": ..., "3": ..., "4": ...} by face node count (needed for prisms and
-        mixed meshes). element_part restricts to one part's elements; selector
+        {"2": ..., "3": ..., "4": ...} by face node count (needed for prisms,
+        mixed meshes and quadratic cells: quadratic edges have 3 nodes, tet10 /
+        wedge tri faces 6, hex20 / wedge quad faces 8, hex27 faces 9).
+        element_part restricts to one part's elements; selector
         (see mdpa_select_nodes, e.g. a plane) keeps only faces whose nodes are
         all selected, giving e.g. just the x=0 face. Faces are oriented outward
         for positively oriented elements (domain on the left of 2D edges). NOTE:
         with that orientation a positive POSITIVE_FACE_PRESSURE load acts along
         the outward normal (a tension); use a negative value for a compressive
-        pressure. Supports linear line, triangle, quad, tet, prism and hex cells."""
+        pressure. Supports linear and quadratic line, triangle, quad, tet, prism
+        and hex cells (measures use the corners)."""
         src, mesh = _load(path)
         dst = _target(src, mesh, output, overwrite)
         info = me.extract_boundary(mesh, condition_name, sub_model_part, element_part, selector,
@@ -550,29 +559,151 @@ def register(mcp) -> None:
     def mdpa_set_nodal_data(
         path: str,
         variable: str,
-        value: float,
+        value: float | str,
         node_ids: list[int] | None = None,
         selector: dict[str, Any] | None = None,
+        fixed: bool = False,
         output: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, Any]:
-        """Write a scalar 'Begin NodalData <variable>' block value (an initial
+        """Write a 'Begin NodalData <variable>' block value (an initial
         condition stored in the mesh, e.g. TEMPERATURE) on the chosen nodes
-        (node_ids or selector). Vector nodal data is not supported; for those,
-        use a process in ProjectParameters instead."""
+        (node_ids or selector). A float writes a scalar row, a string such as
+        "[3](1.0, 0.0, 0.0)" a vector row (kept verbatim); fixed=true marks the
+        rows fixed (constrained)."""
         src, mesh = _load(path)
         dst = _target(src, mesh, output, overwrite)
         chosen = _node_ids(mesh, node_ids, selector)
-        return _finish(mesh, dst, src, {"set": me.set_nodal_data(mesh, variable, chosen, value)})
+        return _finish(mesh, dst, src, {"set": me.set_nodal_data(mesh, variable, chosen, value,
+                                                                fixed=fixed)})
+
+    @mcp.tool()
+    @_tool_errors
+    def mdpa_get_data_blocks(path: str) -> dict[str, Any]:
+        """List the data carried by a .mdpa besides the mesh itself: top-level
+        Tables (id, variables, row count), 'Begin ElementalData' /
+        'Begin ConditionalData' variables with row counts, vector and flag
+        'Begin NodalData' blocks, and per-SubModelPart data/table/property
+        references. All of these round-trip through every editing tool."""
+        _, mesh = _load(path)
+        parts: dict[str, Any] = {}
+        for dotted in mdpa_mod.part_paths(mesh):
+            part = mdpa_mod.find_part(mesh, dotted)
+            if part is not None and (part.data or part.tables or part.properties):
+                parts[dotted] = {"data": dict(part.data), "tables": list(part.tables),
+                                 "properties": list(part.properties)}
+        return {
+            "tables": {tid: {"x_variable": t.x_variable, "y_variable": t.y_variable,
+                             "rows": len(t.rows)} for tid, t in mesh.tables.items()},
+            "elemental_data": {k: len(v) for k, v in mesh.elemental_data.items()},
+            "conditional_data": {k: len(v) for k, v in mesh.conditional_data.items()},
+            "vector_nodal_data": {k: len(v) for k, v in mesh.vector_nodal_data.items()},
+            "nodal_flags": {k: len(v) for k, v in mesh.nodal_flags.items()},
+            "sub_model_part_data": parts,
+            "skipped_blocks": list(mesh.skipped_blocks),
+        }
+
+    @mcp.tool()
+    @_tool_errors
+    def mdpa_set_elemental_data(
+        path: str,
+        kind: str,
+        variable: str,
+        values: dict[str, Any] | None = None,
+        remove_ids: list[int] | None = None,
+        output: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Upsert 'Begin ElementalData <variable>' (kind 'elemental') or 'Begin
+        ConditionalData <variable>' (kind 'conditional') rows: values maps
+        element/condition ids to numbers, lists (written space separated) or raw
+        strings such as "[3](0.0, 1.0, 0.0)" for vectors (kept verbatim).
+        remove_ids deletes rows. Ids must exist; rows follow
+        renumber/merge/delete automatically."""
+        src, mesh = _load(path)
+        dst = _target(src, mesh, output, overwrite)
+        if kind not in ("elemental", "conditional"):
+            raise ValueError("kind must be 'elemental' or 'conditional'")
+        parsed = {int(k): v for k, v in (values or {}).items()}
+        result = me.set_elemental_data(mesh, kind, variable, parsed, remove_ids or ())
+        return _finish(mesh, dst, src, result)
+
+    @mcp.tool()
+    @_tool_errors
+    def mdpa_set_table(
+        path: str,
+        table_id: int,
+        x_variable: str,
+        y_variable: str,
+        rows: list[list[float]],
+        output: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Create or replace a top-level 'Begin Table <id> <x_variable>
+        <y_variable>' block (piecewise-linear time series, e.g. TIME vs
+        VELOCITY); rows are [x, y] pairs."""
+        src, mesh = _load(path)
+        dst = _target(src, mesh, output, overwrite)
+        return _finish(mesh, dst, src, me.set_table(mesh, table_id, x_variable, y_variable,
+                                                   rows))
+
+    @mcp.tool()
+    @_tool_errors
+    def mdpa_delete_table(
+        path: str,
+        table_id: int,
+        output: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Delete a top-level 'Begin Table' block. Refused while a
+        SubModelPart references the table."""
+        src, mesh = _load(path)
+        dst = _target(src, mesh, output, overwrite)
+        me.delete_table(mesh, table_id)
+        return _finish(mesh, dst, src, {"deleted": table_id})
+
+    @mcp.tool()
+    @_tool_errors
+    def mdpa_set_sub_model_part_data(
+        path: str,
+        name: str,
+        data: dict[str, Any] | None = None,
+        tables: list[int] | None = None,
+        properties: list[int] | None = None,
+        output: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Replace a SubModelPart's data references wholesale (each None leaves
+        that reference unchanged): data is the 'Begin SubModelPartData'
+        key-value pairs, tables the 'Begin SubModelPartTables' table ids (must
+        exist as top-level Tables), properties the 'Begin SubModelPartProperties'
+        property ids."""
+        src, mesh = _load(path)
+        dst = _target(src, mesh, output, overwrite)
+        part = me._require_part(mesh, name)
+        if data is not None:
+            part.data = {str(k): str(v) for k, v in data.items()}
+        if tables is not None:
+            missing = [t for t in tables if t not in mesh.tables]
+            if missing:
+                raise ValueError(f"Missing tables {missing}")
+            part.tables = [int(t) for t in tables]
+        if properties is not None:
+            part.properties = [int(p) for p in properties]
+        return _finish(mesh, dst, src, {"part": name, "data": dict(part.data),
+                                        "tables": list(part.tables),
+                                        "properties": list(part.properties)})
 
     @mcp.tool()
     @_tool_errors
     def mdpa_quality(path: str, worst: int = 5) -> dict[str, Any]:
         """Mesh quality report, per element/condition type: count, measure
-        (length/area/volume) min/mean/max/total, aspect ratio (longest/shortest
-        edge) with the ids of the worst cells, and the ids of inverted or
-        degenerate cells (non-positive signed measure -- these crash or poison a
-        Kratos run). Linear line, triangle, quad, tet, prism and hex cells."""
+        (length/area/volume, from the corner nodes for quadratic cells)
+        min/mean/max/total, aspect ratio (longest/shortest edge) with the ids
+        of the worst cells, and the ids of inverted or degenerate cells
+        (non-positive signed measure -- these crash or poison a
+        Kratos run). Linear and quadratic line, triangle, quad, tet, prism and
+        hex cells."""
         _, mesh = _load(path)
         report = me.quality(mesh, worst)
         bad = {label: {t: e["non_positive_or_invalid"] for t, e in by_type.items()

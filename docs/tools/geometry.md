@@ -18,10 +18,10 @@ the domain on their left. Existing files are only replaced with
 | `disc` | `radius, n_radial, n_theta` (triangles) | `boundary` |
 | `cylinder` | `radius, height, n_radial, n_theta, n_z, inner_radius?` (prisms, or hexahedra when hollow) | `lateral`, `zmin`, `zmax` |
 | `sphere` | `radius, divisions` (radially mapped cube of hexahedra; stretched corner cells) | `surface` |
-| `polygon` | `vertices: [[x, y], ...], refinements=0` (ear clipping + midpoint subdivision; no holes) | `side_0`, `side_1`, ... |
+| `polygon` | `vertices: [[x, y], ...], refinements=0, holes?, target_size?` (ear clipping with hole bridging + midpoint subdivision; `holes` is a list of strictly interior vertex loops; `target_size` adds subdivision rounds until no edge is longer than it, at most 6 rounds total) | `side_0`, `side_1`, ... plus `hole_<k>` per hole |
 
 `element_name` overrides the default `SmallDisplacementElement…` type. For
-holes, graded sizes or CAD input use gmsh.
+graded sizes or CAD input use gmsh.
 
 ## mesh_import / mesh_export
 
@@ -30,15 +30,21 @@ file_format?)` converts anything meshio reads (gmsh `.msh`, `.vtk`/`.vtu`,
 MED, Abaqus `.inp`, Nastran, XDMF, …) into `.mdpa`: the highest-dimension
 cells become elements, the next lower dimension conditions, and named physical
 groups / cell sets become sub model parts (a `domain` part with everything is
-added). Only linear line, triangle, quad, tetra, hexahedron and wedge cells are
-converted. The default type names are generic (`Element2D3N` …
-`SurfaceCondition3D4N`); set `element_name` for a specific solver, e.g.
+added). Linear and quadratic line, triangle, quad, tetra, hexahedron and wedge
+cells are converted (quadratic Kratos ordering matches meshio/VTK; 15-node
+wedges cannot be represented by meshio itself and cubic/higher Lagrange cells
+are rejected). The default type names are generic (`Element2D3N` …
+`SurfaceCondition3D4N`, with `…2D6N` / `…3D10N` / … variants for quadratic
+cells); set `element_name` for a specific solver, e.g.
 `SmallDisplacementElement2D3N`.
 
 `mesh_export(path, output, file_format?)` goes the other way. Elements come
 first, then conditions; cell data holds `kratos:id`, `kratos:property_id` and
 `kratos:entity` (0 element / 1 condition), sub model parts become cell sets
-where the format supports them, scalar nodal data becomes point data.
+where the format supports them, scalar nodal data becomes point data (vector
+nodal data too, when its `[d](…)` value parses). 15-node wedges cannot be
+exported through meshio — linearize them first (`mdpa_convert_cells`
+`quadratic_to_linear`) or keep the `.mdpa`.
 
 ## mesh_generate_gmsh
 

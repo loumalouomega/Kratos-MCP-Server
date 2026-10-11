@@ -103,22 +103,32 @@ installed) via `-displayfd`.
 - `src/kratos_mcp/render_worker.py` — pyvista/VTK rendering, subprocess-only
   (see above)
 - `src/kratos_mcp/mdpa.py` — pure-Python MDPA parse/write/inspect/validate +
-  structured mesh generators (line/rectangle/box with named boundary parts)
+  structured mesh generators (line/rectangle/box with named boundary parts).
+  Beyond the mesh it models `Tables`, `ElementalData`/`ConditionalData`
+  (verbatim values keyed by entity id), scalar + vector + flag `NodalData`
+  (fixed flags kept) and per-`SubModelPart` data/table/property references;
+  only truly unknown blocks (`Constraints`, …) land in `skipped_blocks`.
 - `src/kratos_mcp/mesh_edit.py` — Kratos-free editing of an `Mdpa` (nodes, elements/conditions/
   geometries, sub model parts, selectors, transform/merge/renumber/extract, `extrude`,
-  `convert_cells`, `extract_boundary`, `quality`). Raises `ValueError`; `tools/mesh_edit.py`
+  `convert_cells`, `extract_boundary`, `quality`, plus `set_elemental_data`/`set_table`/
+  `delete_table` for the data blocks). Raises `ValueError`; `tools/mesh_edit.py`
   wraps every tool in `_tool_errors` and writes in place or to `output=` (refusing in-place
-  edits when `Mdpa.skipped_blocks` is non-empty: Tables/ElementalData/vector NodalData are not
-  modelled and would be lost). `mdpa.py` also owns `find_part`/`part_paths` (the one dotted-path
+  edits only when `Mdpa.skipped_blocks` is non-empty: unmodelled blocks would be lost).
+  Quadratic cells (tri6, quad8/9, tet10, hex20/27, wedge15, line3; corners-first Kratos
+  ordering verified against `kratos/geometries/*`) map to their linear kind for
+  measures/boundary/extrusion; `convert_cells` has a `quadratic_to_linear` mode.
+  `mdpa.py` also owns `find_part`/`part_paths` (the one dotted-path
   lookup), `expected_node_count` (type-name suffix -> node count, used by `validate`) and
   geometries (`Mdpa.geometries`, `SubModelPart.geometries`). Boundary conditions it creates are
   oriented with the domain on the LEFT; Kratos 10.4 then treats a positive
   `POSITIVE_FACE_PRESSURE` as tension (verified: plate + Lame cylinder), so compressive
   pressure needs a negative value.
 - `src/kratos_mcp/geometry.py` — numpy-only parametric generators (annulus, disc, cylinder via
-  `extrude`, sphere, ear-clipped polygon) following `create_rectangle_mesh`'s part naming.
+  `extrude`, sphere, ear-clipped polygon with hole bridging + `target_size` subdivision)
+  following `create_rectangle_mesh`'s part naming (`side_<i>`, `hole_<k>`).
 - `src/kratos_mcp/mesh_io.py` + `gmsh_worker.py` — meshio import/export (`from_meshio`/
-  `to_meshio`, physical groups <-> sub model parts) and the optional gmsh generator.
+  `to_meshio`, physical groups <-> sub model parts; linear and quadratic cells, except
+  15-node wedges which meshio 5.3 itself cannot represent) and the optional gmsh generator.
   `gmsh_worker.py` is the ONLY module that imports gmsh (native library; same subprocess +
   `--result-file` rule as `render_worker.py`; needs libGLU/libXft on Linux). `gmsh` is the
   `gmsh` extra; tests skip when it is missing.
@@ -367,9 +377,9 @@ installed) via `-displayfd`.
   The metric field must already be on the nodes then (`Begin NodalData`, listed in
   `auxiliary_variables_list`); `assign_scalar_variable_process` runs later. A hessian
   metric from one pass on a mesh coarser than the feature barely helps - `passes=3`
-  halves the interpolation error. `mdpa.parse`/`dumps` keep SCALAR top-level
-  `Begin NodalData` blocks (`Mdpa.nodal_data`; vector blocks are skipped, fixed flags
-  written as 0), but `ModelPartIO` writes none (`MESH_ONLY`), so the worker returns the
+  halves the interpolation error. `mdpa.parse`/`dumps` keep top-level
+  `Begin NodalData` blocks (scalar values with fixed flags, vector rows verbatim,
+  flag rows), but `ModelPartIO` writes none (`MESH_ONLY`), so the worker returns the
   `write_fields` values and `mesh_remesh` splices them into the output with the Python
   writer, then feeds them to the next pass (`remesh.carry_fields`, assign `source: "mesh"`).
   A solved-field hessian (`field_results`) is read by `remesh.field_from_result`: VTK points
@@ -508,4 +518,4 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   the tool and the worker. Other knobs: `KRATOS_MCP_MAX_SESSIONS` (4),
   `KRATOS_MCP_SESSION_IDLE_TIMEOUT` (3600 s).
 - Tool/resource/prompt counts are quoted in `README.md` and `docs/tools/index.md`
-  (currently 105 / 21 / 8) — bump both when adding any.
+  (currently 110 / 21 / 8) — bump both when adding any.

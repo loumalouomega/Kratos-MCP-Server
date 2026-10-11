@@ -3,8 +3,9 @@
 Build and modify `.mdpa` meshes node by node, entity by entity: add, move and
 delete nodes; add, delete and retype elements, conditions and geometries;
 create and edit sub model parts; transform, merge, extrude and convert cells;
-create boundary conditions on free faces; check mesh quality. Everything is
-pure Python — no Kratos build needed.
+create boundary conditions on free faces; check mesh quality; read and write
+the data blocks (`Tables`, `ElementalData`, `ConditionalData`, vector/flag
+`NodalData`, per-part data). Everything is pure Python — no Kratos build needed.
 
 ## How the tools behave
 
@@ -16,12 +17,19 @@ pure Python — no Kratos build needed.
   the operation summary, the new `mdpa_inspect`-style summary, and the
   validation issues of the edited mesh (it is written even when issues remain,
   so you can build a mesh in several steps).
-- A file that contains blocks the editor cannot represent (`Tables`,
-  `ElementalData`, `ConditionalData`, vector `NodalData`) is **refused for
-  in-place edits** — pass `output=` to write a copy; the dropped blocks are
-  named in `warnings`.
+- Data blocks round-trip through every tool: `Tables`, `ElementalData`,
+  `ConditionalData`, scalar/vector/flag `NodalData` and per-`SubModelPart`
+  data/table/property references are preserved, and their ids follow
+  renumber/merge/delete/extract. A file with blocks the editor cannot represent
+  (`Constraints`, …) is **refused for in-place edits** — pass `output=` to
+  write a copy; the dropped blocks are named in `warnings`.
 - `Begin Geometries` and `SubModelPartGeometries` blocks are read, edited and
   written.
+- Quadratic cells (6-node triangles, 8/9-node quads, 10-node tets, 20/27-node
+  hexes, 15-node prisms, 3-node lines) are first-class: quality, boundary
+  extraction, extrusion, cell conversion and meshio import/export handle them
+  (measures use the corner nodes). Cubic and higher Lagrange cells, pyramids
+  and 15-node wedges on meshio export are still rejected with a message.
 - Errors come back as `{"error": "..."}`.
 
 ## Selectors
@@ -50,7 +58,11 @@ Use `mdpa_select_nodes` to preview a selector.
 | `mdpa_move_nodes(path, node_ids\|selector, coordinates\|offset)` | absolute positions (one per node) or a shift |
 | `mdpa_delete_nodes(path, node_ids\|selector, cascade?)` | refused while entities use the nodes, unless `cascade=true` deletes those entities too |
 | `mdpa_select_nodes(path, selector, limit?)` | read-only: count, ids and bounding box of a selection |
-| `mdpa_set_nodal_data(path, variable, value, node_ids\|selector)` | scalar `Begin NodalData` initial values |
+| `mdpa_set_nodal_data(path, variable, value, node_ids\|selector, fixed?)` | scalar (`float`) or vector (`"[3](…)"`) `Begin NodalData` values, optionally fixed |
+| `mdpa_get_data_blocks(path)` | read-only: Tables, ElementalData/ConditionalData, vector/flag NodalData and per-part data references |
+| `mdpa_set_elemental_data(path, kind, variable, values?, remove_ids?)` | upsert/delete `Begin ElementalData` (`elemental`) or `Begin ConditionalData` (`conditional`) rows (numbers, lists or `"[3](…)"` strings) |
+| `mdpa_set_table(path, table_id, x_variable, y_variable, rows)` / `mdpa_delete_table(path, table_id)` | create/replace/delete a top-level `Begin Table` block (delete refused while referenced) |
+| `mdpa_set_sub_model_part_data(path, name, data?, tables?, properties?)` | replace a part's `SubModelPartData` / tables / properties references wholesale |
 | `mdpa_transform(path, operation, ...)` | `translate` (`vector`), `rotate` (`angle`°, `axis`, `origin`), `scale` (`factors`, `origin`), `mirror` (`point`, `normal`); all nodes unless limited. Mirror and negative scale re-order the connectivity so cells keep a positive measure |
 
 ## Elements, conditions, geometries
@@ -78,12 +90,12 @@ nodes of added entities.
 
 | Tool | What it does |
 | --- | --- |
-| `mdpa_merge(path, other, output, merge_tolerance?)` | append a mesh (ids shifted, same-named parts united); `merge_tolerance` merges coincident nodes so two transformed blocks become one conforming mesh |
-| `mdpa_renumber(path, start?)` | consecutive ids; every reference follows |
-| `mdpa_extract(path, sub_model_part, output)` | one part (with children and the nodes it uses) as a new mesh |
-| `mdpa_extrude(path, output, heights, z0?, element_names?, condition_names?, cap_condition_names?)` | planar mesh → 3D: triangles → prisms, quads → hexahedra, line conditions → surface quads. Names map `2DnN` → `3DmN` unless overridden; parts `zmin` / `zmax` hold the caps |
-| `mdpa_convert_cells(path, mode, element_name?, condition_name?)` | `quad_to_tri`, or `hex_to_tet` (Kuhn split: conforming on structured meshes with consistent node order; boundary quads follow the tet faces) |
-| `mdpa_extract_boundary(path, condition_name, sub_model_part, element_part?, selector?, property_id?)` | conditions on the free faces (line, tri, quad, tet, prism, hex cells); `selector` keeps only faces whose nodes are all selected, e.g. a plane |
+| `mdpa_merge(path, other, output, merge_tolerance?)` | append a mesh (ids shifted, same-named parts united with their data references; colliding table ids shifted; data blocks carried over); `merge_tolerance` merges coincident nodes so two transformed blocks become one conforming mesh |
+| `mdpa_renumber(path, start?)` | consecutive ids; every reference (including data blocks) follows |
+| `mdpa_extract(path, sub_model_part, output)` | one part (with children, the nodes it uses, its data references and the tables they need) as a new mesh |
+| `mdpa_extrude(path, output, heights, z0?, element_names?, condition_names?, cap_condition_names?)` | planar mesh → 3D: triangles → prisms, quads → hexahedra, line conditions → surface quads; quadratic tri6 → 15-node wedges, quad8 → 20-node hexes, 3-node lines → 8-node quads. Names map `2DnN` → `3DmN` unless overridden; parts `zmin` / `zmax` hold the caps (cap keys `"3"`/`"4"`, `"6"`/`"8"` for quadratic caps). Tables, element/condition data (replicated per layer) and nodal data (interpolated) are carried over |
+| `mdpa_convert_cells(path, mode, element_name?, condition_name?)` | `quad_to_tri`, `hex_to_tet` (Kuhn split: conforming on structured meshes with consistent node order; boundary quads follow the tet faces), or `quadratic_to_linear` (drop mid-edge/face nodes, ids unchanged) |
+| `mdpa_extract_boundary(path, condition_name, sub_model_part, element_part?, selector?, property_id?)` | conditions on the free faces (linear and quadratic line, tri, quad, tet, prism, hex cells; quadratic faces carry their mid nodes, so the name map needs `"3"`/`"6"`/`"8"`/`"9"` keys); `selector` keeps only faces whose nodes are all selected, e.g. a plane |
 | `mdpa_set_properties(path, property_id?, values?, remove?, model_part_data?)` | the mesh-embedded `Properties` block and the `ModelPartData` header |
 | `mdpa_quality(path, worst?)` | per type: measure min/mean/max/total, aspect ratio with the worst ids, and inverted or degenerate cells (`ok: false`) |
 

@@ -115,7 +115,8 @@ A field read from results (and any scalar `Begin NodalData` blocks of the input 
 transferred to the new nodes and **written to the output `.mdpa` as `Begin NodalData`**;
 `fields_written` lists the variable names, and the field is carried from one pass to the
 next. Analytic `field_expression` / `check_fields` values are not written. Vector
-`NodalData` blocks are skipped by the server's `.mdpa` parser.
+`NodalData` blocks are read through the same parser as the mesh editor (kept
+verbatim, fixed flags preserved).
 
 Errors (`{"error": ...}`): missing/identical/existing files, invalid input mesh,
 bad arguments, MMG not available (`meshing_support` explains what the build lacks).

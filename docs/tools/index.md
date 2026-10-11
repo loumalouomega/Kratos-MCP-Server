@@ -1,6 +1,6 @@
 # Tool reference
 
-The server exposes **105 tools**, **21 resources** (15 worked examples) and
+The server exposes **110 tools**, **21 resources** (15 worked examples) and
 **8 prompts**, grouped by workflow stage:
 
 | Category | Tools |
@@ -8,7 +8,7 @@ The server exposes **105 tools**, **21 resources** (15 worked examples) and
 | [Environment & introspection](/tools/environment) | `kratos_check_installation`, `kratos_install`, `kratos_list_applications`, `kratos_list_elements`, `kratos_list_conditions`, `kratos_list_constitutive_laws`, `kratos_list_variables`, `kratos_list_solvers`, `kratos_list_processes`, `kratos_get_solver_defaults`, `kratos_get_process_defaults`, `kratos_get_variable_info` |
 | [Project scaffolding](/tools/scaffolding) | `list_templates`, `create_project`, `create_multistage_project`, `create_cosim_project`, `create_fsi_project`, `create_project_parameters`, `create_materials`, `list_material_presets`, `list_linear_solver_presets`, `add_boundary_condition`, `add_output_process`, `add_remeshing_process`, `validate_project_parameters` |
 | [Meshes](/tools/mesh) | `mdpa_create_structured_mesh`, `mdpa_inspect`, `mdpa_validate`, `mdpa_get_nodes`, `mesh_remesh` |
-| [Mesh editing](/tools/mesh-editing) | `mdpa_get_entities`, `mdpa_select_nodes`, `mdpa_add_nodes`, `mdpa_move_nodes`, `mdpa_delete_nodes`, `mdpa_set_nodal_data`, `mdpa_add_entities`, `mdpa_delete_entities`, `mdpa_set_entity_properties`, `mdpa_create_sub_model_part`, `mdpa_edit_sub_model_part`, `mdpa_transform`, `mdpa_merge`, `mdpa_renumber`, `mdpa_extract`, `mdpa_extrude`, `mdpa_convert_cells`, `mdpa_extract_boundary`, `mdpa_set_properties`, `mdpa_quality` |
+| [Mesh editing](/tools/mesh-editing) | `mdpa_get_entities`, `mdpa_select_nodes`, `mdpa_add_nodes`, `mdpa_move_nodes`, `mdpa_delete_nodes`, `mdpa_set_nodal_data`, `mdpa_add_entities`, `mdpa_delete_entities`, `mdpa_set_entity_properties`, `mdpa_create_sub_model_part`, `mdpa_edit_sub_model_part`, `mdpa_transform`, `mdpa_merge`, `mdpa_renumber`, `mdpa_extract`, `mdpa_extrude`, `mdpa_convert_cells`, `mdpa_extract_boundary`, `mdpa_set_properties`, `mdpa_quality`, `mdpa_get_data_blocks`, `mdpa_set_elemental_data`, `mdpa_set_table`, `mdpa_delete_table`, `mdpa_set_sub_model_part_data` |
 | [Geometry & mesh formats](/tools/geometry) | `mdpa_create_geometry_mesh`, `mesh_import`, `mesh_export`, `mesh_generate_gmsh` (optional `gmsh` extra) |
 | [Project & materials editing](/tools/project-editing) | `project_get_setting`, `project_set_setting`, `project_delete_setting`, `project_list_processes`, `project_add_process`, `project_update_process`, `project_remove_process`, `project_update_solver`, `materials_get`, `materials_set_property`, `materials_remove_property`, `materials_check` |
 | [Simulation & jobs](/tools/simulation) | `run_simulation`, `validate_case`, `job_status`, `job_list`, `job_logs`, `job_cancel`, `job_rerun`, `configure_checkpoints`, `job_checkpoints`, `job_resume` |

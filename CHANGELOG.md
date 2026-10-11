@@ -5,6 +5,35 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ## Unreleased
 
+### Added
+
+- **Mesh data blocks are now modelled, preserved and editable.** `mdpa.parse`
+  reads `Tables`, `ElementalData`/`ConditionalData` (verbatim values keyed by
+  entity id), scalar/vector/flag `NodalData` (fixed flags kept, vectors
+  verbatim) and per-`SubModelPart` data/table/property references; every editing
+  tool round-trips them and their ids follow renumber/merge/delete/extract
+  (colliding table ids on merge are shifted). New tools `mdpa_get_data_blocks`,
+  `mdpa_set_elemental_data`, `mdpa_set_table`, `mdpa_delete_table`,
+  `mdpa_set_sub_model_part_data`; `mdpa_set_nodal_data` accepts vector strings
+  and a `fixed` flag. In-place edits are now refused only for genuinely
+  unmodelled blocks (`Constraints`, …). Verified against a real Kratos build:
+  tables interpolate, `Triangle2D6` node order, `SubModelPartData` and
+  `ElementalData` values all read back correctly.
+- **Quadratic (second-order) cells are first-class.** Quality, boundary
+  extraction (faces carry mid nodes), extrusion (tri6 → 15-node wedge, quad8 →
+  20-node hexahedron, 3-node lines → 8-node quads), `convert_cells`
+  `quadratic_to_linear`, mirror/negative-scale re-orientation and meshio
+  import/export handle line3/triangle6/quad8/quad9/tetra10/hexahedron20/27/wedge15
+  (corner-first Kratos ordering verified against `kratos/geometries/*`;
+  measures use the corners). 15-node wedges cannot be exported through meshio
+  itself (no `wedge15` cell type in meshio 5.3) and fail with an explanatory
+  error; cubic/higher Lagrange cells stay rejected.
+- **Polygon meshing without gmsh: holes and target sizes.** `create_polygon_mesh`
+  (and `mdpa_create_geometry_mesh kind="polygon"`) accept `holes` (bridged
+  zero-width slits, `hole_<k>` boundary parts) and `target_size` (uniform
+  subdivision rounds until no edge exceeds it, at most 6 rounds total). Graded
+  sizes and CAD stay gmsh-only.
+
 ### Changed
 
 - Updated the documentation dependency lock to clear the two open Dependabot

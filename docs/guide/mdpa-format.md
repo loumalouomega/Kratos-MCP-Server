@@ -66,21 +66,27 @@ End SubModelPart
 | `Elements <TypeName>` | `id property_id node_ids...` |
 | `Conditions <TypeName>` | same layout; boundary entities for loads/fluxes |
 | `Geometries <TypeName>` | `id node_ids...` (no property id); read, edited and written, also as `SubModelPartGeometries` |
-| `NodalData <VARIABLE>` | `id fixed value`; only scalar blocks are kept |
-| `SubModelPart <name>` | named entity sets, may be nested; how processes target regions |
+| `NodalData <VARIABLE>` | `id fixed value`; scalar rows keep their fixed flag, vector rows (`id fixed [3](x, y, z)`) are kept verbatim, flag blocks (bare ids) are kept |
+| `Table <id> <X> <Y>` | `x y` rows of a piecewise-linear table; read, edited and written |
+| `ElementalData <VARIABLE>` / `ConditionalData <VARIABLE>` | `id value` rows (scalars and `[n](…)` vectors kept verbatim); follow renumber/merge/delete |
+| `SubModelPart <name>` | named entity sets, may be nested; how processes target regions. May carry `SubModelPartData` key-values plus `SubModelPartTables` / `SubModelPartProperties` references, all preserved |
 
 ::: warning Blocks that are not kept
-`Tables`, `ElementalData`, `ConditionalData`, vector `NodalData` and
-data inside a `SubModelPart` are skipped when a file is read (`mdpa_inspect`
-works regardless). The [mesh editing](/tools/mesh-editing) tools therefore
-refuse to overwrite such a file in place and name the skipped blocks.
+`Constraints`, `CommunicatorData` and other blocks the parser does not model
+are skipped when a file is read (`mdpa_inspect` works regardless). The
+[mesh editing](/tools/mesh-editing) tools therefore refuse to overwrite such
+a file in place and name the skipped blocks.
 :::
 
 ## Naming conventions
 
 Element and condition type names encode dimension and node count:
 `SmallDisplacementElement3D8N` is a 3D, 8-node hexahedron;
-`LineLoadCondition2D2N` a 2-node line condition in 2D.
+`LineLoadCondition2D2N` a 2-node line condition in 2D. Quadratic cells
+(`…2D6N` triangles, `…2D8N` quads, `…3D10N` tetrahedra, `…3D20N` hexahedra,
+`…3D15N` prisms, `…2D3N`/`…3D3N` lines) list their corner nodes first in Kratos
+ordering, then the mid-edge (and face) nodes; the mesh tools use the corners
+for measures and preserve the full connectivity.
 
 Two conventions matter in practice:
 

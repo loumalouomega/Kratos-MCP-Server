@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import itertools
 import math
-from typing import Any, Iterable
+import re
+from typing import Any, Callable, Iterable
 
 import numpy as np
 
@@ -213,6 +214,15 @@ def delete_nodes(mesh: Mdpa, node_ids: Iterable[int], cascade: bool = False) -> 
     for values in mesh.nodal_data.values():
         for n in doomed:
             values.pop(n, None)
+    for fixed in mesh.nodal_data_fixed.values():
+        fixed -= doomed
+    for values in mesh.vector_nodal_data.values():
+        for n in doomed:
+            values.pop(n, None)
+    for var in list(mesh.nodal_flags):
+        mesh.nodal_flags[var] = [n for n in mesh.nodal_flags[var] if n not in doomed]
+        if not mesh.nodal_flags[var]:
+            del mesh.nodal_flags[var]
     for part in _walk(mesh):
         part.nodes = [n for n in part.nodes if n not in doomed]
     return {"nodes": len(doomed), **{k: v for k, v in removed.items()}}
@@ -264,6 +274,14 @@ def delete_entities(mesh: Mdpa, kind: str, ids: Iterable[int]) -> int:
             del store[type_name][eid]
         if not store[type_name]:
             del store[type_name]
+    if kind == "element":
+        for by_id in mesh.elemental_data.values():
+            for eid in doomed:
+                by_id.pop(eid, None)
+    elif kind == "condition":
+        for by_id in mesh.conditional_data.values():
+            for cid in doomed:
+                by_id.pop(cid, None)
     for part in _walk(mesh):
         members = _part_list(part, kind)
         members[:] = [m for m in members if m not in doomed]
@@ -432,7 +450,8 @@ def transform(mesh: Mdpa, operation: str, node_ids: Iterable[int] | None = None,
     through ``origin``; scale: ``factors`` (one number or per axis) about
     ``origin``; mirror: across the plane through ``point`` with ``normal``.
     Orientation-reversing operations (mirror, negative scale) re-order the
-    connectivity of linear elements/conditions so they keep a positive measure."""
+    connectivity of elements/conditions (including quadratic mid-edge and face
+    nodes) so they keep a positive measure."""
     ids = sorted(mesh.nodes) if node_ids is None else [int(n) for n in node_ids]
     missing = [n for n in ids if n not in mesh.nodes]
     if missing:
@@ -489,20 +508,51 @@ def transform(mesh: Mdpa, operation: str, node_ids: Iterable[int] | None = None,
     return {"nodes": len(ids), "reoriented_entities": reoriented}
 
 
+_CORNER_FLIP = {
+    "tri": (0, 2, 1),
+    "quad": (0, 3, 2, 1),
+    "tet": (0, 2, 1, 3),
+    "hex": (0, 3, 2, 1, 4, 7, 6, 5),
+    "prism": (0, 2, 1, 3, 5, 4),
+}
+
+
 def _flip_connectivity(mesh: Mdpa, type_name: str, conn: list[int]) -> list[int]:
     kind = cell_kind(mesh, type_name, conn)
+    n = len(conn)
     c = list(conn)
-    if kind == "tri":
-        return [c[0], c[2], c[1]]
-    if kind == "tet":
-        return [c[0], c[2], c[1], c[3]]
-    if kind == "quad":
-        return [c[0], c[3], c[2], c[1]]
-    if kind == "hex":
-        return [c[0], c[3], c[2], c[1], c[4], c[7], c[6], c[5]]
-    if kind == "prism":
-        return [c[0], c[2], c[1], c[3], c[5], c[4]]
-    return c
+    if kind is None or kind == "line":
+        return c
+    corners = _CORNERS.get((kind, n), tuple(range(_LINEAR_COUNTS[kind])))
+    perm = _CORNER_FLIP[kind]
+    if len(perm) != len(corners):
+        return c
+    new: list[int | None] = [None] * n
+    for new_pos, old_pos in enumerate(perm):
+        new[corners[new_pos]] = c[corners[old_pos]]
+    pos_of = {old: new_pos for new_pos, old in enumerate(perm)}
+    mids = _EDGE_MIDS.get((kind, n), {})
+    for edge, slot in mids.items():
+        a, b = tuple(edge)
+        target = mids.get(frozenset((pos_of[a], pos_of[b])))
+        if target is None:
+            return c
+        new[target] = c[slot]
+    centers = _FACE_CENTERS.get((kind, n))
+    if centers is not None:
+        faces = FACES[kind]
+        for f_idx, face in enumerate(faces):
+            # Old-corner set now sitting on new face f_idx; take its old center.
+            wanted = frozenset(perm[o] for o in face)
+            g = next((g for g, old in enumerate(faces) if frozenset(old) == wanted), None)
+            if g is None:
+                return c
+            new[centers[f_idx]] = c[centers[g]]
+    for slot in _FIXED_SLOTS.get((kind, n), ()):
+        new[slot] = c[slot]
+    if any(v is None for v in new):
+        return c
+    return [int(v) for v in new]
 
 
 # --------------------------------------------------------------- cell geometry
@@ -533,17 +583,43 @@ _TETS_OF = {
 
 
 def cell_kind(mesh: Mdpa, type_name: str, conn: list[int]) -> str | None:
-    """Linear cell kind of an entity: line, tri, quad, tet, prism, hex (None if
-    it is not one of them). A 4-node entity is a tet when its nodes span a
-    volume and a quad when they are planar."""
+    """Cell kind of an entity: line, tri, quad, tet, prism, hex (None if it is
+    not one of them). Higher-order (quadratic) cells map to their linear kind:
+    their corners come first in Kratos ordering, so measures use the corners.
+    A 3-node entity is a quadratic line when its name says so (Line, Truss,
+    Bar, Beam, Edge, Cable) or when its nodes are collinear, else a triangle.
+    A 4-node entity is a tet when its nodes span a volume and a quad when they
+    are planar. A 6-node entity is a quadratic triangle for ``2D6``/``Tri``
+    names, else a prism; an 8-node entity a quadratic quad for ``2D8``/``Quad``
+    names, else a hexahedron."""
     n = len(conn)
     if n == 2:
         return "line"
     if n == 3:
+        if any(s in type_name for s in ("Line", "Truss", "Bar", "Beam", "Edge", "Cable")):
+            return "line"
+        pts = [mesh.nodes.get(i) for i in conn]
+        if all(p is not None for p in pts):
+            a, b, c = (np.array(p) for p in pts)
+            scale = max(float(np.linalg.norm(b - a)), float(np.linalg.norm(c - a)), 1e-300)
+            if float(np.linalg.norm(np.cross(b - a, c - a))) / scale ** 2 < 1e-9:
+                return "line"
         return "tri"
     if n == 6:
+        if "2D6" in type_name or "Tri" in type_name:
+            return "tri"
         return "prism"
     if n == 8:
+        if "2D8" in type_name or "Quad" in type_name:
+            return "quad"
+        return "hex"
+    if n == 9:
+        return "quad"
+    if n == 10:
+        return "tet"
+    if n == 15:
+        return "prism"
+    if n in (20, 27):
         return "hex"
     if n == 4:
         p = np.array([mesh.nodes[i] for i in conn])
@@ -553,17 +629,109 @@ def cell_kind(mesh: Mdpa, type_name: str, conn: list[int]) -> str | None:
     return None
 
 
+# Corner-node indices of quadratic cells in Kratos ordering (linear cells use
+# every node). Measures, edge lengths and boundary faces use the corners.
+_CORNERS: dict[tuple[str, int], tuple[int, ...]] = {
+    ("line", 3): (0, 1),
+    ("tri", 6): (0, 1, 2),
+    ("quad", 8): (0, 1, 2, 3),
+    ("quad", 9): (0, 1, 2, 3),
+    ("tet", 10): (0, 1, 2, 3),
+    ("hex", 20): tuple(range(8)),
+    ("hex", 27): tuple(range(8)),
+    ("prism", 15): tuple(range(6)),
+}
+
+# Corner-node count of the linear cell of each kind.
+_LINEAR_COUNTS = {"line": 2, "tri": 3, "quad": 4, "tet": 4, "hex": 8, "prism": 6}
+
+# Edge-midpoint slots of quadratic cells: frozenset of corner positions -> the
+# connectivity index holding the midpoint. Verified against Kratos'
+# GenerateEdges (Triangle2D6, Quadrilateral2D8/9, Tetrahedra3D10,
+# Hexahedra3D20/27, Prism3D15, Line2D3).
+_EDGE_MIDS: dict[tuple[str, int], dict[frozenset, int]] = {
+    ("line", 3): {frozenset((0, 1)): 2},
+    ("tri", 6): {frozenset((0, 1)): 3, frozenset((1, 2)): 4, frozenset((2, 0)): 5},
+    ("quad", 8): {frozenset((0, 1)): 4, frozenset((1, 2)): 5,
+                  frozenset((2, 3)): 6, frozenset((3, 0)): 7},
+    ("quad", 9): {frozenset((0, 1)): 4, frozenset((1, 2)): 5,
+                  frozenset((2, 3)): 6, frozenset((3, 0)): 7},
+    ("tet", 10): {frozenset((0, 1)): 4, frozenset((1, 2)): 5, frozenset((2, 0)): 6,
+                  frozenset((0, 3)): 7, frozenset((1, 3)): 8, frozenset((2, 3)): 9},
+    ("hex", 20): {frozenset((0, 1)): 8, frozenset((1, 2)): 9, frozenset((2, 3)): 10,
+                  frozenset((3, 0)): 11, frozenset((4, 5)): 16, frozenset((5, 6)): 17,
+                  frozenset((6, 7)): 18, frozenset((7, 4)): 19, frozenset((0, 4)): 12,
+                  frozenset((1, 5)): 13, frozenset((2, 6)): 14, frozenset((3, 7)): 15},
+    ("hex", 27): {frozenset((0, 1)): 8, frozenset((1, 2)): 9, frozenset((2, 3)): 10,
+                  frozenset((3, 0)): 11, frozenset((4, 5)): 16, frozenset((5, 6)): 17,
+                  frozenset((6, 7)): 18, frozenset((7, 4)): 19, frozenset((0, 4)): 12,
+                  frozenset((1, 5)): 13, frozenset((2, 6)): 14, frozenset((3, 7)): 15},
+    ("prism", 15): {frozenset((0, 1)): 6, frozenset((1, 2)): 7, frozenset((2, 0)): 8,
+                    frozenset((3, 4)): 12, frozenset((4, 5)): 13, frozenset((5, 3)): 14,
+                    frozenset((0, 3)): 9, frozenset((1, 4)): 10, frozenset((2, 5)): 11},
+}
+
+# Face-center slots of quadratic cells with face nodes, aligned with the
+# FACES tables below (verified against Kratos' GenerateFaces).
+_FACE_CENTERS: dict[tuple[str, int], list[int]] = {
+    ("hex", 27): [20, 25, 21, 22, 23, 24],
+}
+
+# Slots that stay in place under an orientation flip (volume / face centers
+# without an oriented position).
+_FIXED_SLOTS: dict[tuple[str, int], tuple[int, ...]] = {
+    ("hex", 27): (26,),
+    ("quad", 9): (8,),
+}
+
+
+def corner_nodes(mesh: Mdpa, type_name: str, conn: list[int]) -> list[int]:
+    """Corner node ids of an entity (every node for linear cells)."""
+    kind = cell_kind(mesh, type_name, conn)
+    if kind is None:
+        return list(conn)
+    idx = _CORNERS.get((kind, len(conn)))
+    if idx is None:
+        return list(conn)
+    return [conn[i] for i in idx]
+
+
+def is_higher_order(mesh: Mdpa, type_name: str, conn: list[int]) -> bool:
+    """True when the entity carries mid-edge (or face) nodes past the corners."""
+    kind = cell_kind(mesh, type_name, conn)
+    return kind is not None and len(conn) != _LINEAR_COUNTS[kind]
+
+
+def full_face_nodes(kind: str, n: int, corners: tuple[int, ...], face_index: int) -> list[int]:
+    """Connectivity indices of one face: the outward-ordered ``corners`` loop,
+    then its edge midpoints in loop order, then its face center (if any)."""
+    full = list(corners)
+    mids = _EDGE_MIDS.get((kind, n), {})
+    pairs = [(corners[0], corners[1])] if len(corners) == 2 else \
+        list(zip(corners, corners[1:] + corners[:1]))
+    for a, b in pairs:
+        slot = mids.get(frozenset((a, b)))
+        if slot is not None:
+            full.append(slot)
+    centers = _FACE_CENTERS.get((kind, n))
+    if centers is not None:
+        full.append(centers[face_index])
+    return full
+
+
 def _signed_tet(p: np.ndarray) -> float:
     return float(np.linalg.det(p[1:] - p[0])) / 6.0
 
 
 def measure(mesh: Mdpa, type_name: str, conn: list[int]) -> float | None:
-    """Length / area / volume of a linear cell; negative when inverted (areas
-    are signed only for cells lying in a constant-z plane)."""
+    """Length / area / volume of a cell from its corner nodes (higher-order
+    cells use the corners); negative when inverted (areas are signed only for
+    cells lying in a constant-z plane)."""
     kind = cell_kind(mesh, type_name, conn)
     if kind is None:
         return None
-    p = np.array([mesh.nodes[i] for i in conn])
+    corners = corner_nodes(mesh, type_name, conn)
+    p = np.array([mesh.nodes[i] for i in corners])
     if kind == "line":
         return float(np.linalg.norm(p[1] - p[0]))
     if kind in ("tri", "quad"):
@@ -581,7 +749,8 @@ def edge_lengths(mesh: Mdpa, type_name: str, conn: list[int]) -> list[float]:
     kind = cell_kind(mesh, type_name, conn)
     if kind is None:
         return []
-    return [float(np.linalg.norm(np.array(mesh.nodes[conn[a]]) - np.array(mesh.nodes[conn[b]])))
+    corners = corner_nodes(mesh, type_name, conn)
+    return [float(np.linalg.norm(np.array(mesh.nodes[corners[a]]) - np.array(mesh.nodes[corners[b]])))
             for a, b in EDGES[kind]]
 
 
@@ -670,6 +839,15 @@ def merge_coincident_nodes(mesh: Mdpa, tolerance: float, node_ids: Iterable[int]
     for values in mesh.nodal_data.values():
         for nid in replace:
             values.pop(nid, None)
+    for fixed in mesh.nodal_data_fixed.values():
+        fixed -= set(replace)
+    for values in mesh.vector_nodal_data.values():
+        for nid in replace:
+            values.pop(nid, None)
+    for var in list(mesh.nodal_flags):
+        mesh.nodal_flags[var] = [n for n in mesh.nodal_flags[var] if n not in replace]
+        if not mesh.nodal_flags[var]:
+            del mesh.nodal_flags[var]
     for part in _walk(mesh):
         part.nodes = _dedupe(replace.get(n, n) for n in part.nodes)
     return {"merged": len(replace), "degenerate_entities": degenerate}
@@ -680,6 +858,22 @@ def _remap_everywhere(mesh: Mdpa, node_map: dict[int, int], ent_maps: dict[str, 
     mesh.nodes = {node_map[n]: xyz for n, xyz in mesh.nodes.items()}
     mesh.nodal_data = {var: {node_map[n]: v for n, v in values.items() if n in node_map}
                        for var, values in mesh.nodal_data.items()}
+    mesh.nodal_data_fixed = {
+        var: {node_map[n] for n in fixed if n in node_map}
+        for var, fixed in mesh.nodal_data_fixed.items()}
+    mesh.vector_nodal_data = {
+        var: {node_map[n]: v for n, v in values.items() if n in node_map}
+        for var, values in mesh.vector_nodal_data.items()}
+    mesh.nodal_flags = {
+        var: sorted(node_map[n] for n in ids if n in node_map)
+        for var, ids in mesh.nodal_flags.items()}
+    mesh.elemental_data = {
+        var: {ent_maps["element"][e]: v for e, v in by_id.items() if e in ent_maps["element"]}
+        for var, by_id in mesh.elemental_data.items()}
+    mesh.conditional_data = {
+        var: {ent_maps["condition"][c]: v for c, v in by_id.items()
+              if c in ent_maps["condition"]}
+        for var, by_id in mesh.conditional_data.items()}
     for kind in KINDS:
         remap = ent_maps[kind]
         store = _store(mesh, kind)
@@ -724,6 +918,32 @@ def merge_meshes(base: Mdpa, other: Mdpa, merge_tolerance: float | None = None
         base.nodes[nid + n_off] = xyz
     for var, values in other.nodal_data.items():
         base.nodal_data.setdefault(var, {}).update({n + n_off: v for n, v in values.items()})
+    for var, fixed in other.nodal_data_fixed.items():
+        base.nodal_data_fixed.setdefault(var, set()).update(n + n_off for n in fixed)
+    for var, values in other.vector_nodal_data.items():
+        base.vector_nodal_data.setdefault(var, {}).update(
+            {n + n_off: v for n, v in values.items()})
+    for var, ids in other.nodal_flags.items():
+        base.nodal_flags.setdefault(var, []).extend(n + n_off for n in ids)
+    table_map: dict[int, int] = {}
+    if other.tables:
+        if set(other.tables) & set(base.tables):
+            shift = max(base.tables) + 1 - min(other.tables)
+            for tid, tab in other.tables.items():
+                new_id = tid + shift
+                base.tables[new_id] = mdpa_mod.Table(
+                    new_id, tab.x_variable, tab.y_variable, list(tab.rows))
+                table_map[tid] = new_id
+        else:
+            for tid, tab in other.tables.items():
+                base.tables[tid] = mdpa_mod.Table(
+                    tid, tab.x_variable, tab.y_variable, list(tab.rows))
+    for var, by_id in other.elemental_data.items():
+        base.elemental_data.setdefault(var, {}).update(
+            {e + e_off: v for e, v in by_id.items()})
+    for var, by_id in other.conditional_data.items():
+        base.conditional_data.setdefault(var, {}).update(
+            {c + c_off: v for c, v in by_id.items()})
     for kind, off in (("element", e_off), ("condition", c_off), ("geometry", g_off)):
         for type_name, by_id in _store(other, kind).items():
             target = _store(base, kind).setdefault(type_name, {})
@@ -739,6 +959,10 @@ def merge_meshes(base: Mdpa, other: Mdpa, merge_tolerance: float | None = None
         dst.elements = _dedupe(dst.elements + [e + e_off for e in src.elements])
         dst.conditions = _dedupe(dst.conditions + [c + c_off for c in src.conditions])
         dst.geometries = _dedupe(dst.geometries + [g + g_off for g in src.geometries])
+        dst.tables = _dedupe(dst.tables + [table_map.get(t, t) for t in src.tables])
+        dst.properties = _dedupe(dst.properties + list(src.properties))
+        for key, value in src.data.items():
+            dst.data.setdefault(key, value)
         for child in src.children.values():
             merge_part(child, dst.children)
 
@@ -769,27 +993,112 @@ def extract_part(mesh: Mdpa, path: str) -> Mdpa:
     out.nodes = {n: mesh.nodes[n] for n in sorted(node_ids) if n in mesh.nodes}
     out.nodal_data = {var: {n: v for n, v in values.items() if n in out.nodes}
                       for var, values in mesh.nodal_data.items()}
+    out.nodal_data_fixed = {var: {n for n in fixed if n in out.nodes}
+                            for var, fixed in mesh.nodal_data_fixed.items()}
+    out.vector_nodal_data = {var: {n: v for n, v in values.items() if n in out.nodes}
+                             for var, values in mesh.vector_nodal_data.items()}
+    out.nodal_flags = {var: [n for n in ids if n in out.nodes]
+                       for var, ids in mesh.nodal_flags.items()}
+    kept_elements = {e for by_id in out.elements.values() for e in by_id}
+    kept_conditions = {c for by_id in out.conditions.values() for c in by_id}
+    out.elemental_data = {
+        var: {e: v for e, v in by_id.items() if e in kept_elements}
+        for var, by_id in mesh.elemental_data.items()}
+    out.conditional_data = {
+        var: {c: v for c, v in by_id.items() if c in kept_conditions}
+        for var, by_id in mesh.conditional_data.items()}
     pids = {entry[0] for store in (out.elements, out.conditions)
             for by_id in store.values() for entry in by_id.values()}
     out.properties = {pid: dict(mesh.properties[pid]) for pid in pids if pid in mesh.properties}
 
     def copy(src: SubModelPart) -> SubModelPart:
         dst = SubModelPart(src.name, nodes=list(src.nodes), elements=list(src.elements),
-                           conditions=list(src.conditions), geometries=list(src.geometries))
+                           conditions=list(src.conditions), geometries=list(src.geometries),
+                           data=dict(src.data), tables=list(src.tables),
+                           properties=list(src.properties))
         dst.children = {n: copy(c) for n, c in src.children.items()}
         return dst
 
     out.sub_model_parts[part.name] = copy(part)
+    kept_tables: set[int] = set()
+
+    def collect_tables(src: SubModelPart) -> None:
+        kept_tables.update(src.tables)
+        for child in src.children.values():
+            collect_tables(child)
+
+    collect_tables(out.sub_model_parts[part.name])
+    out.tables = {tid: tab for tid, tab in mesh.tables.items() if tid in kept_tables}
     return out
 
 
-def set_nodal_data(mesh: Mdpa, variable: str, node_ids: Iterable[int], value: float) -> int:
+def set_nodal_data(mesh: Mdpa, variable: str, node_ids: Iterable[int],
+                   value: float | str, fixed: bool = False) -> int:
+    """Write a scalar (float) or vector (raw string like ``"[3](1.0, 0.0, 0.0)"``)
+    ``Begin NodalData`` value on the given nodes."""
     ids = [int(n) for n in node_ids]
     missing = [n for n in ids if n not in mesh.nodes]
     if missing:
         raise ValueError(f"Missing nodes {missing[:10]}")
-    mesh.nodal_data.setdefault(variable, {}).update({n: float(value) for n in ids})
+    if isinstance(value, str):
+        mesh.vector_nodal_data.setdefault(variable, {}).update(
+            {n: (fixed, value) for n in ids})
+    else:
+        mesh.nodal_data.setdefault(variable, {}).update({n: float(value) for n in ids})
+        if fixed:
+            mesh.nodal_data_fixed.setdefault(variable, set()).update(ids)
+        elif variable in mesh.nodal_data_fixed:
+            mesh.nodal_data_fixed[variable] -= set(ids)
     return len(ids)
+
+
+def set_elemental_data(mesh: Mdpa, kind: str, variable: str, values: dict[int, Any],
+                       remove_ids: Iterable[int] = ()) -> dict[str, int]:
+    """Upsert ``Begin ElementalData`` (kind ``"elemental"``) or
+    ``Begin ConditionalData`` (kind ``"conditional"``) rows. Values may be
+    numbers or raw strings (``"[3](...)"`` vectors are kept verbatim)."""
+    if kind == "elemental":
+        target, known = mesh.elemental_data, mesh.element_ids()
+    elif kind == "conditional":
+        target, known = mesh.conditional_data, mesh.condition_ids()
+    else:
+        raise ValueError("kind must be 'elemental' or 'conditional'")
+    bucket = target.setdefault(variable, {})
+    updated = 0
+    for eid, value in values.items():
+        eid = int(eid)
+        if eid not in known:
+            raise ValueError(f"Missing {'element' if kind == 'elemental' else 'condition'} {eid}")
+        bucket[eid] = str(value) if isinstance(value, (int, float)) \
+            else " ".join(map(str, value)) if isinstance(value, (list, tuple)) else str(value)
+        updated += 1
+    removed = 0
+    for eid in remove_ids:
+        if bucket.pop(int(eid), None) is not None:
+            removed += 1
+    if not bucket:
+        del target[variable]
+    return {"updated": updated, "removed": removed}
+
+
+def set_table(mesh: Mdpa, table_id: int, x_variable: str, y_variable: str,
+              rows: list[list[float]]) -> dict[str, Any]:
+    """Create or replace a top-level ``Begin Table`` block."""
+    pairs = [(float(x), float(y)) for x, y in rows]
+    mesh.tables[int(table_id)] = mdpa_mod.Table(int(table_id), x_variable, y_variable, pairs)
+    return {"table": int(table_id), "rows": len(pairs)}
+
+
+def delete_table(mesh: Mdpa, table_id: int) -> None:
+    tid = int(table_id)
+    if tid not in mesh.tables:
+        raise ValueError(f"Missing table {tid}")
+    users = [path for path in mdpa_mod.part_paths(mesh)
+             if tid in (mdpa_mod.find_part(mesh, path).tables or ())]
+    if users:
+        raise ValueError(f"Table {tid} is referenced by SubModelPart(s) {users}; "
+                         "remove the references first")
+    del mesh.tables[tid]
 
 
 def set_properties(mesh: Mdpa, property_id: int, values: dict[str, Any] | None = None,
@@ -811,15 +1120,52 @@ def _rename(name: str, old: str, new: str) -> str:
     return name.replace(old, new) if old in name else name
 
 
+def _linear_name(name: str, n_corners: int) -> str:
+    """Type name of the linear cell with ``n_corners`` corners (``2D6N``->``2D3N``,
+    ``3D20N``->``3D8N``, ``Line2D3``->``Line2D2``)."""
+    renamed = re.sub(r"(2D|3D)\d+(N?)$", lambda m: f"{m.group(1)}{n_corners}{m.group(2)}", name)
+    return renamed if renamed != name else f"{name}_linear{n_corners}"
+
+
+def _convert_quadratic_to_linear(mesh: Mdpa, element_name: str | None,
+                                 condition_name: str | None) -> dict[str, int]:
+    converted = {"elements": 0, "conditions": 0, "geometries": 0}
+    for label, store, override in (("elements", mesh.elements, element_name),
+                                   ("conditions", mesh.conditions, condition_name),
+                                   ("geometries", mesh.geometries, None)):
+        for type_name in list(store):
+            by_id = store[type_name]
+            targets = [eid for eid, entry in by_id.items()
+                       if is_higher_order(mesh, type_name, _conn(entry))]
+            if not targets:
+                continue
+            sample = corner_nodes(mesh, type_name, _conn(by_id[targets[0]]))
+            new_type = override or _linear_name(type_name, len(sample))
+            bucket = store.setdefault(new_type, {})
+            for eid in sorted(targets):
+                entry = by_id.pop(eid)
+                corners = corner_nodes(mesh, type_name, _conn(entry))
+                bucket[eid] = (entry[0], corners) if isinstance(entry, tuple) else corners
+                converted[label] += 1
+            if not by_id:
+                del store[type_name]
+    return converted
+
+
 def convert_cells(mesh: Mdpa, mode: str, element_name: str | None = None,
                   condition_name: str | None = None) -> dict[str, int]:
     """Split quadrilaterals into 2 triangles (``quad_to_tri``) or hexahedra into
     6 tetrahedra (``hex_to_tet``, Kuhn split: conforming on structured meshes
-    with a consistent node ordering; boundary quads follow the tet faces).
+    with a consistent node ordering; boundary quads follow the tet faces), or
+    drop the mid-edge/face nodes of quadratic cells (``quadratic_to_linear``:
+    tri6->tri, quad8/9->quad, tet10->tet, hex20/27->hex, wedge15->prism,
+    line3->line; entity ids and sub model parts are unchanged).
 
     Entities of the other cell kinds are untouched. New type names default to the
     old ones with ``2D4N``->``2D3N`` / ``3D8N``->``3D4N`` (``3D4N`` -> ``3D3N``
     for conditions); pass element_name / condition_name to override."""
+    if mode == "quadratic_to_linear":
+        return _convert_quadratic_to_linear(mesh, element_name, condition_name)
     if mode == "quad_to_tri":
         src_kind, e_old, e_new = "quad", "2D4N", "2D3N"
         c_old, c_new = "3D4N", "3D3N"
@@ -827,7 +1173,7 @@ def convert_cells(mesh: Mdpa, mode: str, element_name: str | None = None,
         src_kind, e_old, e_new = "hex", "3D8N", "3D4N"
         c_old, c_new = "3D4N", "3D3N"
     else:
-        raise ValueError("mode must be quad_to_tri or hex_to_tet")
+        raise ValueError("mode must be quad_to_tri, hex_to_tet or quadratic_to_linear")
     next_e = _next_id(mesh.element_ids())
     next_c = _next_id(mesh.condition_ids())
     split: dict[int, list[int]] = {}
@@ -836,6 +1182,12 @@ def convert_cells(mesh: Mdpa, mode: str, element_name: str | None = None,
     new_elements: dict[str, dict[int, tuple[int, list[int]]]] = {}
     for type_name in list(mesh.elements):
         by_id = mesh.elements[type_name]
+        higher = sorted(e for e, (_, c) in by_id.items()
+                        if cell_kind(mesh, type_name, c) == src_kind
+                        and is_higher_order(mesh, type_name, c))
+        if higher:
+            raise ValueError(f"mode '{mode}' needs linear cells but element(s) {higher[:5]} "
+                             f"({type_name}) are quadratic; run mode='quadratic_to_linear' first")
         targets = [e for e, (_, c) in by_id.items()
                    if cell_kind(mesh, type_name, c) == src_kind]
         if not targets:
@@ -904,39 +1256,43 @@ def convert_cells(mesh: Mdpa, mode: str, element_name: str | None = None,
 def extract_boundary(mesh: Mdpa, condition_name: str | dict[str, str], part: str,
                      element_part: str | None = None, node_selector: dict[str, Any] | None = None,
                      property_id: int = 1) -> dict[str, Any]:
-    """Create conditions on the free (non-shared) faces of linear elements and
+    """Create conditions on the free (non-shared) faces of the elements and
     put them in the SubModelPart ``part`` (created if missing, extended otherwise).
 
     ``element_part`` restricts to the elements of a part; ``node_selector`` (see
     select_nodes) keeps only faces whose every node is selected, e.g. a plane.
-    ``condition_name`` is one name, or {"2": ..., "3": ..., "4": ...} keyed by the
-    face node count (needed for prisms or mixed meshes). Faces are oriented
-    outward for positively oriented elements."""
+    ``condition_name`` is one name, or {"2": ..., "3": ..., ...} keyed by the
+    face node count (needed for prisms, mixed meshes and higher-order cells:
+    quadratic triangle/quad edges have 3 nodes, tet10 and wedge tri faces 6,
+    hex20 and wedge quad faces 8, hex27 faces 9). Faces are oriented
+    outward for positively oriented elements; higher-order faces carry their
+    mid-edge (and face) nodes in Kratos order."""
     if element_part:
         wanted = set(_require_part(mesh, element_part).elements)
     else:
         wanted = None
     counts: dict[frozenset[int], int] = {}
-    candidates: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+    candidates: list[tuple[tuple[int, ...], frozenset[int]]] = []
     for type_name, by_id in mesh.elements.items():
         for eid, (_, conn) in by_id.items():
             kind = cell_kind(mesh, type_name, conn)
             if kind not in FACES:
                 continue
-            for local in FACES[kind]:
-                face = tuple(conn[i] for i in local)
-                key = frozenset(face)
+            n = len(conn)
+            for face_index, local in enumerate(FACES[kind]):
+                full = full_face_nodes(kind, n, local, face_index)
+                face = tuple(conn[i] for i in full)
+                key = frozenset(conn[i] for i in local)
                 counts[key] = counts.get(key, 0) + 1
                 if wanted is None or eid in wanted:
-                    candidates.append((face, tuple(sorted(face))))
+                    candidates.append((face, key))
     selected = set(select_nodes(mesh, node_selector)) if node_selector else None
     names = condition_name if isinstance(condition_name, dict) else None
     taken = mesh.condition_ids()
     next_id = _next_id(taken)
     new_ids: list[int] = []
     seen: set[frozenset[int]] = set()
-    for face, _ in candidates:
-        key = frozenset(face)
+    for face, key in candidates:
         if counts[key] != 1 or key in seen:
             continue
         if selected is not None and not all(n in selected for n in face):
@@ -974,12 +1330,19 @@ def extrude(mesh: Mdpa, heights: list[float], z0: float = 0.0,
     """Extrude a planar (xy) mesh along z into a new 3D mesh.
 
     ``heights`` are the layer thicknesses (e.g. [0.1]*10). Triangles become
-    prisms, quads hexahedra, 2-node conditions quads (3D4N). Type names map by
-    ``2DnN`` -> ``3DmN`` unless overridden in element_names / condition_names
+    prisms, quads hexahedra, 2-node conditions quads (3D4N); quadratic cells
+    extrude order-preservingly (tri6 -> 15-node wedge, quad8 -> 20-node hex,
+    3-node line conditions -> 8-node quads; quad9 needs ``quadratic_to_linear``
+    first). Type names map by ``2DnN`` -> ``3DmN`` unless overridden in element_names / condition_names
     (for example ``{"LineLoadCondition2D2N": "SurfaceLoadCondition3D4N"}``).
-    Every sub model part is carried over with all layers; two new parts
+    Every sub model part is carried over with all layers (with its data, table
+    and property references); two new parts
     ``zmin`` and ``zmax`` hold the cap nodes (and cap conditions if
-    cap_condition_names maps the face node count "3"/"4" to a condition type)."""
+    cap_condition_names maps the face node count "3"/"4" ("6"/"8" for quadratic
+    caps) to a condition type). Tables are carried over; ElementalData and
+    ConditionalData rows are replicated for every layer; scalar NodalData is
+    interpolated onto the new nodes (vertical midpoints average their neighbours,
+    unparsable vector rows are dropped)."""
     if not heights or any(h <= 0 for h in heights):
         raise ValueError("heights needs one or more positive layer thicknesses")
     if mesh.geometries:
@@ -997,7 +1360,9 @@ def extrude(mesh: Mdpa, heights: list[float], z0: float = 0.0,
     element_names = element_names or {}
     condition_names = condition_names or {}
     out = Mdpa(model_part_data=dict(mesh.model_part_data),
-               properties={k: dict(v) for k, v in mesh.properties.items()})
+               properties={k: dict(v) for k, v in mesh.properties.items()},
+               tables={tid: mdpa_mod.Table(tid, t.x_variable, t.y_variable, list(t.rows))
+                       for tid, t in mesh.tables.items()})
 
     def nid(n: int, layer: int) -> int:
         return n + layer * n_stride
@@ -1005,37 +1370,108 @@ def extrude(mesh: Mdpa, heights: list[float], z0: float = 0.0,
     for layer, z in enumerate(levels):
         for n, (x, y, _) in mesh.nodes.items():
             out.nodes[nid(n, layer)] = (x, y, z)
+
+    # Corner nodes of higher-order entities (vertical edges, hence new midpoint
+    # nodes, run corner to corner). Linear entities extrude exactly as before.
+    ho_corners: set[int] = set()
+    for store in (mesh.elements, mesh.conditions):
+        for type_name, by_id in store.items():
+            for _, entry in by_id.items():
+                conn = _conn(entry)
+                kind = cell_kind(mesh, type_name, conn)
+                idx = _CORNERS.get((kind or "", len(conn)))
+                if idx is not None and len(idx) != len(conn):
+                    ho_corners.update(conn[i] for i in idx)
+    vbase = (layers + 1) * n_stride
+    order = {n: k for k, n in enumerate(sorted(ho_corners))}
+    vmid: dict[tuple[int, int], int] = {}
+    for n in ho_corners:
+        x, y, _ = mesh.nodes[n]
+        for gap in range(layers):
+            mid_id = vbase + order[n] * layers + gap + 1
+            vmid[(n, gap)] = mid_id
+            out.nodes[mid_id] = (x, y, (levels[gap] + levels[gap + 1]) / 2)
+
+    _EXTRUDE_COUNTS = {("tri", 3): 6, ("tri", 6): 15, ("quad", 4): 8, ("quad", 8): 20,
+                       ("line", 2): 4, ("line", 3): 8}
+
     for type_name, by_id in mesh.elements.items():
         for eid, (pid, conn) in by_id.items():
             kind = cell_kind(mesh, type_name, conn)
-            if kind not in ("tri", "quad"):
+            if kind not in ("tri", "quad") or (kind, len(conn)) not in _EXTRUDE_COUNTS:
                 raise ValueError(f"Element {eid} ({type_name}) cannot be extruded; "
-                                 "only triangles and quadrilaterals")
-            new_type = _extruded_name(type_name, element_names, len(conn),
-                                      6 if kind == "tri" else 8)
+                                 "only linear and quadratic (tri6/quad8) triangles and "
+                                 "quadrilaterals (quadratic_to_linear first for the rest)")
+            n_new = _EXTRUDE_COUNTS[(kind, len(conn))]
+            new_type = _extruded_name(type_name, element_names, len(conn), n_new)
             bucket = out.elements.setdefault(new_type, {})
+            bottom_corners = corner_nodes(mesh, type_name, conn)
+            quadratic = len(conn) != len(bottom_corners)
+            cpos = list(_CORNERS.get((kind, len(conn)), range(len(conn))))
+            mpos = [p for p in range(len(conn)) if p not in cpos]
             for layer in range(layers):
-                bottom = [nid(n, layer) for n in conn]
-                top = [nid(n, layer + 1) for n in conn]
-                bucket[eid + layer * e_stride] = (pid, bottom + top)
+                if not quadratic:
+                    bottom = [nid(n, layer) for n in conn]
+                    top = [nid(n, layer + 1) for n in conn]
+                    conn3d = bottom + top
+                else:
+                    # Kratos slot order: bottom corners, top corners, bottom
+                    # mids, vertical mids, top mids.
+                    b_c = [nid(conn[p], layer) for p in cpos]
+                    t_c = [nid(conn[p], layer + 1) for p in cpos]
+                    b_m = [nid(conn[p], layer) for p in mpos]
+                    t_m = [nid(conn[p], layer + 1) for p in mpos]
+                    vert = [vmid[(conn[p], layer)] for p in cpos]
+                    conn3d = b_c + t_c + b_m + vert + t_m
+                bucket[eid + layer * e_stride] = (pid, conn3d)
+                for var, by_id_data in mesh.elemental_data.items():
+                    if eid in by_id_data:
+                        out.elemental_data.setdefault(var, {})[eid + layer * e_stride] = \
+                            by_id_data[eid]
     for type_name, by_id in mesh.conditions.items():
         for cid, (pid, conn) in by_id.items():
-            if len(conn) != 2:
+            kind = cell_kind(mesh, type_name, conn)
+            if kind != "line" or (kind, len(conn)) not in _EXTRUDE_COUNTS:
                 raise ValueError(f"Condition {cid} ({type_name}) cannot be extruded; only "
-                                 "2-node line conditions")
-            new_type = _extruded_name(type_name, condition_names, 2, 4)
+                                 "2-node and 3-node line conditions")
+            n_new = _EXTRUDE_COUNTS[(kind, len(conn))]
+            new_type = _extruded_name(type_name, condition_names, len(conn), n_new)
             bucket = out.conditions.setdefault(new_type, {})
-            a, b = conn
+            corners_c = corner_nodes(mesh, type_name, conn)
+            if len(corners_c) != 2:
+                raise ValueError(f"Condition {cid} ({type_name}) cannot be extruded")
+            a, b = corners_c
+            mid = [n for n in conn if n not in corners_c]
+            quadratic_c = len(conn) != 2
             for layer in range(layers):
-                bucket[cid + layer * c_stride] = (
-                    pid, [nid(a, layer), nid(b, layer), nid(b, layer + 1), nid(a, layer + 1)])
+                a_lo, b_lo = nid(a, layer), nid(b, layer)
+                a_hi, b_hi = nid(a, layer + 1), nid(b, layer + 1)
+                if not quadratic_c:
+                    face = [a_lo, b_lo, b_hi, a_hi]
+                else:
+                    # Kratos quad8 slots: bottom mid, right vertical, top mid,
+                    # left vertical.
+                    m_lo, m_hi = nid(mid[0], layer), nid(mid[0], layer + 1)
+                    face = [a_lo, b_lo, b_hi, a_hi,
+                            m_lo, vmid[(b, layer)], m_hi, vmid[(a, layer)]]
+                bucket[cid + layer * c_stride] = (pid, face)
+                for var, by_id_data in mesh.conditional_data.items():
+                    if cid in by_id_data:
+                        out.conditional_data.setdefault(var, {})[cid + layer * c_stride] = \
+                            by_id_data[cid]
+
+    _carry_nodal_data(mesh, out, nid, vmid, layers)
 
     def copy(src: SubModelPart) -> SubModelPart:
+        layer_nodes = [nid(n, k) for n in src.nodes for k in range(layers + 1)]
+        layer_nodes += [vmid[(n, g)] for n in src.nodes for g in range(layers)
+                        if (n, g) in vmid]
         dst = SubModelPart(
             src.name,
-            nodes=[nid(n, k) for n in src.nodes for k in range(layers + 1)],
+            nodes=layer_nodes,
             elements=[e + k * e_stride for e in src.elements for k in range(layers)],
-            conditions=[c + k * c_stride for c in src.conditions for k in range(layers)])
+            conditions=[c + k * c_stride for c in src.conditions for k in range(layers)],
+            data=dict(src.data), tables=list(src.tables), properties=list(src.properties))
         dst.children = {n: copy(c) for n, c in src.children.items()}
         return dst
 
@@ -1048,16 +1484,70 @@ def extrude(mesh: Mdpa, heights: list[float], z0: float = 0.0,
         if cap in out.sub_model_parts:
             raise ValueError(f"The mesh already has a part called '{cap}'; rename it first")
         part = SubModelPart(cap, nodes=[nid(n, layer) for n in sorted(mesh.nodes)])
+        gap = 0 if layer == 0 else layers - 1
+        part.nodes += [vid for (_, g), vid in sorted(vmid.items()) if g == gap]
         for type_name, by_id in mesh.elements.items():
             for eid, (pid, conn) in sorted(by_id.items()):
-                name = cap_names.get(str(len(conn)))
+                kind = cell_kind(mesh, type_name, conn)
+                idx = _CORNERS.get((kind or "", len(conn)), tuple(range(len(conn))))
+                loop = [idx[0]] + list(reversed(idx[1:])) if cap == "zmin" else list(idx)
+                full = [nid(conn[p], layer) for p in loop]
+                mids = _EDGE_MIDS.get((kind or "", len(conn)), {})
+                extended = list(loop) + [loop[0]]
+                for a, b in zip(extended, extended[1:]):
+                    slot = mids.get(frozenset((a, b)))
+                    if slot is not None:
+                        full.append(nid(conn[slot], layer))
+                name = cap_names.get(str(len(full)))
                 if not name:
                     continue
-                face = [nid(n, layer) for n in conn]
-                if cap == "zmin":
-                    face = face[::-1]
-                out.conditions.setdefault(name, {})[next_c] = (pid, face)
+                out.conditions.setdefault(name, {})[next_c] = (pid, full)
                 part.conditions.append(next_c)
                 next_c += 1
         out.sub_model_parts[cap] = part
     return out
+
+
+def _carry_nodal_data(mesh: Mdpa, out: Mdpa, nid: Callable[[int, int], int],
+                      vmid: dict[tuple[int, int], int], layers: int) -> None:
+    """Replicate scalar NodalData onto every extrusion layer; vertical midpoints
+    average their neighbours. Unparsable vector rows are dropped (only for the
+    new midpoint nodes; layer copies are verbatim)."""
+
+    for var, values in mesh.nodal_data.items():
+        carried = out.nodal_data.setdefault(var, {})
+        for n, v in values.items():
+            for k in range(layers + 1):
+                carried[nid(n, k)] = v
+        for (n, gap), mid_id in vmid.items():
+            lo, hi = nid(n, gap), nid(n, gap + 1)
+            if lo in carried and hi in carried:
+                carried[mid_id] = (carried[lo] + carried[hi]) / 2
+        fixed = mesh.nodal_data_fixed.get(var)
+        if fixed:
+            out_fixed = out.nodal_data_fixed.setdefault(var, set())
+            for n in fixed:
+                for k in range(layers + 1):
+                    out_fixed.add(nid(n, k))
+            for (n, gap), mid_id in vmid.items():
+                if nid(n, gap) in out_fixed or nid(n, gap + 1) in out_fixed:
+                    out_fixed.add(mid_id)
+    for var, values in mesh.vector_nodal_data.items():
+        carried = out.vector_nodal_data.setdefault(var, {})
+        parsed: dict[int, tuple[bool, list[float]]] = {}
+        for n, (is_fixed, raw) in values.items():
+            for k in range(layers + 1):
+                carried[nid(n, k)] = (is_fixed, raw)
+            m = re.fullmatch(r"\[\d+\]\((.*)\)", raw.strip())
+            if m:
+                try:
+                    parsed[n] = (is_fixed, [float(x) for x in m.group(1).split(",")])
+                except ValueError:
+                    pass
+        for (n, gap), mid_id in vmid.items():
+            if n in parsed and nid(n, gap) in carried and nid(n, gap + 1) in carried:
+                is_fixed, nums = parsed[n]
+                avg = ", ".join(repr((a + b) / 2) for a, b in zip(nums, nums))
+                carried[mid_id] = (is_fixed, f"[{len(nums)}]({avg})")
+    for var, ids in mesh.nodal_flags.items():
+        out.nodal_flags.setdefault(var, []).extend(nid(n, k) for n in ids for k in range(layers + 1))
