@@ -109,7 +109,10 @@ def test_domain_size_and_sizes(plate):
     sizes = remesh.element_sizes(plate)
     assert len(sizes) == 200 and min(sizes) < max(sizes)
     summary = remesh.summarize_mesh(plate)
-    assert summary["element_size"]["min"] <= summary["element_size"]["mean"] <= summary["element_size"]["max"]
+    lo, mean, hi = (summary["element_size"][k] for k in ("min", "mean", "max"))
+    # The mean is a float sum: on a near-uniform mesh it can land one ulp outside
+    # [min, max] on Python < 3.12, where sum() is not compensated.
+    assert lo - 1e-12 <= mean <= hi + 1e-12
 
 
 def test_levelset_request_defaults(plate):
