@@ -135,7 +135,8 @@ installed) via `-displayfd`.
 - `src/kratos_mcp/remesh.py` — Kratos-free adaptive remeshing support: `compile_expression`
   (AST whitelist for the `x/y/z` expressions that are evaluated again in the worker),
   `region_expression` (sphere/box → signed distance, `inside` clamps at 0), `build_request`
-  (validation + `mmg_process` settings + `assign`/`check` expression lists), `report`
+  (validation + `mmg_process` settings + `assign`/`check` expression lists, or per-node
+  `values` from `field_from_result` for a solved-field hessian), `carry_fields`, `report`
   (before/after `Mdpa` summaries, boundary preservation by node bounding box),
   `process_block`/`validate`/`has_remeshing` for in-run `mmg_process` blocks (the single
   detection point used by every rejection: studies, checkpoints, MPI, sessions).
@@ -342,9 +343,16 @@ installed) via `-displayfd`.
   The metric field must already be on the nodes then (`Begin NodalData`, listed in
   `auxiliary_variables_list`); `assign_scalar_variable_process` runs later. A hessian
   metric from one pass on a mesh coarser than the feature barely helps - `passes=3`
-  halves the interpolation error. `mdpa.parse` drops `NodalData`, and `ModelPartIO`
-  writes none, so `mesh_remesh` outputs carry geometry and sub model parts only (transfer
-  is verified inside the worker). MMG may coarsen straight boundaries; geometry
+  halves the interpolation error. `mdpa.parse`/`dumps` keep SCALAR top-level
+  `Begin NodalData` blocks (`Mdpa.nodal_data`; vector blocks are skipped, fixed flags
+  written as 0), but `ModelPartIO` writes none (`MESH_ONLY`), so the worker returns the
+  `write_fields` values and `mesh_remesh` splices them into the output with the Python
+  writer, then feeds them to the next pass (`remesh.carry_fields`, assign `source: "mesh"`).
+  A solved-field hessian (`field_results`) is read by `remesh.field_from_result`: VTK points
+  are matched to node ids by COORDINATES (Kratos' ASCII VTK of the root model part happened
+  to be in id order in the verified thermal case, but that is not assumed); `binary` VTK is
+  unreadable by meshio. MMG's interpolation of a sharp front undershoots (-0.03 -> -4.7 in
+  the thermal example); `transfer` reports value ranges for field-sourced data. MMG may coarsen straight boundaries; geometry
   (bounding box) is what is preserved, `freeze_sub_model_parts` pins the nodes.
 
 ## MCP / pyvista gotchas

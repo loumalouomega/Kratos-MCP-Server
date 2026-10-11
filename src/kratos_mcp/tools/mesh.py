@@ -107,6 +107,10 @@ def register(mcp) -> None:
         freeze_sub_model_parts: list[str] | None = None,
         check_fields: list[dict[str, str]] | None = None,
         interpolation_error: float | None = None,
+        field_results: str | None = None,
+        field_series: str | None = None,
+        field_time: float | None = None,
+        field_step: int | None = None,
         passes: int = 1,
         overwrite: bool = False,
         applications: list[str] | None = None,
@@ -135,7 +139,13 @@ def register(mcp) -> None:
         coarse mesh under-resolves a sharp feature: passes=3 repeats remeshing on
         the previous result (the analytic field is re-evaluated on every new mesh),
         which on the worked example halves the interpolation error at the same
-        element count. Existing output is only replaced with overwrite=true."""
+        element count. Instead of field_expression, 'hessian' can adapt to a SOLVED
+        field: field_results is a result-index.json (a job's results index; pick the
+        record with field_time or field_step, default the last one) or a single ASCII
+        .vtk/.vtu file whose point data holds field_variable on exactly this mesh's
+        nodes (matched by coordinates). The transferred field is written to the output
+        .mdpa as a 'Begin NodalData' block and carried between passes. Existing output
+        is only replaced with overwrite=true."""
         src = Path(input_mdpa).expanduser().resolve()
         dst = Path(output_mdpa).expanduser().resolve()
         if dst.suffix != ".mdpa":
@@ -148,6 +158,16 @@ def register(mcp) -> None:
             return {"error": f"{dst} already exists; pass overwrite=true to replace it"}
         try:
             before = mdpa_mod.read(src)
+            field_values = None
+            if field_results is not None:
+                if field_expression is not None:
+                    return {"error": "give either field_expression or field_results, not both"}
+                if not field_variable:
+                    return {"error": "field_results requires field_variable"}
+                picked = remesh_mod.field_from_result(
+                    before, field_results, field_variable, series=field_series,
+                    time=field_time, step=field_step)
+                field_values = picked["values"]
             names = (list(preserve_sub_model_parts) if preserve_sub_model_parts is not None
                      else remesh_mod.boundary_parts(before))
             request = remesh_mod.build_request(
@@ -156,7 +176,7 @@ def register(mcp) -> None:
                 field_expression=field_expression, min_size=min_size, max_size=max_size,
                 transition_distance=transition_distance,
                 freeze_sub_model_parts=freeze_sub_model_parts, check_fields=check_fields,
-                interpolation_error=interpolation_error)
+                interpolation_error=interpolation_error, field_values=field_values)
         except (ValueError, IndexError) as exc:
             return {"error": str(exc)}
         issues = before.validate()
@@ -175,13 +195,21 @@ def register(mcp) -> None:
             with tempfile.TemporaryDirectory(prefix="kratos-mcp-remesh-") as scratch:
                 for index in range(passes):
                     target = dst if index == passes - 1 else Path(scratch) / f"pass{index}.mdpa"
+                    pass_request = request if index == 0 else remesh_mod.carry_fields(request)
                     op_args: dict[str, Any] = {"input": str(current), "output": str(target),
-                                               "request": request}
+                                               "request": pass_request}
                     if applications:
                         op_args["applications"] = applications
                     result = bridge.run_op("remesh_mdpa", op_args, timeout=timeout,
                                            use_cache=False)
-                    info = mdpa_mod.read(target).inspect()
+                    remeshed = mdpa_mod.read(target)
+                    fields = result.get("fields") or {}
+                    if fields:
+                        for name, by_id in fields.items():
+                            remeshed.nodal_data[name] = {int(k): float(v)
+                                                         for k, v in by_id.items()}
+                        remeshed.write(target)
+                    info = remeshed.inspect()
                     history.append({"pass": index + 1, "nodes": info["num_nodes"],
                                     "elements": info["num_elements"]})
                     current = target
@@ -202,7 +230,8 @@ def register(mcp) -> None:
         return {"written_to": str(dst), "strategy": strategy, "passes": history,
                 "settings": request["settings"],
                 **remesh_mod.report(before, after, names),
-                "transfer": result["transfer"]}
+                "transfer": result["transfer"],
+                "fields_written": sorted(after.nodal_data)}
 
     @mcp.tool()
     def mdpa_get_nodes(

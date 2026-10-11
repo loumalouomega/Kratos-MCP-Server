@@ -65,6 +65,7 @@ it: `kratos_install(applications=["MeshingApplication"])`). Adaptively remesh a
 | `region` | object? | `levelset`: `{"type": "sphere", "center": [x, y], "radius": r}` or `{"type": "box", "min": [...], "max": [...]}`; optional `"mode"`: `inside` (default — the whole region gets `min_size`) or `surface` (only a layer around its boundary) |
 | `distance_expression` | string? | `levelset` alternative to `region`: a signed distance in `x`, `y`, `z` |
 | `field_variable`, `field_expression` | string? | `hessian`: the Kratos scalar variable (e.g. `TEMPERATURE`) and the analytic field assigned to it on every node before remeshing |
+| `field_results`, `field_series`, `field_time`, `field_step` | string?, string?, number?, int? | `hessian` alternative to `field_expression`: drive the metric from a **solved** field. `field_results` is a job's `result-index.json` (record picked by `field_time`, exact, or `field_step`; default the last) or one ASCII `.vtk`/`.vtu` file with `field_variable` as point data on exactly this mesh's nodes (matched by coordinates; Kratos `binary` VTK is not readable — use `file_format: "ascii"`). Give one of `field_expression` / `field_results` |
 | `min_size`, `max_size` | number? | element size bounds. Defaults: `max_size` = mean input element size, `min_size` = `max_size / 4`. `uniform` takes one target size in `min_size` |
 | `transition_distance` | number? | `levelset`: distance over which the size grows from `min_size` to `max_size` (default `3 * max_size`) |
 | `interpolation_error` | number? | `hessian`: target P1 interpolation error (default 0.04); smaller means finer |
@@ -101,8 +102,16 @@ condition types of the input are kept.
 nodes, vanishes, or its node bounding box moves. MMG keeps straight boundaries and
 corners exact but is free to coarsen or refine the boundary discretization (above, `left`
 goes from 11 to 7 nodes where the field is smooth) — `freeze_sub_model_parts` forbids that. `transfer.<variable>` gives
-`max_abs_error`, `mean_abs_error` and `value_range` of the interpolated field. Fields
-are not written to the `.mdpa` (the mesh carries geometry and sub model parts only).
+`max_abs_error`, `mean_abs_error` and `value_range` of the interpolated field. For a
+solved field (`field_results`) there is no exact expression, so it reports
+`{"source": "field", "value_range_before", "value_range_after"}` instead — MMG's
+interpolation can overshoot a sharp front, so compare the two ranges.
+
+A field read from results (and any scalar `Begin NodalData` blocks of the input mesh) is
+transferred to the new nodes and **written to the output `.mdpa` as `Begin NodalData`**;
+`fields_written` lists the variable names, and the field is carried from one pass to the
+next. Analytic `field_expression` / `check_fields` values are not written. Vector
+`NodalData` blocks are skipped by the server's `.mdpa` parser.
 
 Errors (`{"error": ...}`): missing/identical/existing files, invalid input mesh,
 bad arguments, MMG not available (`meshing_support` explains what the build lacks).

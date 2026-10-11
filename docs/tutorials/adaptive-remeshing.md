@@ -85,8 +85,28 @@ with 2961 elements.) MMG's counts can differ by a few elements between builds an
 counts; the repository tests assert ratios, not these exact numbers.
 
 The metric field is *analytic* here: `mesh_remesh` evaluates the expression on the nodes
-itself, because an `.mdpa` produced by this server has no nodal data. Remeshing a mesh to a
-**solved** field is on the [roadmap](/roadmap).
+itself. To adapt to a **solved** field instead, see the next section.
+
+## 2b. Remesh to a solved field
+
+Run the case with `file_format: "ascii"` in its `vtk_output_process` (meshio cannot read
+Kratos' `binary` VTK), then pass the job's result index:
+
+```python
+mesh_remesh("/case/mesh.mdpa", "/case/adapted.mdpa", strategy="hessian",
+            field_variable="TEMPERATURE", field_results="/case/result-index.json",
+            min_size=0.01, max_size=0.1, passes=2)
+```
+
+The VTK points are matched to the mesh nodes by coordinates (every point must match exactly
+one node, so export the root model part of this mesh). The thermal case of section 3 (231
+nodes, 400 triangles) solved to t = 0.3 and remeshed this way (Kratos 10.4.4) gives
+1648 elements after one pass and 966 / 1030 after passes 2 / 3 with `passes=3`; the
+transferred `TEMPERATURE` is written to `adapted.mdpa` as a `Begin NodalData TEMPERATURE`
+block, together with the input mesh's own `DISTANCE` block (`fields_written`). MMG's
+interpolation of a very sharp front undershoots (`value_range_after[0]` is about -3.5 to
+-4.7 against -0.03 in the solved field), which `transfer.TEMPERATURE` reports; the Dirichlet
+side keeps 100. The repository test asserts the structure of the result, not these counts.
 
 ## 3. Remesh at setup, inside a case
 
@@ -126,5 +146,9 @@ Dirichlet side.
   it as an ordinary process.
 - **2D has been verified; 3D has not.** The 3D and surface paths of `MmgProcess` are wired
   but have not been run against reference numbers.
-- Fields are not written to the output `.mdpa`: it carries geometry, properties and sub
-  model parts.
+- Only scalar fields from results (and scalar `NodalData` of the input) are written to the
+  output `.mdpa`; analytic `field_expression` / `check_fields` values are not. MMG's
+  interpolation can over/undershoot a sharp front.
+- **`strategy: spr` (error estimated from recovered stresses) is not offered**: it needs
+  element stress data from a live solved model part, which a mesh plus VTK point data
+  cannot provide.

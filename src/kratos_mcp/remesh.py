@@ -244,6 +244,87 @@ def preservation_report(before: mdpa_mod.Mdpa, after: mdpa_mod.Mdpa, names: list
     return report
 
 
+# ------------------------------------------------------------- fields from results
+
+def field_from_result(
+    mesh: mdpa_mod.Mdpa,
+    source: str,
+    variable: str,
+    series: str | None = None,
+    time: float | None = None,
+    step: int | None = None,
+    tolerance: float | None = None,
+) -> dict[str, Any]:
+    """Read the scalar point field ``variable`` of a solved result and map it to ``mesh``.
+
+    ``source`` is a ``result-index.json`` path (a job's ``results_index`` output) or a
+    single ``.vtk``/``.vtu`` file. In an index the record is chosen by ``time`` (exact
+    to 1e-9 relative, never interpolated) or ``step``; the default is the last one.
+    VTK points are matched to node ids by coordinates (within ``tolerance``, default
+    1e-4 of the smallest element size), because VTK order is not assumed to follow
+    node ids. Every point must match exactly one distinct node and vice versa.
+    Returns ``{"values": {node id: value}, "file", "time", "step"}``. Raises ValueError.
+    """
+    import meshio
+    import numpy as np
+
+    from . import result_series
+
+    path = str(source)
+    time_value = step_value = None
+    if path.endswith(".json"):
+        rows = result_series.records(path, series)
+        if time is not None:
+            rows = [r for r in rows if math.isclose(r["time"], float(time), rel_tol=1e-9,
+                                                    abs_tol=1e-12)]
+        if step is not None:
+            rows = [r for r in rows if r.get("step") == step]
+        if not rows:
+            raise ValueError("no result record matches the requested time/step")
+        row = rows[-1]
+        path, time_value, step_value = row["file"], row["time"], row.get("step")
+    elif time is not None or step is not None or series is not None:
+        raise ValueError("time/step/series only apply to a result-index.json source")
+    try:
+        data = meshio.read(path)
+    except Exception as exc:
+        raise ValueError(f"cannot read {path} with meshio ({exc}); Kratos 'binary' VTK is not "
+                         "readable - rerun with vtk_output_process file_format 'ascii'") from exc
+    values = result_series.field(data, variable, "point")
+    if values.ndim != 1:
+        raise ValueError(f"{variable} is a vector field; remeshing needs a scalar field")
+
+    ids = sorted(mesh.nodes)
+    if len(data.points) != len(ids):
+        raise ValueError(f"the result has {len(data.points)} points but the mesh has {len(ids)} "
+                         "nodes; export the root model part of this mesh (not a sub model part)")
+    sizes = element_sizes(mesh)
+    scale = min(sizes) if sizes else 1.0
+    tol = float(tolerance) if tolerance else 1e-4 * scale
+    grid: dict[tuple[int, int, int], list[int]] = {}
+    for nid in ids:
+        key = tuple(int(math.floor(c / tol)) for c in mesh.nodes[nid])
+        grid.setdefault(key, []).append(nid)
+    points = np.zeros((len(data.points), 3))
+    points[:, :data.points.shape[1]] = data.points
+    mapped: dict[int, float] = {}
+    for index, point in enumerate(points):
+        base = [int(math.floor(c / tol)) for c in point]
+        best, best_d = None, tol
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for nid in grid.get((base[0] + dx, base[1] + dy, base[2] + dz), ()):
+                        d = math.dist(mesh.nodes[nid], point)
+                        if d <= best_d:
+                            best, best_d = nid, d
+        if best is None or best in mapped:
+            raise ValueError(f"result point {index} {point.tolist()} does not match a unique "
+                             f"mesh node within {tol:g}; the result is not on this mesh")
+        mapped[best] = float(values[index])
+    return {"values": mapped, "file": path, "time": time_value, "step": step_value}
+
+
 # ----------------------------------------------------------------------- request
 
 def build_request(
@@ -259,11 +340,17 @@ def build_request(
     freeze_sub_model_parts: list[str] | None = None,
     check_fields: list[dict[str, str]] | None = None,
     interpolation_error: float | None = None,
+    field_values: dict[int, float] | None = None,
 ) -> dict[str, Any]:
     """Validate the arguments of ``mesh_remesh`` against ``mesh`` and return the
-    worker request: ``{domain_size, settings, assign, check}`` where ``settings`` is
-    the ``mmg_process`` ``Parameters`` block and ``assign``/``check`` are lists of
-    ``{"variable", "expression"}`` evaluated per node. Raises ValueError."""
+    worker request: ``{domain_size, settings, assign, check, read_variables,
+    write_fields}`` where ``settings`` is the ``mmg_process`` ``Parameters`` block and
+    ``assign``/``check`` are lists of ``{"variable", "expression"}`` evaluated per
+    node. ``field_values`` ({node id: value}, e.g. from ``field_from_result``) replaces
+    ``field_expression`` for ``hessian``: the assign item is then
+    ``{"variable", "values": {"<id>": value}}``. ``write_fields`` lists the variables
+    whose transferred nodal values the worker returns (the input mesh's own
+    ``NodalData`` plus a values-driven field). Raises ValueError."""
     if strategy not in STRATEGIES:
         raise ValueError(f"strategy must be one of {list(STRATEGIES)}")
     if not mesh.nodes or not mesh.elements:
@@ -320,10 +407,22 @@ def build_request(
             "boundary_layer_max_distance": float(transition_distance or 3.0 * hi),
             "interpolation": "Linear"}
     elif strategy == "hessian":
-        if not field_variable or not field_expression:
-            raise ValueError("hessian remeshing requires field_variable and field_expression")
-        compile_expression(field_expression)
-        assign.append({"variable": field_variable, "expression": field_expression})
+        if not field_variable or (field_expression is None) == (field_values is None):
+            raise ValueError("hessian remeshing requires field_variable and field_expression, or a "
+                             "field read from results (exactly one of the two)")
+        if field_values is not None:
+            ids = set(mesh.nodes)
+            if set(field_values) != ids:
+                raise ValueError("the result field must have exactly one value for every node "
+                                 f"of the mesh ({len(field_values)} values, {len(ids)} nodes)")
+            if not all(isinstance(v, (int, float)) and math.isfinite(v)
+                       for v in field_values.values()):
+                raise ValueError("the result field contains non-finite values")
+            assign.append({"variable": field_variable,
+                           "values": {str(k): float(v) for k, v in field_values.items()}})
+        else:
+            compile_expression(field_expression)
+            assign.append({"variable": field_variable, "expression": field_expression})
         settings["strategy"] = "hessian"
         settings["hessian_strategy_parameters"] = {
             "metric_variable": [field_variable],
@@ -356,7 +455,22 @@ def build_request(
             raise ValueError("each check_fields entry needs 'variable' and 'expression'")
         compile_expression(item["expression"])
         check.append({"variable": str(item["variable"]), "expression": item["expression"]})
-    return {"domain_size": dim, "settings": settings, "assign": assign, "check": check}
+    read_variables = sorted(mesh.nodal_data)
+    write_fields = list(read_variables)
+    if field_values is not None and field_variable not in write_fields:
+        write_fields.append(field_variable)
+    return {"domain_size": dim, "settings": settings, "assign": assign, "check": check,
+            "read_variables": read_variables, "write_fields": write_fields}
+
+
+def carry_fields(request: dict[str, Any]) -> dict[str, Any]:
+    """The request for a later pass: solved-field assignments are not repeated (their
+    values now come from the previous pass' ``NodalData``), and every written field is
+    read back from the intermediate mesh."""
+    assign = [{"variable": item["variable"], "source": "mesh"} if "values" in item else item
+              for item in request["assign"]]
+    read = sorted(set(request.get("read_variables", [])) | set(request.get("write_fields", [])))
+    return {**request, "assign": assign, "read_variables": read}
 
 
 def report(before: mdpa_mod.Mdpa, after: mdpa_mod.Mdpa, preserve: list[str]) -> dict[str, Any]:
