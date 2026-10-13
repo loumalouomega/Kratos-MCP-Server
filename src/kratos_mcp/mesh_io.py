@@ -19,31 +19,45 @@ import numpy as np
 from . import mesh_edit
 from .mdpa import Mdpa, SubModelPart, find_part, part_paths
 
-# meshio cell type -> topological dimension (linear and quadratic cells)
-_CELL_DIM = {"vertex": 0, "line": 1, "line3": 1,
-             "triangle": 2, "triangle6": 2, "quad": 2, "quad8": 2, "quad9": 2,
+# meshio cell type -> topological dimension (linear, quadratic and the cubic
+# line4 / triangle10 / quad16 plus pyramids). meshio 5.3.5 can only store
+# triangle10 / quad16 in formats that name them (gmsh .msh; VTK has no such
+# cell), and cannot build wedge15 or pyramid13 blocks at all.
+_CELL_DIM = {"vertex": 0, "line": 1, "line3": 1, "line4": 1,
+             "triangle": 2, "triangle6": 2, "triangle10": 2,
+             "quad": 2, "quad8": 2, "quad9": 2, "quad16": 2,
              "tetra": 3, "tetra10": 3, "hexahedron": 3, "hexahedron20": 3,
-             "hexahedron27": 3, "wedge": 3, "wedge15": 3}
-# (linear cell kind, node count) -> meshio cell type. Note: ("prism", 15) is
-# deliberately absent: meshio 5.3 has no "wedge15" CellBlock (its
-# topological_dimension lacks it, so neither meshio.read nor meshio.Mesh can
-# carry 15-node wedges); to_meshio raises an informative error for those.
+             "hexahedron27": 3, "wedge": 3, "wedge15": 3,
+             "pyramid": 3, "pyramid13": 3, "pyramid14": 3}
+# (linear cell kind, node count) -> meshio cell type. Note: ("prism", 15) and
+# ("pyr", 13) are deliberately absent: meshio 5.3 has no "wedge15" / "pyramid13"
+# CellBlock (its topological_dimension lacks them, so neither meshio.read nor
+# meshio.Mesh can carry those cells); to_meshio raises an informative error for
+# them unless ``linearize_unsupported`` is set.
 _MESHIO_BY_NODES = {
-    ("line", 2): "line", ("line", 3): "line3",
-    ("tri", 3): "triangle", ("tri", 6): "triangle6",
-    ("quad", 4): "quad", ("quad", 8): "quad8", ("quad", 9): "quad9",
+    ("line", 2): "line", ("line", 3): "line3", ("line", 4): "line4",
+    ("tri", 3): "triangle", ("tri", 6): "triangle6", ("tri", 10): "triangle10",
+    ("quad", 4): "quad", ("quad", 8): "quad8", ("quad", 9): "quad9", ("quad", 16): "quad16",
+    ("pyr", 5): "pyramid", ("pyr", 14): "pyramid14",
     ("tet", 4): "tetra", ("tet", 10): "tetra10",
     ("hex", 8): "hexahedron", ("hex", 20): "hexahedron20", ("hex", 27): "hexahedron27",
     ("prism", 6): "wedge",
 }
-_DEFAULT_ELEMENT = {"line": "Element2D2N", "line3": "Element2D3N",
+# Linearized replacement for cells meshio cannot carry: (kind, nodes) -> linear type.
+_LINEAR_FALLBACK = {("prism", 15): "wedge", ("pyr", 13): "pyramid"}
+_DEFAULT_ELEMENT = {"line": "Element2D2N", "line3": "Element2D3N", "line4": "LineElement2D4N",
                     "triangle": "Element2D3N", "triangle6": "Element2D6N",
+                    "triangle10": "Element2D10N",
                     "quad": "Element2D4N", "quad8": "Element2D8N", "quad9": "Element2D9N",
+                    "quad16": "Element2D16N",
+                    "pyramid": "Element3D5N", "pyramid13": "Element3D13N",
+                    "pyramid14": "Element3D14N",
                     "tetra": "Element3D4N", "tetra10": "Element3D10N",
                     "hexahedron": "Element3D8N", "hexahedron20": "Element3D20N",
                     "hexahedron27": "Element3D27N",
                     "wedge": "Element3D6N", "wedge15": "Element3D15N"}
 _DEFAULT_CONDITION = {"line": "LineCondition2D2N", "line3": "LineCondition2D3N",
+                      "line4": "LineCondition2D4N",
                       "triangle": "SurfaceCondition3D3N", "triangle6": "SurfaceCondition3D6N",
                       "quad": "SurfaceCondition3D4N", "quad8": "SurfaceCondition3D8N",
                       "quad9": "SurfaceCondition3D9N"}
@@ -71,9 +85,10 @@ def from_meshio(mesh, element_name: str | None = None, condition_name: str | Non
     dims = [_CELL_DIM[t] for t, _ in blocks if t in _CELL_DIM and t != "vertex"]
     unsupported = sorted({t for t, _ in blocks if t not in _CELL_DIM})
     if unsupported:
-        raise ValueError(f"Unsupported cell types {unsupported}; only linear and quadratic "
-                         "line, triangle, quad, tetra, hexahedron and wedge cells are "
-                         "converted (no cubic or higher-order Lagrange cells)")
+        raise ValueError(f"Unsupported cell types {unsupported}; converted are linear and "
+                         "quadratic line, triangle, quad, tetra, hexahedron, wedge and "
+                         "pyramid cells plus the cubic line4, triangle10 and quad16 "
+                         "(no other higher-order Lagrange cells)")
     if not dims:
         raise ValueError("The mesh has no line/surface/volume cells")
     top = max(dims)
@@ -156,13 +171,17 @@ def import_mesh(path: str | Path, file_format: str | None = None, **kwargs: Any)
     return from_meshio(meshio.read(str(path), file_format=file_format), **kwargs)
 
 
-def to_meshio(mesh: Mdpa):
+def to_meshio(mesh: Mdpa, linearize_unsupported: bool = False,
+              warnings: list[str] | None = None):
     """Mdpa -> meshio.Mesh with elements first, then conditions. Cell data:
     ``kratos:id``, ``kratos:property_id`` and ``kratos:entity`` (0 element, 1
     condition); sub model parts become cell_sets, scalar nodal data point_data
     (vector nodal data as (n, d) arrays when the raw value parses as
-    ``[d](...)``). Quadratic cells map to their meshio type (triangle6,
-    quad8/quad9, tetra10, hexahedron20/27, wedge15, line3)."""
+    ``[d](...)``). Quadratic and cubic cells map to their meshio type (line3/line4,
+    triangle6/triangle10, quad8/quad9/quad16, tetra10, hexahedron20/27, pyramid,
+    pyramid14). meshio 5.3 cannot carry 15-node wedges or 13-node pyramids: they raise
+    unless ``linearize_unsupported`` is set, which writes their corner-only wedge /
+    pyramid instead and appends a note to ``warnings``."""
     import meshio
 
     import re
@@ -176,14 +195,26 @@ def to_meshio(mesh: Mdpa):
                 kind = mesh_edit.cell_kind(mesh, type_name, conn)
                 cell_type = _MESHIO_BY_NODES.get((kind or "", len(conn)))
                 if cell_type is None:
-                    if (kind, len(conn)) == ("prism", 15):
+                    fallback = _LINEAR_FALLBACK.get((kind or "", len(conn)))
+                    if fallback is not None and linearize_unsupported:
+                        conn = mesh_edit.corner_nodes(mesh, type_name, conn)
+                        cell_type = fallback
+                        note = (f"{type_name}: meshio cannot carry this higher-order cell; "
+                                f"exported the corner nodes only as {fallback}")
+                        if warnings is not None and note not in warnings:
+                            warnings.append(note)
+                    elif fallback is not None:
+                        what = "15-node wedge" if kind == "prism" else "13-node pyramid"
                         raise ValueError(
-                            f"{type_name} {eid} is a 15-node wedge, which meshio cannot "
-                            "represent (no wedge15 cell type); export the .mdpa directly or "
-                            "run mdpa_convert_cells mode='quadratic_to_linear' first")
-                    raise ValueError(f"{type_name} {eid} ({len(conn)} nodes) has no "
-                                     "meshio cell type (only linear and quadratic line, "
-                                     "triangle, quad, tetra, hexahedron and wedge cells)")
+                            f"{type_name} {eid} is a {what}, which meshio cannot "
+                            "represent; export the .mdpa directly, run mdpa_convert_cells "
+                            "mode='quadratic_to_linear' first, or pass "
+                            "linearize_unsupported=true to export only the corner nodes")
+                    else:
+                        raise ValueError(f"{type_name} {eid} ({len(conn)} nodes) has no "
+                                         "meshio cell type (linear and quadratic line, "
+                                         "triangle, quad, tetra, hexahedron, wedge and pyramid "
+                                         "cells, plus line4, triangle10 and quad16)")
                 blocks.setdefault((cell_type, entity), []).append((eid, pid, conn))
     cells, ids, pids, ent, locator = [], [], [], [], {}
     for block, ((cell_type, entity), rows) in enumerate(sorted(blocks.items(), key=lambda kv: kv[0][1])):
@@ -229,12 +260,25 @@ def to_meshio(mesh: Mdpa):
                        cell_sets=cell_sets)
 
 
-def export_mesh(mesh: Mdpa, path: str | Path, file_format: str | None = None) -> Path:
+def export_mesh(mesh: Mdpa, path: str | Path, file_format: str | None = None,
+                linearize_unsupported: bool = False,
+                warnings: list[str] | None = None) -> Path:
     import meshio
 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    meshio.write(str(target), to_meshio(mesh), file_format=file_format)
+    mio = to_meshio(mesh, linearize_unsupported, warnings)
+    if file_format is None and target.suffix.lower() == ".msh":
+        file_format = "gmsh"  # meshio would otherwise pick Ansys for an ambiguous .msh
+    try:
+        meshio.write(str(target), mio, file_format=file_format)
+    except KeyError as exc:
+        cubic = sorted({c.type for c in mio.cells} & {"line4", "triangle10", "quad16"})
+        if not cubic:
+            raise
+        target.unlink(missing_ok=True)
+        raise ValueError(f"meshio cannot write {cubic} cells to {target.suffix or file_format} "
+                         "(no such cell type in that format); use gmsh .msh instead") from exc
     return target
 
 

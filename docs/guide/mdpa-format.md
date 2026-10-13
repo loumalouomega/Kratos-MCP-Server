@@ -86,7 +86,11 @@ Element and condition type names encode dimension and node count:
 (`…2D6N` triangles, `…2D8N` quads, `…3D10N` tetrahedra, `…3D20N` hexahedra,
 `…3D15N` prisms, `…2D3N`/`…3D3N` lines) list their corner nodes first in Kratos
 ordering, then the mid-edge (and face) nodes; the mesh tools use the corners
-for measures and preserve the full connectivity.
+for measures and preserve the full connectivity. Cubic cells (`…2D10N`
+triangles, `…2D16N` quads, 4-node lines named `Line…`) put two nodes on each
+edge, in the edge direction, then the interior nodes; pyramids are `…3D5N`,
+`…3D13N` (edge mids) and `…3D14N` (plus the base centre). A bare 10-node
+entity is read as a tetrahedron unless its name contains `2D10` or `Tri`.
 
 Two conventions matter in practice:
 

@@ -117,3 +117,131 @@ def test_polygon_target_size():
     assert area(m) == pytest.approx(8.0)
     with pytest.raises(ValueError, match="target_size"):
         geo.create_polygon_mesh([[0, 0], [1, 0], [0, 1]], target_size=0.0)
+
+
+# ------------------------------------------------------- graded polygon meshes
+
+SQUARE = [[0, 0], [4, 0], [4, 2], [0, 2]]
+
+
+def edge_use(m):
+    """Undirected edge -> number of triangles using it."""
+    use: dict[tuple[int, int], int] = {}
+    for by in m.elements.values():
+        for _, conn in by.values():
+            for a, b in zip(conn, conn[1:] + conn[:1]):
+                use[(min(a, b), max(a, b))] = use.get((min(a, b), max(a, b)), 0) + 1
+    return use
+
+
+def assert_conforming(m):
+    # every edge is shared by at most 2 triangles, and the free edges are exactly
+    # the boundary conditions (no hanging nodes)
+    use = edge_use(m)
+    assert set(use.values()) <= {1, 2}
+    free = {k for k, v in use.items() if v == 1}
+    conds = {(min(c), max(c)) for by in m.conditions.values() for _, c in by.values()}
+    assert free == conds
+
+
+def local_size(m, point):
+    near = []
+    for t, by in m.elements.items():
+        for _, c in by.values():
+            cx = sum(m.nodes[i][0] for i in c) / 3
+            cy = sum(m.nodes[i][1] for i in c) / 3
+            if math.dist((cx, cy), point) < 0.3:
+                near.append(max(me.edge_lengths(m, t, c)))
+    return sum(near) / len(near)
+
+
+def test_graded_point_source_is_conforming_and_graded():
+    m = geo.create_polygon_mesh(SQUARE, size_sources=[
+        {"point": [0.0, 0.0], "size": 0.08, "growth": 0.4}], target_size=2.0)
+    assert m.validate() == []
+    assert area(m) == pytest.approx(8.0)
+    assert_conforming(m)
+    assert "non_positive_or_invalid" not in me.quality(m)["elements"][
+        "SmallDisplacementElement2D3N"]
+    near, far = local_size(m, (0.2, 0.2)), local_size(m, (3.5, 1.7))
+    assert near < 0.2 and far > 3 * near
+    longest = max(d for t, by in m.elements.items() for _, c in by.values()
+                  for d in me.edge_lengths(m, t, c))
+    assert longest > 1.0  # far field stays coarse: not a uniform refinement
+    assert {"domain", "side_0", "side_1", "side_2", "side_3"} <= set(m.sub_model_parts)
+
+
+def test_graded_size_field_expression_with_hole_and_smoothing():
+    hole = [[[1.0, 0.5], [2.0, 0.5], [2.0, 1.5], [1.0, 1.5]]]
+    m = geo.create_polygon_mesh(SQUARE, holes=hole, size_field="0.15 + 0.3*abs(x - 3)",
+                                target_size=1.0, smooth_iterations=3)
+    assert m.validate() == []
+    assert area(m) == pytest.approx(7.0)
+    assert_conforming(m)
+    assert len(m.sub_model_parts["hole_0"].conditions) >= 4
+    assert local_size(m, (3.0, 1.0)) < local_size(m, (0.2, 1.8))
+    # smoothing never flips a triangle
+    assert "non_positive_or_invalid" not in me.quality(m)["elements"][
+        "SmallDisplacementElement2D3N"]
+
+
+def test_segment_source_and_combined_sources():
+    m = geo.create_polygon_mesh(SQUARE, size_field="0.5", size_sources=[
+        {"segment": [[0, 0], [4, 0]], "size": 0.1, "growth": 0.5}])
+    assert m.validate() == []
+    assert_conforming(m)
+    assert local_size(m, (2.0, 0.1)) < local_size(m, (2.0, 1.9)) <= 0.5 * (1 + 1e-9)
+
+
+def test_grading_errors():
+    with pytest.raises(ValueError, match="max_elements"):
+        geo.create_polygon_mesh(SQUARE, size_field="0.01", max_elements=500)
+    with pytest.raises(ValueError, match="size_field"):
+        geo.create_polygon_mesh(SQUARE, size_field="1/(x - x)")
+    with pytest.raises(ValueError, match="positive"):
+        geo.create_polygon_mesh(SQUARE, size_field="-1")
+    with pytest.raises(ValueError, match="allowed"):
+        geo.create_polygon_mesh(SQUARE, size_field="__import__('os')")
+    with pytest.raises(ValueError, match="exactly one"):
+        geo.create_polygon_mesh(SQUARE, size_sources=[{"size": 1.0}])
+    with pytest.raises(ValueError, match="size must be positive"):
+        geo.create_polygon_mesh(SQUARE, size_sources=[{"point": [0, 0], "size": 0}])
+    with pytest.raises(ValueError, match="smooth_iterations"):
+        geo.create_polygon_mesh(SQUARE, size_field="1", smooth_iterations=-1)
+
+
+def min_angle(m):
+    return me.quality(m)["elements"]["SmallDisplacementElement2D3N"]["angle_degrees"]["min"]
+
+
+def test_quality_reports_corner_angles():
+    m = mdpa_mod.create_rectangle_mesh(1.0, 1.0, 1, 1, element_name="Element2D3N",
+                                       condition_name="LineCondition2D2N", triangles=True)
+    angles = me.quality(m)["elements"]["Element2D3N"]["angle_degrees"]
+    assert angles["min"] == pytest.approx(45.0) and angles["max"] == pytest.approx(90.0)
+    quad = mdpa_mod.create_rectangle_mesh(1.0, 1.0, 1, 1)
+    q = next(iter(me.quality(quad)["elements"].values()))["angle_degrees"]
+    assert q["min"] == pytest.approx(90.0) and q["max"] == pytest.approx(90.0)
+
+
+def test_flips_and_smoothing_keep_conformity_and_never_worsen_the_graded_mesh():
+    kw = dict(size_field="0.15 + 0.3*abs(x - 3)", target_size=1.0,
+              holes=[[[1.0, 0.5], [2.0, 0.5], [2.0, 1.5], [1.0, 1.5]]])
+    raw = geo.create_polygon_mesh(SQUARE, **kw)
+    polished = geo.create_polygon_mesh(SQUARE, smooth_iterations=3, **kw)
+    assert polished.validate() == []
+    assert_conforming(polished)
+    assert area(polished) == pytest.approx(area(raw))
+    assert len(polished.nodes) == len(raw.nodes)
+    assert min_angle(polished) >= min_angle(raw) - 1e-9
+    assert len(polished.sub_model_parts["hole_0"].conditions) == len(
+        raw.sub_model_parts["hole_0"].conditions)
+
+
+def test_delaunay_flip_repairs_a_sliver_pair():
+    pts = [(0.0, 0.0), (4.0, 0.0), (2.0, 0.1), (2.0, -0.1)]
+    # diagonal 0-1 is long and thin; the Delaunay diagonal is 2-3
+    tris = geo.flip_edges(pts, [(0, 1, 2), (1, 0, 3)])
+    assert {frozenset(t) for t in tris} == {frozenset((0, 3, 2)), frozenset((3, 1, 2))}
+    assert all(((pts[b][0] - pts[a][0]) * (pts[c][1] - pts[a][1])
+                - (pts[c][0] - pts[a][0]) * (pts[b][1] - pts[a][1])) > 0 for a, b, c in tris)

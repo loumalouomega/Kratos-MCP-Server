@@ -50,7 +50,7 @@ def test_from_meshio_quadratic_and_rejections():
     assert m.inspect()["elements_by_type"] == {"Element2D6N": 1}
     assert m.validate() == []
     with pytest.raises(ValueError, match="Unsupported"):
-        mesh_io.from_meshio(meshio.Mesh(pts, [("triangle10", np.array([[0, 1, 2] * 3 + [0]]))]))
+        mesh_io.from_meshio(meshio.Mesh(pts, [("triangle15", np.arange(15)[None] % 3)]))
     with pytest.raises(ValueError, match="no line"):
         mesh_io.from_meshio(meshio.Mesh(pts, [("vertex", np.array([[0], [1]]))]))
 
@@ -85,6 +85,62 @@ def test_quadratic_meshio_round_trips(tmp_path):
         assert [c.type for c in mesh_io.to_meshio(got).cells] == [cell_type], cell_type
 
 
+def test_cubic_cells_round_trip_through_gmsh_msh(tmp_path):
+    """Roadmap probe: a cubic (10-node) triangle survives mesh_import/export."""
+    import meshio
+
+    P = [(0, 0), (1, 0), (0, 1)]
+    pts = list(P)
+    for a, b in [(0, 1), (1, 2), (2, 0)]:
+        for t in (1 / 3, 2 / 3):
+            pts.append((P[a][0] + (P[b][0] - P[a][0]) * t, P[a][1] + (P[b][1] - P[a][1]) * t))
+    pts.append((1 / 3, 1 / 3))
+    src = meshio.Mesh(np.array(pts), [("triangle10", np.array([list(range(10))]))])
+    m = mesh_io.from_meshio(src)
+    assert m.inspect()["elements_by_type"] == {"Element2D10N": 1}
+    assert me.cell_kind(m, "Element2D10N", m.elements["Element2D10N"][1][1]) == "tri"
+    assert m.validate() == []
+    path = mesh_io.export_mesh(m, tmp_path / "t10.msh")
+    back = mesh_io.import_mesh(path)
+    assert back.elements["Element2D10N"][1][1] == list(range(1, 11))
+    # VTK has no triangle10: an explanatory error, no stray file
+    with pytest.raises(ValueError, match="gmsh .msh"):
+        mesh_io.export_mesh(m, tmp_path / "t10.vtk")
+    assert not (tmp_path / "t10.vtk").exists()
+    # boundary edges become 4-node line conditions that survive the round trip
+    me.extract_boundary(m, {"4": "LineCondition2D4N"}, "skin")
+    assert [c.type for c in mesh_io.to_meshio(m).cells] == ["triangle10", "line4"]
+    again = mesh_io.from_meshio(mesh_io.to_meshio(m))
+    assert again.inspect()["conditions_by_type"] == {"LineCondition2D4N": 3}
+
+
+def test_quad16_and_pyramids_map_to_meshio():
+    import meshio
+
+    for cell_type, n in [("quad16", 16), ("pyramid", 5), ("pyramid14", 14), ("line4", 4)]:
+        pts = np.random.default_rng(0).random((n, 3))
+        src = meshio.Mesh(pts, [(cell_type, np.array([list(range(n))]))])
+        got = mesh_io.from_meshio(src)
+        assert got.validate() == [], cell_type
+        assert [c.type for c in mesh_io.to_meshio(got).cells] == [cell_type], cell_type
+
+
+def test_pyramid13_needs_linearize_flag():
+    from types import SimpleNamespace
+
+    fake = SimpleNamespace(cells=[SimpleNamespace(type="pyramid13", data=np.array([list(range(13))]))],
+                           points=np.random.default_rng(1).random((13, 3)), cell_sets={},
+                           cell_data={}, point_sets={})
+    m = mesh_io.from_meshio(fake)
+    with pytest.raises(ValueError, match="13-node pyramid"):
+        mesh_io.to_meshio(m)
+    notes: list[str] = []
+    got = mesh_io.to_meshio(m, linearize_unsupported=True, warnings=notes)
+    assert [c.type for c in got.cells] == ["pyramid"]
+    assert got.cells[0].data.tolist() == [[0, 1, 2, 3, 4]]
+    assert len(notes) == 1 and "corner" in notes[0]
+
+
 def test_wedge15_import_export_limits():
     from types import SimpleNamespace
 
@@ -98,6 +154,10 @@ def test_wedge15_import_export_limits():
     assert m.validate() == []
     with pytest.raises(ValueError, match="15-node wedge"):
         mesh_io.to_meshio(m)
+    notes: list[str] = []
+    linear = mesh_io.to_meshio(m, linearize_unsupported=True, warnings=notes)
+    assert [c.type for c in linear.cells] == ["wedge"] and linear.cells[0].data.shape == (1, 6)
+    assert notes
 
 
 def test_vector_nodal_data_export(tmp_path):

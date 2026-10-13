@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from kratos_mcp import mdpa as mdpa_mod, mesh_edit as me
@@ -542,3 +543,139 @@ def test_quadratic_mirror_keeps_positive_measure():
     me.transform(m, "mirror", point=[0, 0, 0], normal=[1, 0, 0])
     assert {e: list(c) for e, (_, c) in m.elements["Element2D6N"].items()} == original
     assert me.quality(m)["elements"]["Element2D6N"]["measure"]["total"] == pytest.approx(1.0)
+
+
+# ------------------------------------------------- cubic cells and pyramids
+
+def _lerp(a, b, t):
+    return tuple(x + (y - x) * t for x, y in zip(a, b))
+
+
+def tri10_mesh():
+    m = mdpa_mod.Mdpa()
+    corners = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    pts = list(corners)
+    for a, b in [(0, 1), (1, 2), (2, 0)]:
+        pts += [_lerp(corners[a], corners[b], 1 / 3), _lerp(corners[a], corners[b], 2 / 3)]
+    pts.append((1 / 3, 1 / 3, 0))
+    m.nodes = {i + 1: p for i, p in enumerate(pts)}
+    m.elements["Element2D10N"] = {1: (1, list(range(1, 11)))}
+    m.sub_model_parts["domain"] = mdpa_mod.SubModelPart(
+        "domain", nodes=list(m.nodes), elements=[1])
+    return m
+
+
+def quad16_mesh():
+    m = mdpa_mod.Mdpa()
+    c = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+    pts = list(c)
+    for a, b in [(0, 1), (1, 2), (2, 3), (3, 0)]:
+        pts += [_lerp(c[a], c[b], 1 / 3), _lerp(c[a], c[b], 2 / 3)]
+    pts += [(1 / 3, 1 / 3, 0), (2 / 3, 1 / 3, 0), (2 / 3, 2 / 3, 0), (1 / 3, 2 / 3, 0)]
+    m.nodes = {i + 1: p for i, p in enumerate(pts)}
+    m.elements["Element2D16N"] = {1: (1, list(range(1, 17)))}
+    return m
+
+
+def pyramid_mesh(n_nodes):
+    m = mdpa_mod.Mdpa()
+    base = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0.5, 0.5, 1)]
+    pts = list(base)
+    if n_nodes >= 13:
+        for a, b in [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (1, 4), (2, 4), (3, 4)]:
+            pts.append(_lerp(base[a], base[b], 0.5))
+    if n_nodes == 14:
+        pts.append((0.5, 0.5, 0))
+    m.nodes = {i + 1: p for i, p in enumerate(pts)}
+    m.elements[f"Element3D{n_nodes}N"] = {1: (1, list(range(1, n_nodes + 1)))}
+    return m
+
+
+def test_cubic_triangle_kind_corners_quality():
+    m = tri10_mesh()
+    conn = m.elements["Element2D10N"][1][1]
+    assert m.validate() == []
+    assert me.cell_kind(m, "Element2D10N", conn) == "tri"
+    assert me.corner_nodes(m, "Element2D10N", conn) == [1, 2, 3]
+    assert me.is_higher_order(m, "Element2D10N", conn)
+    q = me.quality(m)["elements"]["Element2D10N"]
+    assert q["measure"]["total"] == pytest.approx(0.5)
+    # a 10-node 3D name stays a quadratic tetrahedron
+    assert me.cell_kind(m, "Element3D10N", conn) == "tet"
+
+
+def test_cubic_triangle_boundary_has_four_node_edges():
+    m = tri10_mesh()
+    out = me.extract_boundary(m, {"4": "LineCondition2D4N"}, "skin")
+    assert out["conditions_created"] == 3
+    edges = sorted(c for _, c in m.conditions["LineCondition2D4N"].values())
+    # corners a, b then the two edge nodes in the a -> b direction
+    assert edges == [[1, 2, 4, 5], [2, 3, 6, 7], [3, 1, 8, 9]]
+    assert me.cell_kind(m, "LineCondition2D4N", edges[0]) == "line"
+    assert m.validate() == []
+
+
+def test_cubic_mirror_reorders_edge_node_pairs():
+    m = tri10_mesh()
+    me.transform(m, "scale", factors=[-1.0, 1.0, 1.0])
+    conn = m.elements["Element2D10N"][1][1]
+    assert me.measure(m, "Element2D10N", conn) > 0
+    # edge nodes stay geometrically on their edge, ordered along the new direction
+    x = {n: m.nodes[n] for n in conn}
+    c0, c1, c2 = (np.array(x[i]) for i in conn[:3])
+    for k, (a, b) in enumerate([(c0, c1), (c1, c2), (c2, c0)]):
+        first, second = np.array(x[conn[3 + 2 * k]]), np.array(x[conn[4 + 2 * k]])
+        assert np.allclose(first, a + (b - a) / 3) and np.allclose(second, a + 2 * (b - a) / 3)
+    assert np.allclose(x[conn[9]], (c0 + c1 + c2) / 3)
+
+
+def test_quad16_mirror_and_linearize():
+    m = quad16_mesh()
+    conn = m.elements["Element2D16N"][1][1]
+    assert me.cell_kind(m, "Element2D16N", conn) == "quad"
+    assert me.measure(m, "Element2D16N", conn) == pytest.approx(1.0)
+    me.transform(m, "scale", factors=[1.0, -1.0, 1.0])
+    conn = m.elements["Element2D16N"][1][1]
+    assert me.measure(m, "Element2D16N", conn) > 0
+    c = [np.array(m.nodes[i]) for i in conn[:4]]
+    # interior node 12 + k stays next to corner k
+    for k in range(4):
+        assert np.linalg.norm(np.array(m.nodes[conn[12 + k]]) - c[k]) < 0.5
+    me.convert_cells(m, "quadratic_to_linear")
+    assert list(m.elements) == ["Element2D4N"] and len(m.elements["Element2D4N"][1][1]) == 4
+
+
+@pytest.mark.parametrize("n_nodes", [5, 13, 14])
+def test_pyramids(n_nodes):
+    m = pyramid_mesh(n_nodes)
+    name = f"Element3D{n_nodes}N"
+    conn = m.elements[name][1][1]
+    assert m.validate() == []
+    assert me.cell_kind(m, name, conn) == "pyr"
+    assert me.measure(m, name, conn) == pytest.approx(1 / 3)
+    assert len(me.edge_lengths(m, name, conn)) == 8
+    q = me.quality(m)["elements"][name]
+    assert "skipped_unsupported" not in q and "non_positive_or_invalid" not in q
+    me.transform(m, "scale", factors=[1.0, 1.0, -1.0])
+    flipped = m.elements[name][1][1]
+    assert me.measure(m, name, flipped) > 0
+    assert sorted(flipped) == list(range(1, n_nodes + 1))
+
+
+def test_pyramid_boundary_mixes_triangle_and_quad_faces():
+    m = pyramid_mesh(5)
+    me.extract_boundary(m, {"3": "T3", "4": "Q4"}, "skin")
+    assert len(m.conditions["T3"]) == 4 and len(m.conditions["Q4"]) == 1
+    m = pyramid_mesh(14)
+    me.extract_boundary(m, {"6": "T6", "9": "Q9"}, "skin")
+    assert len(m.conditions["T6"]) == 4
+    assert list(m.conditions["Q9"].values())[0][1][-1] == 14  # base face centre
+    me.convert_cells(m, "quadratic_to_linear")
+    assert len(m.elements["Element3D5N"][1][1]) == 5
+
+
+def test_cubic_cells_are_not_extruded_or_split():
+    with pytest.raises(ValueError, match="quadratic_to_linear"):
+        me.extrude(tri10_mesh(), [1.0])
+    with pytest.raises(ValueError, match="quadratic_to_linear"):
+        me.extrude(quad16_mesh(), [1.0])

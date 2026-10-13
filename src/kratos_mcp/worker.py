@@ -232,7 +232,8 @@ def op_mpi_support(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def op_meshing_support(args: dict[str, Any]) -> dict[str, Any]:
-    """Whether this build can remesh: MeshingApplication importable and compiled with MMG."""
+    """Whether this build can remesh: MeshingApplication importable and compiled with MMG
+    (``mmg`` = the 2D and 3D processes; ``mmg2d`` / ``mmg3d`` / ``mmg3d_surfaces`` per variant)."""
     info: dict[str, Any] = {"meshing": False, "mmg": False}
     try:
         import KratosMultiphysics.MeshingApplication as MA
@@ -240,7 +241,10 @@ def op_meshing_support(args: dict[str, Any]) -> dict[str, Any]:
         info["meshing_error"] = f"{type(exc).__name__}: {exc}"
         return info
     info["meshing"] = True
-    info["mmg"] = all(hasattr(MA, name) for name in ("MmgProcess2D", "MmgProcess3D"))
+    for key, name in (("mmg2d", "MmgProcess2D"), ("mmg3d", "MmgProcess3D"),
+                      ("mmg3d_surfaces", "MmgProcess3DSurfaces")):
+        info[key] = hasattr(MA, name)
+    info["mmg"] = info["mmg2d"] and info["mmg3d"]
     return info
 
 

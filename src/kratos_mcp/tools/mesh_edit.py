@@ -700,10 +700,12 @@ def register(mcp) -> None:
         """Mesh quality report, per element/condition type: count, measure
         (length/area/volume, from the corner nodes for quadratic cells)
         min/mean/max/total, aspect ratio (longest/shortest edge) with the ids
-        of the worst cells, and the ids of inverted or degenerate cells
+        of the worst cells, corner-angle extremes in degrees (angle_degrees: min,
+        max and the ids with the smallest angle) for triangles and quads, and
+        the ids of inverted or degenerate cells
         (non-positive signed measure -- these crash or poison a
-        Kratos run). Linear and quadratic line, triangle, quad, tet, prism and
-        hex cells."""
+        Kratos run). Linear, quadratic and cubic line, triangle, quad, tet,
+        prism, pyramid and hex cells."""
         _, mesh = _load(path)
         report = me.quality(mesh, worst)
         bad = {label: {t: e["non_positive_or_invalid"] for t, e in by_type.items()

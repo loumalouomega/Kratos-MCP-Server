@@ -133,8 +133,13 @@ def register(mcp) -> None:
         additionally forbids MMG from touching their nodes. check_fields
         ([{"variable": "TEMPERATURE", "expression": "x + 2*y"}]) assigns analytic
         nodal values before remeshing and reports how well the interpolation
-        reproduces them on the new nodes. Elements must be simplices (triangles /
-        tetrahedra). For 'hessian', interpolation_error (default 0.04) is the
+        reproduces them on the new nodes. Elements must be linear simplices
+        (triangles or tetrahedra, not mixed; quads, hexes and quadratic cells are
+        refused up front - convert with mdpa_convert_cells first). The result
+        reports mesh_kind: planar2d (the verified path), volume3d (tetrahedra) or
+        surface3d (triangles spanning z); the 3D kinds are wired to MmgProcess3D /
+        MmgProcess3DSurfaces but not verified against reference numbers, which a
+        warnings entry says. For 'hessian', interpolation_error (default 0.04) is the
         target P1 interpolation error - smaller means finer. A metric computed on a
         coarse mesh under-resolves a sharp feature: passes=3 repeats remeshing on
         the previous result (the analytic field is re-evaluated on every new mesh),
@@ -187,7 +192,9 @@ def register(mcp) -> None:
 
         def work() -> tuple[dict[str, Any], list[dict[str, int]]]:
             support = bridge.run_op("meshing_support")
-            if not support.get("mmg"):
+            variant = remesh_mod.MMG_VARIANT[request["mesh_kind"]]
+            # builds cached before the per-variant keys existed only know "mmg"
+            if not support.get(variant, support.get("mmg")):
                 raise remesh_mod.MeshingUnavailable(support)
             dst.parent.mkdir(parents=True, exist_ok=True)
             history: list[dict[str, int]] = []
@@ -219,7 +226,8 @@ def register(mcp) -> None:
             result, history = await anyio.to_thread.run_sync(work)
         except remesh_mod.MeshingUnavailable as exc:
             return {"error": "MMG remeshing is not available in the configured Kratos build "
-                             "(KratosMeshingApplication missing or built without MMG). "
+                             "(KratosMeshingApplication missing or built without the MMG "
+                             "variant this mesh needs). "
                              "Install it with kratos_install(applications=['MeshingApplication']) "
                              "or point KRATOS_ROOT at a build that has it.",
                     "meshing_support": exc.support}
@@ -227,7 +235,10 @@ def register(mcp) -> None:
             return {"error": exc.details()}
 
         after = mdpa_mod.read(dst)
+        warning = remesh_mod.UNVERIFIED_KINDS.get(request["mesh_kind"])
         return {"written_to": str(dst), "strategy": strategy, "passes": history,
+                "mesh_kind": request["mesh_kind"],
+                **({"warnings": [warning]} if warning else {}),
                 "settings": request["settings"],
                 **remesh_mod.report(before, after, names),
                 "transfer": result["transfer"],

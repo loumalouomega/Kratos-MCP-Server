@@ -81,8 +81,12 @@ it: `kratos_install(applications=["MeshingApplication"])`). Adaptively remesh a
 
 Expressions use `x`, `y`, `z`, `pi`, `e`, `+ - * / % **` (constant exponent, |n| ≤ 16) and
 `sqrt sin cos tan exp log tanh atan abs min max`; anything else is rejected before
-anything runs. Elements must be simplices (triangles or tetrahedra); the element and
-condition types of the input are kept.
+anything runs. Elements must be linear simplices (triangles or tetrahedra, not mixed): quads, hexes,
+quadratic cells and mixed meshes are refused before anything runs, naming the offending
+element. The result reports `mesh_kind` — `planar2d`, `volume3d` or `surface3d`
+(triangles spanning z) — and checks the matching MMG variant (`MmgProcess2D`, `3D`,
+`3DSurfaces`); the 3D kinds come with a `warnings` entry because they are not yet verified
+against reference numbers. The element and condition types of the input are kept.
 
 ```json
 // mesh_remesh("/case/plate.mdpa", "/case/adapted.mdpa", strategy="hessian",

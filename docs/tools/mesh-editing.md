@@ -28,8 +28,16 @@ the data blocks (`Tables`, `ElementalData`, `ConditionalData`, vector/flag
 - Quadratic cells (6-node triangles, 8/9-node quads, 10-node tets, 20/27-node
   hexes, 15-node prisms, 3-node lines) are first-class: quality, boundary
   extraction, extrusion, cell conversion and meshio import/export handle them
-  (measures use the corner nodes). Cubic and higher Lagrange cells, pyramids
-  and 15-node wedges on meshio export are still rejected with a message.
+  (measures use the corner nodes). So are the cubic 4-node line, 10-node
+  triangle (`…2D10N`) and 16-node quadrilateral (two nodes per edge, listed in
+  the edge direction, then the interior nodes) and 5/13/14-node pyramids.
+  Their node order was checked against the Kratos geometry sources
+  (`Line2D4`, `Triangle2D10`, `Pyramid3D13`); Kratos has no 16-node quad or
+  14-node pyramid, which exist here only for meshio interchange. Cubic cells
+  cannot be extruded (convert with `quadratic_to_linear` first). Cubic
+  tetrahedra and 18-node wedges, which Kratos does not have either, and
+  everything beyond cubic, are rejected with a message; a bare 10-node
+  entity is a quadratic tetrahedron unless its name says `2D10`/`Tri`.
 - Errors come back as `{"error": "..."}`.
 
 ## Selectors
@@ -94,10 +102,10 @@ nodes of added entities.
 | `mdpa_renumber(path, start?)` | consecutive ids; every reference (including data blocks) follows |
 | `mdpa_extract(path, sub_model_part, output)` | one part (with children, the nodes it uses, its data references and the tables they need) as a new mesh |
 | `mdpa_extrude(path, output, heights, z0?, element_names?, condition_names?, cap_condition_names?)` | planar mesh → 3D: triangles → prisms, quads → hexahedra, line conditions → surface quads; quadratic tri6 → 15-node wedges, quad8 → 20-node hexes, 3-node lines → 8-node quads. Names map `2DnN` → `3DmN` unless overridden; parts `zmin` / `zmax` hold the caps (cap keys `"3"`/`"4"`, `"6"`/`"8"` for quadratic caps). Tables, element/condition data (replicated per layer) and nodal data (interpolated) are carried over |
-| `mdpa_convert_cells(path, mode, element_name?, condition_name?)` | `quad_to_tri`, `hex_to_tet` (Kuhn split: conforming on structured meshes with consistent node order; boundary quads follow the tet faces), or `quadratic_to_linear` (drop mid-edge/face nodes, ids unchanged) |
-| `mdpa_extract_boundary(path, condition_name, sub_model_part, element_part?, selector?, property_id?)` | conditions on the free faces (linear and quadratic line, tri, quad, tet, prism, hex cells; quadratic faces carry their mid nodes, so the name map needs `"3"`/`"6"`/`"8"`/`"9"` keys); `selector` keeps only faces whose nodes are all selected, e.g. a plane |
+| `mdpa_convert_cells(path, mode, element_name?, condition_name?)` | `quad_to_tri`, `hex_to_tet` (Kuhn split: conforming on structured meshes with consistent node order; boundary quads follow the tet faces), or `quadratic_to_linear` (drop mid-edge/face/interior nodes of quadratic and cubic cells, ids unchanged) |
+| `mdpa_extract_boundary(path, condition_name, sub_model_part, element_part?, selector?, property_id?)` | conditions on the free faces (linear, quadratic and cubic line, tri, quad, tet, prism, pyramid and hex cells; higher-order faces carry their mid nodes, so the name map needs `"3"`/`"4"`/`"6"`/`"8"`/`"9"` keys by face node count — `"4"` is both a quad and a cubic edge, as 2D and 3D meshes do not mix); `selector` keeps only faces whose nodes are all selected, e.g. a plane |
 | `mdpa_set_properties(path, property_id?, values?, remove?, model_part_data?)` | the mesh-embedded `Properties` block and the `ModelPartData` header |
-| `mdpa_quality(path, worst?)` | per type: measure min/mean/max/total, aspect ratio with the worst ids, and inverted or degenerate cells (`ok: false`) |
+| `mdpa_quality(path, worst?)` | per type: measure min/mean/max/total, aspect ratio with the worst ids, corner-angle extremes in degrees (`angle_degrees`: min, max and the cells with the smallest angle; triangles and quads), and inverted or degenerate cells (`ok: false`) |
 
 ::: warning Pressure sign
 Conditions from `mdpa_extract_boundary` and the generators run with the

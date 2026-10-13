@@ -36,7 +36,7 @@ One-shot `mesh_remesh` (levelset, analytic or solved-field hessian with the tran
 
 - **Remeshing during a run.** An `mmg_process` that fires inside the solution loop aborts standard solvers with SIGSEGV after the first remesh (verified with the thermal solver): the strategy, DOFs and builder stay bound to the old mesh. Needs a solver-side re-initialization hook (clear and rebuild after the `MODIFIED` flag) and a story for output continuity, restart and studies.
 - **Error estimation from recovered stresses.** The hessian can follow a field read from a VTK result, but `strategy: spr` (superconvergent patch recovery) needs element stress data from a live solved model part, which a mesh plus VTK point data cannot provide; it would run in the runner/session worker on the solved model, and vector or element-wise fields have no `NodalData` path yet.
-- **3D and surface meshes.** Only the 2D path has been run against real numbers; `MmgProcess3D` / `MmgProcess3DSurfaces` are wired but unverified.
+- **3D and surface meshes.** Only the 2D path has been run against real numbers. Input validation (linear simplices only, mesh-kind detection, per-variant MMG capability checks, a `warnings` entry on 3D results) is shipped; `MmgProcess3D` / `MmgProcess3DSurfaces` runs and reference numbers are not.
 
 **Probe:** adapt a 3D tetrahedral mesh to a solved structural field read from VTK and show the transferred stress/temperature error against a uniformly refined mesh.
 
@@ -46,26 +46,6 @@ Build these separate experiments on the existing sweeps and response extraction.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
-### 2.3 Mesh editing: remaining gaps — M
-
-The `mdpa_*` editing tools, `mesh_import`/`mesh_export`, `Tables`,
-`ElementalData`/`ConditionalData`, vector/flag `NodalData`, per-sub-model-part
-data, quadratic cells and hole-capable polygon meshing are shipped. Gaps that remain:
-
-- **Higher-order cells past quadratic.** Quality, boundary extraction, extrusion,
-  cell conversion and meshio import handle linear and quadratic
-  line/triangle/quad/tetra/hexahedron/wedge cells; cubic and higher Lagrange
-  cells (10+ node triangles/tetrahedra, 18-node wedges, …), pyramids and meshio
-  export of 15-node wedges (meshio 5.3 itself has no `wedge15` cell type) are
-  rejected rather than converted.
-- **Graded unstructured generation without gmsh.** `mdpa_create_geometry_mesh`
-  `polygon` handles holes (bridged slits, `hole_<k>` parts) and uniform
-  `target_size` subdivision; spatially graded sizes and CAD need the optional
-  gmsh extra, which is not exercised in CI.
-
-**Probe:** round-trip a cubic (10-node) triangle through `mesh_import` without
-losing it; mesh a polygon with a graded (non-uniform) size field without gmsh.
-
 ## Non-goals and decisions taken
 
 Recorded so they are not re-proposed as gaps.
@@ -73,6 +53,7 @@ Recorded so they are not re-proposed as gaps.
 - **No Kratos or PyVista imports in the MCP server process.** Keep native execution in workers to protect stdio transport and contain native crashes.
 - **No replacement graphical editor.** FlowGraph import/export already provides the visual editing route; improve interoperability when a concrete gap arises.
 - **No duplicate solver or process registry.** Extend existing runtime discovery and source parsing, using the configured Kratos build and source as authority.
+- **No cubic tetrahedra, 18-node wedges or order four and up.** Kratos has no such geometry (`Line2D4`, `Triangle2D10` and `Pyramid3D13` are its only cells past quadratic, and all three are supported); `quad16` and `pyramid14` exist only for meshio interchange.
 - **No promise that every Kratos application is supported by a template.** The generic analysis-class entry point remains available; curated workflows need capability checks and numerical reference cases.
 
 ---
@@ -80,5 +61,5 @@ Recorded so they are not re-proposed as gaps.
 ## Suggested sequencing
 
 1. Verify local MPI on a real distributed build, then add cluster launch.
-2. Extend remeshing to SPR error estimation, in-loop remeshing and 3D (solved-field hessian metrics, coupled-solver CoSimulation, partitioned FSI and offline/setup-time remeshing are shipped).
+2. Extend remeshing to SPR error estimation, in-loop remeshing and verified 3D runs (solved-field hessian metrics, coupled-solver CoSimulation, partitioned FSI and offline/setup-time remeshing are shipped).
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

@@ -167,6 +167,41 @@ def domain_size(mesh: mdpa_mod.Mdpa) -> int:
     return 3 if box["max"][2] - box["min"][2] > 1e-12 else 2
 
 
+# mesh kind -> MMG variant (worker ``meshing_support`` key) that remeshes it
+MMG_VARIANT = {"planar2d": "mmg2d", "volume3d": "mmg3d", "surface3d": "mmg3d_surfaces"}
+UNVERIFIED_KINDS = {
+    "volume3d": "3D tetrahedral remeshing (MmgProcess3D) is wired but has not been verified "
+                "against reference numbers; only the 2D path has",
+    "surface3d": "surface remeshing (MmgProcess3DSurfaces) is wired but has not been verified "
+                 "against reference numbers; only the 2D path has",
+}
+
+
+def mesh_kind(mesh: mdpa_mod.Mdpa) -> str:
+    """``planar2d`` (triangles in a constant-z plane), ``volume3d`` (tetrahedra) or
+    ``surface3d`` (triangles spanning z). MMG remeshes linear simplices only, so
+    anything else (quads, hexes, prisms, pyramids, lines, quadratic or cubic
+    cells, or triangles mixed with tetrahedra) raises ValueError naming the
+    offending element type."""
+    from . import mesh_edit
+
+    kinds: set[str] = set()
+    for type_name, by_id in mesh.elements.items():
+        for eid, (_, conn) in by_id.items():
+            kind = mesh_edit.cell_kind(mesh, type_name, conn)
+            if (kind, len(conn)) not in (("tri", 3), ("tet", 4)):
+                raise ValueError(
+                    f"element {eid} ({type_name}, {len(conn)} nodes) is not a linear triangle "
+                    "or tetrahedron; MMG remeshes simplices only (mdpa_convert_cells "
+                    "quad_to_tri / hex_to_tet / quadratic_to_linear can get there)")
+            kinds.add(kind)
+    if kinds == {"tri", "tet"}:
+        raise ValueError("the mesh mixes triangles and tetrahedra; remesh one dimension at a time")
+    if kinds == {"tet"}:
+        return "volume3d"
+    return "surface3d" if domain_size(mesh) == 3 else "planar2d"
+
+
 def summarize_mesh(mesh: mdpa_mod.Mdpa) -> dict[str, Any]:
     info = mesh.inspect()
     sizes = element_sizes(mesh)
@@ -336,7 +371,7 @@ def build_request(
     field_values: dict[int, float] | None = None,
 ) -> dict[str, Any]:
     """Validate the arguments of ``mesh_remesh`` against ``mesh`` and return the
-    worker request: ``{domain_size, settings, assign, check, read_variables,
+    worker request: ``{domain_size, mesh_kind, settings, assign, check, read_variables,
     write_fields}`` where ``settings`` is the ``mmg_process`` ``Parameters`` block and
     ``assign``/``check`` are lists of ``{"variable", "expression"}`` evaluated per
     node. ``field_values`` ({node id: value}, e.g. from ``field_from_result``) replaces
@@ -348,6 +383,7 @@ def build_request(
         raise ValueError(f"strategy must be one of {list(STRATEGIES)}")
     if not mesh.nodes or not mesh.elements:
         raise ValueError("the input mesh has no nodes or elements")
+    kind = mesh_kind(mesh)
     dim = domain_size(mesh)
     sizes = element_sizes(mesh)
     mean_size = sum(sizes) / len(sizes)
@@ -452,7 +488,8 @@ def build_request(
     write_fields = list(read_variables)
     if field_values is not None and field_variable not in write_fields:
         write_fields.append(field_variable)
-    return {"domain_size": dim, "settings": settings, "assign": assign, "check": check,
+    return {"domain_size": dim, "mesh_kind": kind, "settings": settings,
+            "assign": assign, "check": check,
             "read_variables": read_variables, "write_fields": write_fields}
 
 
