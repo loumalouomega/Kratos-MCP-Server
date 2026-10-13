@@ -514,6 +514,7 @@ _CORNER_FLIP = {
     "tet": (0, 2, 1, 3),
     "hex": (0, 3, 2, 1, 4, 7, 6, 5),
     "prism": (0, 2, 1, 3, 5, 4),
+    "pyr": (0, 3, 2, 1, 4),
 }
 
 
@@ -531,23 +532,28 @@ def _flip_connectivity(mesh: Mdpa, type_name: str, conn: list[int]) -> list[int]
     for new_pos, old_pos in enumerate(perm):
         new[corners[new_pos]] = c[corners[old_pos]]
     pos_of = {old: new_pos for new_pos, old in enumerate(perm)}
-    mids = _EDGE_MIDS.get((kind, n), {})
-    for edge, slot in mids.items():
-        a, b = tuple(edge)
-        target = mids.get(frozenset((pos_of[a], pos_of[b])))
-        if target is None:
+    for a, b, slots in _edges_with_slots(kind, n):
+        targets = _edge_slots(kind, n, pos_of[a], pos_of[b])
+        if targets is None or len(targets) != len(slots):
             return c
-        new[target] = c[slot]
+        for target, slot in zip(targets, slots):
+            new[target] = c[slot]
     centers = _FACE_CENTERS.get((kind, n))
     if centers is not None:
         faces = FACES[kind]
         for f_idx, face in enumerate(faces):
+            if centers[f_idx] is None:
+                continue
             # Old-corner set now sitting on new face f_idx; take its old center.
             wanted = frozenset(perm[o] for o in face)
             g = next((g for g, old in enumerate(faces) if frozenset(old) == wanted), None)
-            if g is None:
+            if g is None or centers[g] is None:
                 return c
             new[centers[f_idx]] = c[centers[g]]
+    around = _CORNER_INTERIOR.get((kind, n))
+    if around is not None:
+        for new_pos, old_pos in enumerate(perm):
+            new[around[new_pos]] = c[around[old_pos]]
     for slot in _FIXED_SLOTS.get((kind, n), ()):
         new[slot] = c[slot]
     if any(v is None for v in new):
@@ -567,6 +573,7 @@ EDGES = {
     "prism": [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3), (0, 3), (1, 4), (2, 5)],
     "hex": [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4),
             (0, 4), (1, 5), (2, 6), (3, 7)],
+    "pyr": [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (1, 4), (2, 4), (3, 4)],
 }
 FACES = {
     "tri": [(0, 1), (1, 2), (2, 0)],
@@ -574,24 +581,30 @@ FACES = {
     "tet": [(0, 2, 1), (0, 1, 3), (1, 2, 3), (0, 3, 2)],
     "hex": [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)],
     "prism": [(0, 2, 1), (3, 4, 5), (0, 1, 4, 3), (1, 2, 5, 4), (2, 0, 3, 5)],
+    # base quad first, then the four triangles around the apex (node 4)
+    "pyr": [(0, 3, 2, 1), (0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4)],
 }
 _TETS_OF = {
     "tet": [(0, 1, 2, 3)],
     "prism": [(0, 1, 2, 3), (1, 2, 3, 4), (2, 3, 4, 5)],
     "hex": [(0, 1, 2, 6), (0, 2, 3, 6), (0, 3, 7, 6), (0, 7, 4, 6), (0, 4, 5, 6), (0, 5, 1, 6)],
+    "pyr": [(0, 1, 2, 4), (0, 2, 3, 4)],
 }
 
 
 def cell_kind(mesh: Mdpa, type_name: str, conn: list[int]) -> str | None:
-    """Cell kind of an entity: line, tri, quad, tet, prism, hex (None if it is
-    not one of them). Higher-order (quadratic) cells map to their linear kind:
+    """Cell kind of an entity: line, tri, quad, tet, pyr, prism, hex (None if it is
+    not one of them). Higher-order (quadratic and cubic) cells map to their linear kind:
     their corners come first in Kratos ordering, so measures use the corners.
     A 3-node entity is a quadratic line when its name says so (Line, Truss,
     Bar, Beam, Edge, Cable) or when its nodes are collinear, else a triangle.
     A 4-node entity is a tet when its nodes span a volume and a quad when they
     are planar. A 6-node entity is a quadratic triangle for ``2D6``/``Tri``
     names, else a prism; an 8-node entity a quadratic quad for ``2D8``/``Quad``
-    names, else a hexahedron."""
+    names, else a hexahedron. A 10-node entity is a cubic triangle for
+    ``2D10``/``Tri`` names, else a quadratic tetrahedron; a 4-node entity named
+    like a line (Line, Truss, ...) is a cubic line; 16 nodes are a cubic
+    quadrilateral and 5, 13 or 14 nodes a (quadratic) pyramid."""
     n = len(conn)
     if n == 2:
         return "line"
@@ -616,11 +629,21 @@ def cell_kind(mesh: Mdpa, type_name: str, conn: list[int]) -> str | None:
     if n == 9:
         return "quad"
     if n == 10:
+        if "3D10" not in type_name and ("2D10" in type_name or "Tri" in type_name):
+            return "tri"
         return "tet"
+    if n == 16:
+        return "quad"
+    if n in (13, 14):
+        return "pyr"
     if n == 15:
         return "prism"
     if n in (20, 27):
         return "hex"
+    if n == 4 and any(s in type_name for s in ("Line", "Truss", "Bar", "Beam", "Edge", "Cable")):
+        return "line"
+    if n == 5:
+        return "pyr"
     if n == 4:
         p = np.array([mesh.nodes[i] for i in conn])
         scale = max(float(np.ptp(p, axis=0).max()), 1e-300)
@@ -640,10 +663,15 @@ _CORNERS: dict[tuple[str, int], tuple[int, ...]] = {
     ("hex", 20): tuple(range(8)),
     ("hex", 27): tuple(range(8)),
     ("prism", 15): tuple(range(6)),
+    ("line", 4): (0, 1),
+    ("tri", 10): (0, 1, 2),
+    ("quad", 16): (0, 1, 2, 3),
+    ("pyr", 13): tuple(range(5)),
+    ("pyr", 14): tuple(range(5)),
 }
 
 # Corner-node count of the linear cell of each kind.
-_LINEAR_COUNTS = {"line": 2, "tri": 3, "quad": 4, "tet": 4, "hex": 8, "prism": 6}
+_LINEAR_COUNTS = {"line": 2, "tri": 3, "quad": 4, "tet": 4, "hex": 8, "prism": 6, "pyr": 5}
 
 # Edge-midpoint slots of quadratic cells: frozenset of corner positions -> the
 # connectivity index holding the midpoint. Verified against Kratos'
@@ -671,10 +699,56 @@ _EDGE_MIDS: dict[tuple[str, int], dict[frozenset, int]] = {
                     frozenset((0, 3)): 9, frozenset((1, 4)): 10, frozenset((2, 5)): 11},
 }
 
+# Edge nodes of cells with SEVERAL nodes per edge (cubic) or whose edges are
+# listed here in a fixed direction: (corner a, corner b) -> connectivity slots in
+# order from a to b. Lagrange (Gmsh / meshio / VTK) node order; NOT cross-checked
+# against Kratos' GenerateEdges (no Kratos source in this repo's CI), unlike the
+# quadratic tables above. Pyramid13/14 follow the same convention as Kratos'
+# Pyramid3D13 (base edges, then edges to the apex).
+_EDGE_NODES: dict[tuple[str, int], dict[tuple[int, int], list[int]]] = {
+    ("line", 4): {(0, 1): [2, 3]},
+    ("tri", 10): {(0, 1): [3, 4], (1, 2): [5, 6], (2, 0): [7, 8]},
+    ("quad", 16): {(0, 1): [4, 5], (1, 2): [6, 7], (2, 3): [8, 9], (3, 0): [10, 11]},
+    ("pyr", 13): {(0, 1): [5], (1, 2): [6], (2, 3): [7], (3, 0): [8],
+                  (0, 4): [9], (1, 4): [10], (2, 4): [11], (3, 4): [12]},
+    ("pyr", 14): {(0, 1): [5], (1, 2): [6], (2, 3): [7], (3, 0): [8],
+                  (0, 4): [9], (1, 4): [10], (2, 4): [11], (3, 4): [12]},
+}
+
+# Interior nodes sitting next to each corner (quad16: Gmsh order, node 12+i near
+# corner i); they permute with the corners under an orientation flip.
+_CORNER_INTERIOR: dict[tuple[str, int], tuple[int, ...]] = {
+    ("quad", 16): (12, 13, 14, 15),
+}
+
+
+def _edge_slots(kind: str, n: int, a: int, b: int) -> list[int] | None:
+    """Connectivity slots of the nodes between corners ``a`` and ``b`` ordered from
+    ``a`` to ``b`` (None when ``(kind, n)`` has no such edge)."""
+    table = _EDGE_NODES.get((kind, n))
+    if table is not None:
+        if (a, b) in table:
+            return list(table[(a, b)])
+        if (b, a) in table:
+            return list(reversed(table[(b, a)]))
+        return None
+    slot = _EDGE_MIDS.get((kind, n), {}).get(frozenset((a, b)))
+    return None if slot is None else [slot]
+
+
+def _edges_with_slots(kind: str, n: int) -> list[tuple[int, int, list[int]]]:
+    table = _EDGE_NODES.get((kind, n))
+    if table is not None:
+        return [(a, b, list(slots)) for (a, b), slots in table.items()]
+    return [(a, b, [slot]) for edge, slot in _EDGE_MIDS.get((kind, n), {}).items()
+            for a, b in [tuple(edge)]]
+
+
 # Face-center slots of quadratic cells with face nodes, aligned with the
 # FACES tables below (verified against Kratos' GenerateFaces).
-_FACE_CENTERS: dict[tuple[str, int], list[int]] = {
+_FACE_CENTERS: dict[tuple[str, int], list[int | None]] = {
     ("hex", 27): [20, 25, 21, 22, 23, 24],
+    ("pyr", 14): [13, None, None, None, None],
 }
 
 # Slots that stay in place under an orientation flip (volume / face centers
@@ -682,6 +756,7 @@ _FACE_CENTERS: dict[tuple[str, int], list[int]] = {
 _FIXED_SLOTS: dict[tuple[str, int], tuple[int, ...]] = {
     ("hex", 27): (26,),
     ("quad", 9): (8,),
+    ("tri", 10): (9,),
 }
 
 
@@ -704,17 +779,15 @@ def is_higher_order(mesh: Mdpa, type_name: str, conn: list[int]) -> bool:
 
 def full_face_nodes(kind: str, n: int, corners: tuple[int, ...], face_index: int) -> list[int]:
     """Connectivity indices of one face: the outward-ordered ``corners`` loop,
-    then its edge midpoints in loop order, then its face center (if any)."""
+    then the nodes along each edge in loop order (one per edge for quadratic
+    cells, two for cubic ones), then its face center (if any)."""
     full = list(corners)
-    mids = _EDGE_MIDS.get((kind, n), {})
     pairs = [(corners[0], corners[1])] if len(corners) == 2 else \
         list(zip(corners, corners[1:] + corners[:1]))
     for a, b in pairs:
-        slot = mids.get(frozenset((a, b)))
-        if slot is not None:
-            full.append(slot)
+        full.extend(_edge_slots(kind, n, a, b) or [])
     centers = _FACE_CENTERS.get((kind, n))
-    if centers is not None:
+    if centers is not None and centers[face_index] is not None:
         full.append(centers[face_index])
     return full
 
@@ -1157,9 +1230,10 @@ def convert_cells(mesh: Mdpa, mode: str, element_name: str | None = None,
     """Split quadrilaterals into 2 triangles (``quad_to_tri``) or hexahedra into
     6 tetrahedra (``hex_to_tet``, Kuhn split: conforming on structured meshes
     with a consistent node ordering; boundary quads follow the tet faces), or
-    drop the mid-edge/face nodes of quadratic cells (``quadratic_to_linear``:
-    tri6->tri, quad8/9->quad, tet10->tet, hex20/27->hex, wedge15->prism,
-    line3->line; entity ids and sub model parts are unchanged).
+    drop the mid-edge/face nodes of quadratic and cubic cells (``quadratic_to_linear``:
+    tri6/tri10->tri, quad8/9/16->quad, tet10->tet, hex20/27->hex, wedge15->prism,
+    pyramid13/14->pyramid, line3/line4->line; entity ids and sub model parts are
+    unchanged).
 
     Entities of the other cell kinds are untouched. New type names default to the
     old ones with ``2D4N``->``2D3N`` / ``3D8N``->``3D4N`` (``3D4N`` -> ``3D3N``
@@ -1187,7 +1261,7 @@ def convert_cells(mesh: Mdpa, mode: str, element_name: str | None = None,
                         and is_higher_order(mesh, type_name, c))
         if higher:
             raise ValueError(f"mode '{mode}' needs linear cells but element(s) {higher[:5]} "
-                             f"({type_name}) are quadratic; run mode='quadratic_to_linear' first")
+                             f"({type_name}) are higher-order; run mode='quadratic_to_linear' first")
         targets = [e for e, (_, c) in by_id.items()
                    if cell_kind(mesh, type_name, c) == src_kind]
         if not targets:
@@ -1262,9 +1336,10 @@ def extract_boundary(mesh: Mdpa, condition_name: str | dict[str, str], part: str
     ``element_part`` restricts to the elements of a part; ``node_selector`` (see
     select_nodes) keeps only faces whose every node is selected, e.g. a plane.
     ``condition_name`` is one name, or {"2": ..., "3": ..., ...} keyed by the
-    face node count (needed for prisms, mixed meshes and higher-order cells:
-    quadratic triangle/quad edges have 3 nodes, tet10 and wedge tri faces 6,
-    hex20 and wedge quad faces 8, hex27 faces 9). Faces are oriented
+    face node count (needed for prisms, pyramids, mixed meshes and higher-order
+    cells: quadratic triangle/quad edges have 3 nodes, cubic tri10/quad16 edges 4,
+    tet10 and wedge/pyramid tri faces 6, hex20 and wedge/pyramid quad faces 8,
+    hex27 faces 9, pyramid14 base 9). Faces are oriented
     outward for positively oriented elements; higher-order faces carry their
     mid-edge (and face) nodes in Kratos order."""
     if element_part:
@@ -1401,7 +1476,8 @@ def extrude(mesh: Mdpa, heights: list[float], z0: float = 0.0,
             if kind not in ("tri", "quad") or (kind, len(conn)) not in _EXTRUDE_COUNTS:
                 raise ValueError(f"Element {eid} ({type_name}) cannot be extruded; "
                                  "only linear and quadratic (tri6/quad8) triangles and "
-                                 "quadrilaterals (quadratic_to_linear first for the rest)")
+                                 "quadrilaterals (quadratic_to_linear first for the rest, "
+                                 "e.g. cubic tri10/quad16)")
             n_new = _EXTRUDE_COUNTS[(kind, len(conn))]
             new_type = _extruded_name(type_name, element_names, len(conn), n_new)
             bucket = out.elements.setdefault(new_type, {})

@@ -29,7 +29,8 @@ element simulations end to end:
   conditions and geometries; create sub model parts from geometric selectors;
   transform, merge, extrude, convert quads/hexes to simplices, extract boundary
   conditions on free faces and check mesh quality; parametric shapes
-  (annulus, disc, cylinder, sphere, polygon), meshio import/export and, with
+  (annulus, disc, cylinder, sphere, polygon with holes and graded sizes), meshio
+  import/export (linear, quadratic, cubic triangle/quad and pyramid cells) and, with
   the optional `gmsh` extra, arbitrary geometry. Edit ProjectParameters and
   Materials generically: get/set any setting, add/update/remove any process,
   stage-aware ([mesh](docs/tools/mesh-editing.md),

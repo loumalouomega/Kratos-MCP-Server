@@ -53,10 +53,20 @@ def register(mcp) -> None:
                      subdivision; parts side_0, side_1, ... plus hole_<k> per hole
                      loop; holes is a list of vertex loops strictly inside the
                      polygon; target_size adds subdivision rounds until no edge
-                     is longer than it (at most 6 rounds total, best effort)
+                     is longer than it (at most 6 rounds total, best effort).
+                     Graded sizes without gmsh: size_field is an expression of
+                     x, y (e.g. "0.1 + 0.3*sqrt(x*x + y*y)") and/or
+                     size_sources a list of {"point": [x, y]} or
+                     {"segment": [[x0, y0], [x1, y1]]} with "size" (edge length
+                     at the source) and "growth" (default 0.3, length gained per
+                     unit distance); the minimum of all wins. The mesh is refined
+                     by conforming longest-edge bisection until every triangle's
+                     longest edge fits the local size (max_elements=200000
+                     guards runaway sizes), smooth_iterations=0..100 then
+                     Laplacian-smooths interior nodes.
         element_name overrides the element type (default: SmallDisplacement
-        elements of matching node count). For graded sizes or CAD input
-        use mesh_generate_gmsh."""
+        elements of matching node count). For CAD input or quality-driven
+        meshes use mesh_generate_gmsh."""
         if kind not in geo.GENERATORS:
             raise ValueError(f"Unknown kind '{kind}'. Use {sorted(geo.GENERATORS)}")
         fn = geo.GENERATORS[kind]
@@ -94,9 +104,11 @@ def register(mcp) -> None:
         .mdpa. The highest-dimension cells become elements, the next lower
         dimension conditions; named physical groups / cell sets become sub model
         parts (a 'domain' part with everything is added). Linear and quadratic
-        line, triangle, quad, tetra, hexahedron and wedge cells are converted
-        (15-node wedges cannot be represented by meshio itself and are refused
-        on export; cubic and higher Lagrange cells are rejected).
+        line, triangle, quad, tetra, hexahedron, wedge and pyramid cells are
+        converted, plus the cubic line4 / triangle10 / quad16 (other cubic and
+        higher Lagrange cells are rejected). 15-node wedges and 13-node
+        pyramids cannot be represented by meshio itself and are refused on
+        export (see mesh_export linearize_unsupported).
         element_name / condition_name set the Kratos types (defaults are generic
         Element2D3N ... SurfaceCondition3D4N, fine for thermal or fluid solvers
         that replace elements; give e.g. SmallDisplacementElement2D3N for
@@ -117,18 +129,27 @@ def register(mcp) -> None:
         output: str,
         file_format: str | None = None,
         overwrite: bool = False,
+        linearize_unsupported: bool = False,
     ) -> dict[str, Any]:
         """Export a .mdpa to another mesh format chosen by the output extension
         (.vtk, .vtu, .msh, .med, .inp, .xdmf, ...) or file_format. Elements come
         first, then conditions; cell data carries kratos:id, kratos:property_id
         and kratos:entity (0 element / 1 condition), sub model parts become cell
-        sets (format permitting) and scalar nodal data point data."""
+        sets (format permitting) and scalar nodal data point data. Cubic
+        triangle10 / quad16 / line4 cells only export to formats that have them
+        (gmsh .msh, not VTK). meshio has no 15-node wedge or 13-node pyramid:
+        they are refused unless linearize_unsupported=true, which writes their
+        corner nodes only (the result carries a warnings entry)."""
         _, mesh = _load(path)
         dst = Path(output).expanduser().resolve()
         if dst.exists() and not overwrite:
             raise ValueError(f"{dst} already exists; pass overwrite=true to replace it")
-        written = mesh_io.export_mesh(mesh, dst, file_format)
-        return {"written_to": str(written), "mesh": mesh.inspect()}
+        notes: list[str] = []
+        written = mesh_io.export_mesh(mesh, dst, file_format, linearize_unsupported, notes)
+        out: dict[str, Any] = {"written_to": str(written), "mesh": mesh.inspect()}
+        if notes:
+            out["warnings"] = notes
+        return out
 
     @mcp.tool()
     async def mesh_generate_gmsh(

@@ -117,6 +117,10 @@ installed) via `-displayfd`.
   Quadratic cells (tri6, quad8/9, tet10, hex20/27, wedge15, line3; corners-first Kratos
   ordering verified against `kratos/geometries/*`) map to their linear kind for
   measures/boundary/extrusion; `convert_cells` has a `quadratic_to_linear` mode.
+  Cubic line4/tri10/quad16 and pyramid5/13/14 are handled through `_EDGE_NODES`
+  (ordered, direction-aware edge slots) and `_CORNER_INTERIOR`; their order is the
+  Gmsh/meshio Lagrange convention, NOT verified against Kratos sources. `cell_kind`
+  disambiguates 10 nodes by name (`2D10`/`Tri` -> tri, else tet); tet20/wedge18 stay rejected.
   `mdpa.py` also owns `find_part`/`part_paths` (the one dotted-path
   lookup), `expected_node_count` (type-name suffix -> node count, used by `validate`) and
   geometries (`Mdpa.geometries`, `SubModelPart.geometries`). Boundary conditions it creates are
@@ -124,11 +128,15 @@ installed) via `-displayfd`.
   `POSITIVE_FACE_PRESSURE` as tension (verified: plate + Lame cylinder), so compressive
   pressure needs a negative value.
 - `src/kratos_mcp/geometry.py` — numpy-only parametric generators (annulus, disc, cylinder via
-  `extrude`, sphere, ear-clipped polygon with hole bridging + `target_size` subdivision)
-  following `create_rectangle_mesh`'s part naming (`side_<i>`, `hole_<k>`).
+  `extrude`, sphere, ear-clipped polygon with hole bridging + `target_size` subdivision and
+  gmsh-free grading: `size_field`/`size_sources` -> `grade_triangles` conforming Rivara
+  longest-edge bisection, optional `smooth_interior`) following `create_rectangle_mesh`'s
+  part naming (`side_<i>`, `hole_<k>`).
 - `src/kratos_mcp/mesh_io.py` + `gmsh_worker.py` — meshio import/export (`from_meshio`/
-  `to_meshio`, physical groups <-> sub model parts; linear and quadratic cells, except
-  15-node wedges which meshio 5.3 itself cannot represent) and the optional gmsh generator.
+  `to_meshio`, physical groups <-> sub model parts; linear, quadratic and cubic line4/triangle10/
+  quad16 plus pyramid/pyramid14, except 15-node wedges and 13-node pyramids which meshio 5.3
+  itself cannot represent — `linearize_unsupported` exports their corners; `.msh` is forced to
+  Gmsh format because meshio's extension lookup would pick Ansys; VTK has no triangle10/quad16) and the optional gmsh generator.
   `gmsh_worker.py` is the ONLY module that imports gmsh (native library; same subprocess +
   `--result-file` rule as `render_worker.py`; needs libGLU/libXft on Linux). `gmsh` is the
   `gmsh` extra; tests skip when it is missing.
@@ -174,6 +182,9 @@ installed) via `-displayfd`.
   (before/after `Mdpa` summaries, boundary preservation by node bounding box),
   `process_block`/`validate`/`has_remeshing` for in-run `mmg_process` blocks (the single
   detection point used by every rejection: studies, checkpoints, MPI, sessions).
+  `mesh_kind` (planar2d/volume3d/surface3d; non-simplex or mixed input raises in `build_request`)
+  picks the MMG variant that `meshing_support` (`mmg2d`/`mmg3d`/`mmg3d_surfaces`) must offer;
+  3D/surface are unverified and the tool result says so.
   Backs `mesh_remesh` (`tools/mesh.py`; worker ops `meshing_support`, `remesh_mdpa`) and
   `add_remeshing_process` (`tools/scaffold.py`).
 - `src/kratos_mcp/examples/adaptive_remeshing/` — `plate.mdpa` + `request.json` (the

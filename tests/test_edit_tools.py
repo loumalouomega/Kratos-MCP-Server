@@ -491,3 +491,15 @@ def test_add_boundary_condition_generic_and_staged(case, tmp_path):
     loads_b = data["stages"]["b"]["stage_settings"]["processes"]["loads_process_list"]
     loads_a = data["stages"]["a"]["stage_settings"]["processes"].get("loads_process_list", [])
     assert len(loads_b) == len(loads_a) + 1
+
+
+def test_polygon_tool_accepts_grading_parameters(tmp_path):
+    out = T.mdpa_create_geometry_mesh(
+        str(tmp_path / "g.mdpa"), "polygon",
+        {"vertices": [[0, 0], [4, 0], [4, 2], [0, 2]], "target_size": 2.0,
+         "size_sources": [{"point": [0, 0], "size": 0.2, "growth": 0.5}]})
+    assert out["valid"] and out["mesh"]["num_elements"] > 40
+    bad = T.mdpa_create_geometry_mesh(
+        str(tmp_path / "g2.mdpa"), "polygon",
+        {"vertices": [[0, 0], [4, 0], [4, 2], [0, 2]], "size_field": "1/0"})
+    assert "size_field" in bad["error"]

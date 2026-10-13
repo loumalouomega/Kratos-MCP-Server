@@ -737,3 +737,110 @@ def test_remesh_case_rejected_by_sessions(tmp_path):
     shutil.copytree(SETUP_CASE, case)
     with pytest.raises(sessions.SessionError, match="mmg_process"):
         sessions.start(str(case), timeout=120)
+
+
+# --- mesh kind detection and simplex validation ------------------------------------
+
+def _tet_mesh():
+    from kratos_mcp import mesh_edit
+
+    m = mdpa.create_box_mesh(1, 1, 1, 2, 2, 2)
+    mesh_edit.convert_cells(m, "hex_to_tet")
+    return m
+
+
+def test_mesh_kind_detection():
+    plate = mdpa.read(EXAMPLE / "plate.mdpa")
+    assert remesh.mesh_kind(plate) == "planar2d"
+    assert remesh.mesh_kind(_tet_mesh()) == "volume3d"
+    tri = mdpa.create_rectangle_mesh(1.0, 1.0, 2, 2, element_name="Element2D3N",
+                                     condition_name="LineCondition2D2N", triangles=True)
+    assert remesh.mesh_kind(tri) == "planar2d"
+    for nid, (x, y, _) in list(tri.nodes.items()):
+        tri.nodes[nid] = (x, y, 0.3 * x)                   # tilted: spans z
+    assert remesh.mesh_kind(tri) == "surface3d"
+    assert remesh.build_request(tri, strategy="uniform", min_size=0.2)["mesh_kind"] == "surface3d"
+    assert remesh.build_request(_tet_mesh(), strategy="uniform", min_size=0.2)["domain_size"] == 3
+
+
+def test_non_simplex_and_mixed_meshes_are_rejected():
+    quad = mdpa.create_rectangle_mesh(1.0, 1.0, 2, 2)
+    with pytest.raises(ValueError, match="linear triangle or tetrahedron"):
+        remesh.build_request(quad, strategy="uniform", min_size=0.2)
+    hexes = mdpa.create_box_mesh(1, 1, 1, 2, 2, 2)
+    with pytest.raises(ValueError, match="mdpa_convert_cells"):
+        remesh.build_request(hexes, strategy="uniform", min_size=0.2)
+    tri6 = mdpa.read(EXAMPLE / "plate.mdpa")
+    tri6.elements["Element2D6N"] = {99: (1, [1, 2, 3, 4, 5, 6])}
+    with pytest.raises(ValueError, match="6 nodes"):
+        remesh.build_request(tri6, strategy="uniform", min_size=0.2)
+    mixed = _tet_mesh()
+    mixed.nodes.update({9001: (0.0, 0.0, 0.0), 9002: (1.0, 0.0, 0.0), 9003: (0.0, 1.0, 0.0)})
+    mixed.elements["Element2D3N"] = {9999: (1, [9001, 9002, 9003])}
+    with pytest.raises(ValueError, match="mixes triangles and tetrahedra"):
+        remesh.build_request(mixed, strategy="uniform", min_size=0.2)
+
+
+def test_mesh_remesh_rejects_quad_mesh_before_reaching_kratos(tmp_path, monkeypatch, remesh_tool):
+    worker = FakeWorker(tmp_path)
+    monkeypatch.setattr(bridge, "run_op", worker)
+    src = tmp_path / "quad.mdpa"
+    mdpa.create_rectangle_mesh(1.0, 1.0, 2, 2).write(src)
+    out = _run(remesh_tool(str(src), str(tmp_path / "o.mdpa"), strategy="uniform", min_size=0.2))
+    assert "linear triangle or tetrahedron" in out["error"]
+    assert worker.calls == []
+
+
+def test_mesh_remesh_reports_kind_and_checks_the_matching_mmg_variant(tmp_path, monkeypatch,
+                                                                       remesh_tool):
+    tets = tmp_path / "tets.mdpa"
+    _tet_mesh().write(tets)
+
+    class Volume(FakeWorker):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.finer = _tet_mesh()
+            self.variants = {"mmg": True, "mmg2d": True, "mmg3d": True, "mmg3d_surfaces": False}
+
+        def __call__(self, op, args=None, timeout=120.0, use_cache=True):
+            if op == "meshing_support":
+                self.calls.append((op, {}))
+                return {"meshing": True, **self.variants}
+            return super().__call__(op, args, timeout, use_cache)
+
+    worker = Volume(tmp_path)
+    monkeypatch.setattr(bridge, "run_op", worker)
+    out = _run(remesh_tool(str(tets), str(tmp_path / "o.mdpa"), strategy="uniform", min_size=0.3))
+    assert "error" not in out, out
+    assert out["mesh_kind"] == "volume3d" and "not been verified" in out["warnings"][0]
+    # a surface mesh needs MmgProcess3DSurfaces, which this build lacks
+    surf = mdpa.create_rectangle_mesh(1.0, 1.0, 2, 2, element_name="Element2D3N",
+                                      condition_name="LineCondition2D2N", triangles=True)
+    for nid, (x, y, _) in list(surf.nodes.items()):
+        surf.nodes[nid] = (x, y, 0.3 * x)
+    src = tmp_path / "surf.mdpa"
+    surf.write(src)
+    out = _run(remesh_tool(str(src), str(tmp_path / "o2.mdpa"), strategy="uniform", min_size=0.3))
+    assert "MMG remeshing is not available" in out["error"]
+    assert out["meshing_support"]["mmg3d_surfaces"] is False
+    # the 2D plate is unaffected and carries no warning
+    worker2 = FakeWorker(tmp_path)
+    monkeypatch.setattr(bridge, "run_op", worker2)
+    ok = _run(remesh_tool(str(EXAMPLE / "plate.mdpa"), str(tmp_path / "o3.mdpa"),
+                          strategy="uniform", min_size=0.07))
+    assert ok["mesh_kind"] == "planar2d" and "warnings" not in ok
+
+
+@pytest.mark.kratos
+def test_3d_tetrahedral_remesh_smoke(tmp_path):
+    """First real-MMG evidence for the 3D path (UNRUN in CI so far: needs MmgProcess3D).
+    Asserts only structure - the reference-number probe in the roadmap is still open."""
+    _mmg_or_skip()
+    src = tmp_path / "tets.mdpa"
+    _tet_mesh().write(src)
+    result = _remesh(src, tmp_path / "out.mdpa", strategy="uniform", min_size=0.25)
+    if "error" in result and "not available" in result["error"]:
+        pytest.skip(result["error"])
+    assert "error" not in result, result
+    assert result["mesh_kind"] == "volume3d" and result["issues"] == []
+    assert result["after"]["num_elements"] > 0

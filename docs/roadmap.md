@@ -36,7 +36,7 @@ One-shot `mesh_remesh` (levelset, analytic or solved-field hessian with the tran
 
 - **Remeshing during a run.** An `mmg_process` that fires inside the solution loop aborts standard solvers with SIGSEGV after the first remesh (verified with the thermal solver): the strategy, DOFs and builder stay bound to the old mesh. Needs a solver-side re-initialization hook (clear and rebuild after the `MODIFIED` flag) and a story for output continuity, restart and studies.
 - **Error estimation from recovered stresses.** The hessian can follow a field read from a VTK result, but `strategy: spr` (superconvergent patch recovery) needs element stress data from a live solved model part, which a mesh plus VTK point data cannot provide; it would run in the runner/session worker on the solved model, and vector or element-wise fields have no `NodalData` path yet.
-- **3D and surface meshes.** Only the 2D path has been run against real numbers; `MmgProcess3D` / `MmgProcess3DSurfaces` are wired but unverified.
+- **3D and surface meshes.** Only the 2D path has been run against real numbers. Input validation (linear simplices only, mesh-kind detection, per-variant MMG capability checks, a `warnings` entry on 3D results) is shipped; `MmgProcess3D` / `MmgProcess3DSurfaces` runs and reference numbers are not.
 
 **Probe:** adapt a 3D tetrahedral mesh to a solved structural field read from VTK and show the transferred stress/temperature error against a uniformly refined mesh.
 
@@ -46,25 +46,28 @@ Build these separate experiments on the existing sweeps and response extraction.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
-### 2.3 Mesh editing: remaining gaps — M
+### 2.3 Mesh editing: remaining gaps — S
 
 The `mdpa_*` editing tools, `mesh_import`/`mesh_export`, `Tables`,
 `ElementalData`/`ConditionalData`, vector/flag `NodalData`, per-sub-model-part
-data, quadratic cells and hole-capable polygon meshing are shipped. Gaps that remain:
+data, quadratic and cubic (line4, triangle10, quad16) cells, pyramids and
+hole-capable, gmsh-free graded polygon meshing are shipped. Gaps that remain:
 
-- **Higher-order cells past quadratic.** Quality, boundary extraction, extrusion,
-  cell conversion and meshio import handle linear and quadratic
-  line/triangle/quad/tetra/hexahedron/wedge cells; cubic and higher Lagrange
-  cells (10+ node triangles/tetrahedra, 18-node wedges, …), pyramids and meshio
-  export of 15-node wedges (meshio 5.3 itself has no `wedge15` cell type) are
-  rejected rather than converted.
-- **Graded unstructured generation without gmsh.** `mdpa_create_geometry_mesh`
-  `polygon` handles holes (bridged slits, `hole_<k>` parts) and uniform
-  `target_size` subdivision; spatially graded sizes and CAD need the optional
-  gmsh extra, which is not exercised in CI.
+- **Cells past that set.** Cubic tetrahedra and 18-node wedges (their face/edge
+  node order could not be checked without a Kratos source tree), anything of
+  order four or higher, and meshio export of 15-node wedges and 13-node
+  pyramids (meshio 5.3 has no such cell type; `linearize_unsupported` writes
+  their corners) are rejected rather than converted.
+- **Kratos cross-check of cubic ordering.** `tri10` / `quad16` / `line4` follow
+  the Gmsh/meshio Lagrange order; the Kratos geometry classes' node order
+  (`Triangle2D10`, …) has not been compared.
+- **Quality of graded polygon meshes.** Longest-edge bisection keeps meshes
+  conforming but not well shaped; CAD input and quality-driven sizing still need
+  the optional gmsh extra, which is not exercised in CI.
 
-**Probe:** round-trip a cubic (10-node) triangle through `mesh_import` without
-losing it; mesh a polygon with a graded (non-uniform) size field without gmsh.
+**Probe:** compare `Triangle2D10` node order against Kratos by solving a cubic
+patch test; mesh a polygon with a graded size field and report minimum angle
+against gmsh.
 
 ## Non-goals and decisions taken
 
@@ -80,5 +83,5 @@ Recorded so they are not re-proposed as gaps.
 ## Suggested sequencing
 
 1. Verify local MPI on a real distributed build, then add cluster launch.
-2. Extend remeshing to SPR error estimation, in-loop remeshing and 3D (solved-field hessian metrics, coupled-solver CoSimulation, partitioned FSI and offline/setup-time remeshing are shipped).
+2. Extend remeshing to SPR error estimation, in-loop remeshing and verified 3D runs (solved-field hessian metrics, coupled-solver CoSimulation, partitioned FSI and offline/setup-time remeshing are shipped).
 3. Evaluate optimization and ROM once reproducibility and quantitative comparisons are established. These are exploratory directions, not release commitments.

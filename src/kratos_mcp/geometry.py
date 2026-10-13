@@ -4,7 +4,8 @@ All of them return an :class:`~kratos_mcp.mdpa.Mdpa` that follows the naming
 convention of ``create_rectangle_mesh``: a ``domain`` part with every node and
 element plus named boundary parts holding the boundary nodes and (when a
 condition type is given) the boundary conditions. Arbitrary shapes with holes
-or CAD input need the optional gmsh route (see ``mesh_io.gmsh_generate``).
+or CAD input need the optional gmsh route (see ``mesh_io.gmsh_generate``); a
+polygon can also be graded without gmsh (``size_field`` / ``size_sources``).
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import numpy as np
 
 from . import mesh_edit
 from .mdpa import Mdpa, SubModelPart
+from .remesh import compile_expression
 
 
 def _attach_boundaries(m: Mdpa, boundaries: dict[str, list[list[int]]],
@@ -346,19 +348,203 @@ def ear_clip(poly: list[tuple[float, float]],
     return tris
 
 
+def size_function(size_field: str | None = None,
+                  size_sources: list[dict[str, Any]] | None = None):
+    """``h(x, y)`` target edge length from an expression of ``x``/``y`` (see
+    ``remesh.compile_expression``) and/or sources ``{"point": [x, y]}`` or
+    ``{"segment": [[x0, y0], [x1, y1]]}`` with ``size`` (at the source) and
+    ``growth`` (length gained per unit distance, default 0.3); the result is the
+    minimum over everything given. Raises ValueError."""
+    if size_field is None and not size_sources:
+        raise ValueError("give size_field and/or size_sources")
+    fields = [compile_expression(size_field)] if size_field is not None else []
+    sources: list[tuple[np.ndarray, np.ndarray, float, float]] = []
+    for k, src in enumerate(size_sources or []):
+        if not isinstance(src, dict) or ("point" in src) == ("segment" in src):
+            raise ValueError(f"size_sources[{k}] needs exactly one of 'point' or 'segment'")
+        try:
+            pts = [src["point"]] * 2 if "point" in src else list(src["segment"])
+            a, b = (np.array([float(v[0]), float(v[1])]) for v in pts)
+            size = float(src.get("size"))
+            growth = float(src.get("growth", 0.3))
+        except (TypeError, ValueError, IndexError, KeyError):
+            raise ValueError(f"size_sources[{k}] is malformed: point [x, y] or segment "
+                             "[[x0, y0], [x1, y1]] plus a numeric size (and growth)") from None
+        if not (math.isfinite(size) and size > 0 and math.isfinite(growth) and growth >= 0):
+            raise ValueError(f"size_sources[{k}]: size must be positive and growth >= 0")
+        sources.append((a, b, size, growth))
+
+    def h(x: float, y: float) -> float:
+        values: list[float] = []
+        for field in fields:
+            try:
+                values.append(float(field(x, y, 0.0)))
+            except (ArithmeticError, ValueError) as exc:
+                raise ValueError(f"size_field failed at ({x:.6g}, {y:.6g}): {exc}") from None
+        p = np.array([x, y])
+        for a, b, size, growth in sources:
+            d = b - a
+            denom = float(d @ d)
+            t = 0.0 if denom == 0 else min(1.0, max(0.0, float((p - a) @ d) / denom))
+            values.append(size + growth * float(np.linalg.norm(p - (a + t * d))))
+        out = min(values)
+        if not (math.isfinite(out) and out > 0):
+            raise ValueError(f"the size field is not positive and finite at ({x:.6g}, {y:.6g})")
+        return out
+
+    return h
+
+
+def grade_triangles(points: list[tuple[float, float]], tris: list[tuple[int, int, int]],
+                    h, max_elements: int = 200000
+                    ) -> tuple[list[tuple[float, float]], list[tuple[int, int, int]]]:
+    """Conforming Rivara longest-edge refinement: every triangle whose longest edge
+    exceeds ``h`` (the smallest of ``h`` at its corners and centroid) is bisected;
+    the neighbour across the split edge is bisected with it, after first refining
+    its own longest edge when that is a different one, so the mesh never gets
+    hanging nodes. ``tris`` must be counter-clockwise; boundary edges stay on
+    their original segments. Raises ValueError past ``max_elements``."""
+    points = list(points)
+    alive: dict[int, tuple[int, int, int]] = dict(enumerate(tris))
+    edge_tris: dict[tuple[int, int], set[int]] = {}
+    next_id = len(alive)
+
+    def key(u: int, v: int) -> tuple[int, int]:
+        return (u, v) if u < v else (v, u)
+
+    def link(t: int) -> None:
+        a, b, c = alive[t]
+        for u, v in ((a, b), (b, c), (c, a)):
+            edge_tris.setdefault(key(u, v), set()).add(t)
+
+    def unlink(t: int) -> None:
+        a, b, c = alive[t]
+        for u, v in ((a, b), (b, c), (c, a)):
+            edge_tris[key(u, v)].discard(t)
+
+    def order(u: int, v: int) -> tuple[float, int, int]:
+        # strict total order on edges: equal lengths are tie-broken by node ids, so
+        # two triangles sharing an edge always agree on which edge is longer
+        return (round(math.dist(points[u], points[v]), 12), *key(u, v))
+
+    def longest(t: int) -> tuple[int, int]:
+        a, b, c = alive[t]
+        return max(((a, b), (b, c), (c, a)), key=lambda e: order(*e))
+
+    def split(t: int, edge: tuple[int, int], mid: int, created: list[int]) -> None:
+        nonlocal next_id
+        a, b, c = alive[t]
+        for i, (u, v, w) in enumerate(((a, b, c), (b, c, a), (c, a, b))):
+            if key(u, v) == key(*edge):
+                break
+        unlink(t)
+        del alive[t]
+        for child in ((u, mid, w), (mid, v, w)):
+            alive[next_id] = child
+            link(next_id)
+            created.append(next_id)
+            next_id += 1
+
+    def bisect(t: int, created: list[int]) -> None:
+        path = [t]
+        while path:
+            cur = path[-1]
+            edge = longest(cur)
+            others = edge_tris[key(*edge)] - {cur}
+            nb = next(iter(others)) if others else None
+            if nb is not None and key(*longest(nb)) != key(*edge):
+                path.append(nb)
+                continue
+            u, v = edge
+            points.append(((points[u][0] + points[v][0]) / 2, (points[u][1] + points[v][1]) / 2))
+            mid = len(points) - 1
+            split(cur, edge, mid, created)
+            if nb is not None:
+                split(nb, edge, mid, created)
+                path = [p for p in path if p in alive]
+            else:
+                path.pop()
+            path = [p for p in path if p in alive]
+            if len(alive) > max_elements:
+                raise ValueError(f"grading needs more than max_elements={max_elements} "
+                                 "triangles; use a larger size or raise max_elements")
+
+    def marked(t: int) -> bool:
+        a, b, c = alive[t]
+        pa, pb, pc = points[a], points[b], points[c]
+        centroid = ((pa[0] + pb[0] + pc[0]) / 3, (pa[1] + pb[1] + pc[1]) / 3)
+        target = min(h(*pa), h(*pb), h(*pc), h(*centroid))
+        return math.dist(points[longest(t)[0]], points[longest(t)[1]]) > target * (1 + 1e-9)
+
+    for t in list(alive):
+        link(t)
+    queue = list(alive)
+    while queue:
+        t = queue.pop()
+        if t not in alive or not marked(t):
+            continue
+        created: list[int] = []
+        bisect(t, created)
+        queue += [c for c in created if c in alive]
+    return points, list(alive.values())
+
+
+def smooth_interior(points: list[tuple[float, float]], tris: list[tuple[int, int, int]],
+                    iterations: int) -> list[tuple[float, float]]:
+    """Laplacian smoothing of the nodes that do not lie on a free edge; a move that
+    would flip or collapse an adjacent triangle is skipped."""
+    points = list(points)
+    counts: dict[tuple[int, int], int] = {}
+    neighbours: dict[int, set[int]] = {}
+    incident: dict[int, list[int]] = {}
+    for t, (a, b, c) in enumerate(tris):
+        for u, v in ((a, b), (b, c), (c, a)):
+            k = (min(u, v), max(u, v))
+            counts[k] = counts.get(k, 0) + 1
+            neighbours.setdefault(u, set()).add(v)
+            neighbours.setdefault(v, set()).add(u)
+        for n in (a, b, c):
+            incident.setdefault(n, []).append(t)
+    fixed = {n for (u, v), c in counts.items() if c == 1 for n in (u, v)}
+
+    def area(t: int) -> float:
+        a, b, c = (points[i] for i in tris[t])
+        return (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])
+
+    for _ in range(iterations):
+        for n in sorted(neighbours):
+            if n in fixed:
+                continue
+            old = points[n]
+            ring = [points[m] for m in neighbours[n]]
+            points[n] = (sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring))
+            if any(area(t) <= 0 for t in incident[n]):
+                points[n] = old
+    return points
+
+
 def create_polygon_mesh(vertices: list[list[float]], refinements: int = 0,
                         element_name: str = "SmallDisplacementElement2D3N",
                         condition_name: str | None = "LineLoadCondition2D2N",
                         property_id: int = 1, root_part: str = "domain",
                         holes: list[list[list[float]]] | None = None,
-                        target_size: float | None = None) -> Mdpa:
+                        target_size: float | None = None,
+                        size_field: str | None = None,
+                        size_sources: list[dict[str, Any]] | None = None,
+                        max_elements: int = 200000,
+                        smooth_iterations: int = 0) -> Mdpa:
     """Triangle mesh of a simple polygon, optionally with holes: ear clipping,
     then ``refinements`` rounds of midpoint subdivision (each splits a triangle
     in 4). One boundary part ``side_<i>`` per outer edge (edge i joins vertex i
     and i+1) plus ``hole_<k>`` per hole loop. ``target_size`` adds uniform
     subdivision rounds until no edge is longer than it (at most 6 rounds total;
-    best effort). Triangle quality is whatever ear clipping gives; use gmsh for
-    graded or CAD-driven meshes."""
+    best effort). ``size_field`` (expression of x, y) and/or ``size_sources``
+    (point / segment sources with ``size`` and ``growth``, see
+    :func:`size_function`) then grade the mesh by conforming longest-edge
+    bisection until each triangle's longest edge is at most the local size
+    (raises past ``max_elements`` triangles); ``smooth_iterations`` rounds of
+    Laplacian smoothing move interior nodes only. Triangle quality is whatever
+    ear clipping gives; use gmsh for CAD-driven meshes."""
     poly = [(float(v[0]), float(v[1])) for v in vertices]
     if not 0 <= refinements <= 6:
         raise ValueError("refinements must be between 0 and 6")
@@ -420,6 +606,16 @@ def create_polygon_mesh(vertices: list[list[float]], refinements: int = 0,
     tris = [(remap[a], remap[b], remap[c]) for a, b, c in tris]
     tris = [t for t in tris if len(set(t)) == 3]
     points = unique
+    if not isinstance(max_elements, int) or isinstance(max_elements, bool) or max_elements < 1:
+        raise ValueError("max_elements must be a positive integer")
+    if not isinstance(smooth_iterations, int) or isinstance(smooth_iterations, bool) \
+            or not 0 <= smooth_iterations <= 100:
+        raise ValueError("smooth_iterations must be an integer between 0 and 100")
+    if size_field is not None or size_sources:
+        points, tris = grade_triangles(points, tris, size_function(size_field, size_sources),
+                                       max_elements)
+    if smooth_iterations:
+        points = smooth_interior(points, tris, smooth_iterations)
     m = Mdpa()
     for i, (x, y) in enumerate(points):
         m.nodes[i + 1] = (x, y, 0.0)

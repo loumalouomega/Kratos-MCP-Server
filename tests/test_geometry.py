@@ -117,3 +117,94 @@ def test_polygon_target_size():
     assert area(m) == pytest.approx(8.0)
     with pytest.raises(ValueError, match="target_size"):
         geo.create_polygon_mesh([[0, 0], [1, 0], [0, 1]], target_size=0.0)
+
+
+# ------------------------------------------------------- graded polygon meshes
+
+SQUARE = [[0, 0], [4, 0], [4, 2], [0, 2]]
+
+
+def edge_use(m):
+    """Undirected edge -> number of triangles using it."""
+    use: dict[tuple[int, int], int] = {}
+    for by in m.elements.values():
+        for _, conn in by.values():
+            for a, b in zip(conn, conn[1:] + conn[:1]):
+                use[(min(a, b), max(a, b))] = use.get((min(a, b), max(a, b)), 0) + 1
+    return use
+
+
+def assert_conforming(m):
+    # every edge is shared by at most 2 triangles, and the free edges are exactly
+    # the boundary conditions (no hanging nodes)
+    use = edge_use(m)
+    assert set(use.values()) <= {1, 2}
+    free = {k for k, v in use.items() if v == 1}
+    conds = {(min(c), max(c)) for by in m.conditions.values() for _, c in by.values()}
+    assert free == conds
+
+
+def local_size(m, point):
+    near = []
+    for t, by in m.elements.items():
+        for _, c in by.values():
+            cx = sum(m.nodes[i][0] for i in c) / 3
+            cy = sum(m.nodes[i][1] for i in c) / 3
+            if math.dist((cx, cy), point) < 0.3:
+                near.append(max(me.edge_lengths(m, t, c)))
+    return sum(near) / len(near)
+
+
+def test_graded_point_source_is_conforming_and_graded():
+    m = geo.create_polygon_mesh(SQUARE, size_sources=[
+        {"point": [0.0, 0.0], "size": 0.08, "growth": 0.4}], target_size=2.0)
+    assert m.validate() == []
+    assert area(m) == pytest.approx(8.0)
+    assert_conforming(m)
+    assert "non_positive_or_invalid" not in me.quality(m)["elements"][
+        "SmallDisplacementElement2D3N"]
+    near, far = local_size(m, (0.2, 0.2)), local_size(m, (3.5, 1.7))
+    assert near < 0.2 and far > 3 * near
+    longest = max(d for t, by in m.elements.items() for _, c in by.values()
+                  for d in me.edge_lengths(m, t, c))
+    assert longest > 1.0  # far field stays coarse: not a uniform refinement
+    assert {"domain", "side_0", "side_1", "side_2", "side_3"} <= set(m.sub_model_parts)
+
+
+def test_graded_size_field_expression_with_hole_and_smoothing():
+    hole = [[[1.0, 0.5], [2.0, 0.5], [2.0, 1.5], [1.0, 1.5]]]
+    m = geo.create_polygon_mesh(SQUARE, holes=hole, size_field="0.15 + 0.3*abs(x - 3)",
+                                target_size=1.0, smooth_iterations=3)
+    assert m.validate() == []
+    assert area(m) == pytest.approx(7.0)
+    assert_conforming(m)
+    assert len(m.sub_model_parts["hole_0"].conditions) >= 4
+    assert local_size(m, (3.0, 1.0)) < local_size(m, (0.2, 1.8))
+    # smoothing never flips a triangle
+    assert "non_positive_or_invalid" not in me.quality(m)["elements"][
+        "SmallDisplacementElement2D3N"]
+
+
+def test_segment_source_and_combined_sources():
+    m = geo.create_polygon_mesh(SQUARE, size_field="0.5", size_sources=[
+        {"segment": [[0, 0], [4, 0]], "size": 0.1, "growth": 0.5}])
+    assert m.validate() == []
+    assert_conforming(m)
+    assert local_size(m, (2.0, 0.1)) < local_size(m, (2.0, 1.9)) <= 0.5 * (1 + 1e-9)
+
+
+def test_grading_errors():
+    with pytest.raises(ValueError, match="max_elements"):
+        geo.create_polygon_mesh(SQUARE, size_field="0.01", max_elements=500)
+    with pytest.raises(ValueError, match="size_field"):
+        geo.create_polygon_mesh(SQUARE, size_field="1/(x - x)")
+    with pytest.raises(ValueError, match="positive"):
+        geo.create_polygon_mesh(SQUARE, size_field="-1")
+    with pytest.raises(ValueError, match="allowed"):
+        geo.create_polygon_mesh(SQUARE, size_field="__import__('os')")
+    with pytest.raises(ValueError, match="exactly one"):
+        geo.create_polygon_mesh(SQUARE, size_sources=[{"size": 1.0}])
+    with pytest.raises(ValueError, match="size must be positive"):
+        geo.create_polygon_mesh(SQUARE, size_sources=[{"point": [0, 0], "size": 0}])
+    with pytest.raises(ValueError, match="smooth_iterations"):
+        geo.create_polygon_mesh(SQUARE, size_field="1", smooth_iterations=-1)

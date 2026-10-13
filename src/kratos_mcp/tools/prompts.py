@@ -155,9 +155,10 @@ run_simulation when you want to look at the state between steps:
 Work in '{output_dir}'; use element type {element_type}.
 
 1. Pick the generator: mdpa_create_structured_mesh (line/rectangle/box),
-   mdpa_create_geometry_mesh (annulus, disc, cylinder, sphere, polygon), or --
-   for holes, graded sizes or CAD files -- mesh_generate_gmsh (needs the
-   optional gmsh extra) / mesh_import for a mesh made elsewhere.
+   mdpa_create_geometry_mesh (annulus, disc, cylinder, sphere, polygon with holes
+   and graded sizes via size_field / size_sources), or -- for CAD files or
+   quality-driven meshes -- mesh_generate_gmsh (needs the optional gmsh extra) /
+   mesh_import for a mesh made elsewhere.
 2. Need 3D from 2D? mdpa_extrude; simplices for a thermal or fluid solver?
    mdpa_convert_cells (quad_to_tri / hex_to_tet); two blocks to join?
    mdpa_transform + mdpa_merge(merge_tolerance=...).

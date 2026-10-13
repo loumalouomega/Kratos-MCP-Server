@@ -3,6 +3,40 @@
 Notable changes to Kratos MCP Server. Historical entries are reconstructed
 from repository tags and diffs; dates are the tagged commits' dates.
 
+## Unreleased
+
+### Added
+
+- **Cubic and pyramid cells.** `cell_kind`, measures, quality, boundary
+  extraction (4-node cubic edges, 6/8/9-node pyramid faces), mirror/negative-scale
+  re-orientation (edge-node pairs are re-ordered along the flipped edge) and
+  `convert_cells quadratic_to_linear` now handle 4-node cubic lines, 10-node
+  cubic triangles (`…2D10N`), 16-node cubic quadrilaterals and 5/13/14-node
+  pyramids. meshio import/export carries `line4`, `triangle10`, `quad16`,
+  `pyramid` and `pyramid14` (cubic cells only into formats that have them, i.e.
+  gmsh `.msh`; VTK is refused with an explanation). Node order is the
+  Gmsh/meshio Lagrange convention and has not been cross-checked against the
+  Kratos geometry sources. Cubic tetrahedra/wedges (20/18 nodes) stay rejected.
+- **Graded polygon meshes without gmsh.** `create_polygon_mesh` /
+  `mdpa_create_geometry_mesh kind="polygon"` take `size_field` (an expression
+  of `x`, `y`), `size_sources` (point/segment sources with `size` and `growth`),
+  `max_elements` and `smooth_iterations`: conforming longest-edge bisection
+  refines until each triangle fits the local size.
+- **`mesh_export(linearize_unsupported=true)`** writes 15-node wedges and
+  13-node pyramids (which meshio cannot carry) as their corner-only cells, with
+  a `warnings` entry.
+- **`mesh_remesh` validates and reports the mesh kind**: non-simplex input
+  (quads, hexes, quadratic cells, mixed triangles/tetrahedra) is refused before
+  reaching Kratos, the result carries `mesh_kind` (`planar2d`, `volume3d`,
+  `surface3d`) and the matching MMG variant (`MmgProcess2D`/`3D`/`3DSurfaces`)
+  is checked in `meshing_support`. 3D and surface results carry a warning that
+  those paths are not yet verified against reference numbers.
+
+### Fixed
+
+- `mesh_export` to `.msh` now writes Gmsh format; meshio's extension lookup
+  silently picked the Ansys `.msh` writer.
+
 ## 0.9.0 — 2026-10-13
 
 ### Added

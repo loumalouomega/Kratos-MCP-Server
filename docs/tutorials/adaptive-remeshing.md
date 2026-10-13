@@ -15,8 +15,9 @@ Kratos 10.4.4 with `KratosMeshingApplication` (the pip wheel bundles MMG).
 ```
 
 `validate_case(deep=true)` and `mesh_remesh` check `meshing_support` and say what is
-missing when MMG is not compiled in. Elements must be simplices (triangles or
-tetrahedra) — the structured generators have `triangles: true` for rectangles.
+missing when MMG is not compiled in. Elements must be linear simplices (triangles or
+tetrahedra) — the structured generators have `triangles: true` for rectangles; `mesh_remesh`
+refuses anything else, and mixed triangle/tetrahedron meshes, up front.
 
 ## 1. Refine around a region
 
@@ -145,7 +146,9 @@ Dirichlet side.
   interactive sessions reject cases with an `mmg_process`; the Flowgraph round trip keeps
   it as an ordinary process.
 - **2D has been verified; 3D has not.** The 3D and surface paths of `MmgProcess` are wired
-  but have not been run against reference numbers.
+  (the result's `mesh_kind` says which one a mesh takes, and `meshing_support` reports
+  `mmg2d` / `mmg3d` / `mmg3d_surfaces` separately) but have not been run against reference
+  numbers; those results carry a warning.
 - Only scalar fields from results (and scalar `NodalData` of the input) are written to the
   output `.mdpa`; analytic `field_expression` / `check_fields` values are not. MMG's
   interpolation can over/undershoot a sharp front.
