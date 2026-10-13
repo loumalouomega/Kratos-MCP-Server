@@ -30,7 +30,7 @@ claude mcp add kratos -e KRATOS_ROOT=/path/to/Kratos -- \
 pip-install Kratos itself.
 
 Verify with `/mcp` inside Claude Code — the `kratos` server should list
-105 tools, 21 resources and 8 prompts.
+110 tools, 21 resources and 8 prompts.
 
 To make it available in every project, add `--scope user`.
 
