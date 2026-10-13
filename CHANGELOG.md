@@ -15,13 +15,18 @@ from repository tags and diffs; dates are the tagged commits' dates.
   pyramids. meshio import/export carries `line4`, `triangle10`, `quad16`,
   `pyramid` and `pyramid14` (cubic cells only into formats that have them, i.e.
   gmsh `.msh`; VTK is refused with an explanation). Node order is the
-  Gmsh/meshio Lagrange convention and has not been cross-checked against the
-  Kratos geometry sources. Cubic tetrahedra/wedges (20/18 nodes) stay rejected.
+  Gmsh/meshio Lagrange convention, checked against the Kratos sources for
+  `Line2D4`, `Triangle2D10` and `Pyramid3D13`; Kratos has no 16-node quad,
+  14-node pyramid, cubic tetrahedron or 18-node wedge, so the first two exist for
+  meshio interchange only and the others stay rejected.
 - **Graded polygon meshes without gmsh.** `create_polygon_mesh` /
   `mdpa_create_geometry_mesh kind="polygon"` take `size_field` (an expression
   of `x`, `y`), `size_sources` (point/segment sources with `size` and `growth`),
   `max_elements` and `smooth_iterations`: conforming longest-edge bisection
-  refines until each triangle fits the local size.
+  refines until each triangle fits the local size; `smooth_iterations > 0` adds
+  Delaunay edge flips and angle-guarded Laplacian smoothing.
+- **`mdpa_quality` reports corner angles** (`angle_degrees`: min, max, worst
+  ids) for triangles and quadrilaterals.
 - **`mesh_export(linearize_unsupported=true)`** writes 15-node wedges and
   13-node pyramids (which meshio cannot carry) as their corner-only cells, with
   a `warnings` entry.

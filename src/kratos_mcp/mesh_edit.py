@@ -701,10 +701,12 @@ _EDGE_MIDS: dict[tuple[str, int], dict[frozenset, int]] = {
 
 # Edge nodes of cells with SEVERAL nodes per edge (cubic) or whose edges are
 # listed here in a fixed direction: (corner a, corner b) -> connectivity slots in
-# order from a to b. Lagrange (Gmsh / meshio / VTK) node order; NOT cross-checked
-# against Kratos' GenerateEdges (no Kratos source in this repo's CI), unlike the
-# quadratic tables above. Pyramid13/14 follow the same convention as Kratos'
-# Pyramid3D13 (base edges, then edges to the apex).
+# order from a to b. Lagrange (Gmsh / meshio / VTK) node order. Checked against the
+# Kratos sources (kratos/geometries, master): line_2d_4 (local coordinates -1/3,
+# +1/3), triangle_2d_10 (GenerateEdges: edge 0-1 -> nodes 3,4; 1-2 -> 5,6;
+# 2-0 -> 7,8) and pyramid_3d_13 (shape functions: 5..8 mid base edges 0-1, 1-2,
+# 2-3, 3-0; 9..12 mid edges corner->apex). Kratos has NO quad16, pyramid14, tet20
+# or wedge18 geometry: quad16/pyramid14 exist only for meshio interchange.
 _EDGE_NODES: dict[tuple[str, int], dict[tuple[int, int], list[int]]] = {
     ("line", 4): {(0, 1): [2, 3]},
     ("tri", 10): {(0, 1): [3, 4], (1, 2): [5, 6], (2, 0): [7, 8]},
@@ -827,14 +829,35 @@ def edge_lengths(mesh: Mdpa, type_name: str, conn: list[int]) -> list[float]:
             for a, b in EDGES[kind]]
 
 
+def corner_angles(mesh: Mdpa, type_name: str, conn: list[int]) -> list[float]:
+    """Interior angles in degrees at the corners of a triangle or quadrilateral
+    (higher-order cells use their corners); empty for every other kind."""
+    kind = cell_kind(mesh, type_name, conn)
+    if kind not in ("tri", "quad"):
+        return []
+    p = np.array([mesh.nodes[i] for i in corner_nodes(mesh, type_name, conn)])
+    angles = []
+    for k in range(len(p)):
+        u, v = p[k - 1] - p[k], p[(k + 1) % len(p)] - p[k]
+        norm = float(np.linalg.norm(u) * np.linalg.norm(v))
+        if norm == 0:
+            return []
+        angles.append(math.degrees(math.acos(max(-1.0, min(1.0, float(u @ v) / norm)))))
+    return angles
+
+
 def quality(mesh: Mdpa, worst: int = 5) -> dict[str, Any]:
     """Per-type measure statistics, edge-length range, aspect-ratio
-    (longest/shortest edge) extremes and non-positive (inverted/degenerate) cells."""
+    (longest/shortest edge) extremes, corner-angle extremes of triangles and
+    quadrilaterals (degrees, with the ids of the smallest-angle cells) and
+    non-positive (inverted/degenerate) cells."""
     report: dict[str, Any] = {}
     for label, store in (("elements", mesh.elements), ("conditions", mesh.conditions)):
         by_type: dict[str, Any] = {}
         for type_name, by_id in store.items():
             measures, aspects, bad, skipped = [], [], [], 0
+            smallest: list[tuple[float, int]] = []
+            largest = 0.0
             sized: list[tuple[int, float]] = []
             for eid, (_, conn) in by_id.items():
                 if any(n not in mesh.nodes for n in conn):
@@ -849,6 +872,10 @@ def quality(mesh: Mdpa, worst: int = 5) -> dict[str, Any]:
                 lengths = edge_lengths(mesh, type_name, conn)
                 if lengths and min(lengths) > 0:
                     aspects.append((max(lengths) / min(lengths), eid))
+                angles = corner_angles(mesh, type_name, conn)
+                if angles:
+                    smallest.append((min(angles), eid))
+                    largest = max(largest, max(angles))
             scale = max((abs(m) for m in measures), default=0.0)
             bad += [eid for eid, m in sized if m <= 1e-12 * scale]
             entry: dict[str, Any] = {"count": len(by_id)}
@@ -861,6 +888,10 @@ def quality(mesh: Mdpa, worst: int = 5) -> dict[str, Any]:
                 entry["aspect_ratio"] = {"max": aspects[0][0],
                                          "mean": sum(a for a, _ in aspects) / len(aspects),
                                          "worst_ids": [e for _, e in aspects[:worst]]}
+            if smallest:
+                smallest.sort()
+                entry["angle_degrees"] = {"min": smallest[0][0], "max": largest,
+                                          "worst_ids": [e for _, e in smallest[:worst]]}
             if bad:
                 entry["non_positive_or_invalid"] = {"count": len(bad), "ids": sorted(bad)[:20]}
             if skipped:

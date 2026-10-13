@@ -36,9 +36,13 @@ by conforming longest-edge (Rivara) bisection — no hanging nodes, boundary
 nodes stay on their original segments, hole slits are handled — until every
 triangle's longest edge is at most the local size (the smallest of the size at
 its corners and centroid). `max_elements` stops runaway sizes with an error;
-`smooth_iterations` (0–100) Laplacian-smooths interior nodes without ever
-flipping a triangle. Triangle shape is that of ear clipping plus bisection
-(aspect ratios of 2–4 are typical); use gmsh when quality matters more.
+`smooth_iterations` (0–100), when above 0, first applies Delaunay edge flips
+and then that many rounds of Laplacian smoothing of the interior nodes, skipping
+any move that would lower the worst adjacent angle. Boundary nodes never move,
+so the smallest angle can be limited by the polygon itself (a 2:1 rectangle
+split by ear clipping keeps its 26.6° corners); check it with `mdpa_quality`
+(`angle_degrees`). Triangle shape is otherwise that of ear clipping plus
+bisection; use gmsh when quality matters more.
 
 ## mesh_import / mesh_export
 

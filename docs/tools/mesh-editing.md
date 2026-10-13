@@ -31,10 +31,12 @@ the data blocks (`Tables`, `ElementalData`, `ConditionalData`, vector/flag
   (measures use the corner nodes). So are the cubic 4-node line, 10-node
   triangle (`…2D10N`) and 16-node quadrilateral (two nodes per edge, listed in
   the edge direction, then the interior nodes) and 5/13/14-node pyramids.
-  Cubic node order follows Gmsh/meshio and is not cross-checked against the
-  Kratos geometry sources; cubic cells cannot be extruded (convert with
-  `quadratic_to_linear` first). Cubic tetrahedra/wedges (20/18 nodes), and
-  everything beyond cubic, are still rejected with a message; a bare 10-node
+  Their node order was checked against the Kratos geometry sources
+  (`Line2D4`, `Triangle2D10`, `Pyramid3D13`); Kratos has no 16-node quad or
+  14-node pyramid, which exist here only for meshio interchange. Cubic cells
+  cannot be extruded (convert with `quadratic_to_linear` first). Cubic
+  tetrahedra and 18-node wedges, which Kratos does not have either, and
+  everything beyond cubic, are rejected with a message; a bare 10-node
   entity is a quadratic tetrahedron unless its name says `2D10`/`Tri`.
 - Errors come back as `{"error": "..."}`.
 
@@ -103,7 +105,7 @@ nodes of added entities.
 | `mdpa_convert_cells(path, mode, element_name?, condition_name?)` | `quad_to_tri`, `hex_to_tet` (Kuhn split: conforming on structured meshes with consistent node order; boundary quads follow the tet faces), or `quadratic_to_linear` (drop mid-edge/face/interior nodes of quadratic and cubic cells, ids unchanged) |
 | `mdpa_extract_boundary(path, condition_name, sub_model_part, element_part?, selector?, property_id?)` | conditions on the free faces (linear, quadratic and cubic line, tri, quad, tet, prism, pyramid and hex cells; higher-order faces carry their mid nodes, so the name map needs `"3"`/`"4"`/`"6"`/`"8"`/`"9"` keys by face node count — `"4"` is both a quad and a cubic edge, as 2D and 3D meshes do not mix); `selector` keeps only faces whose nodes are all selected, e.g. a plane |
 | `mdpa_set_properties(path, property_id?, values?, remove?, model_part_data?)` | the mesh-embedded `Properties` block and the `ModelPartData` header |
-| `mdpa_quality(path, worst?)` | per type: measure min/mean/max/total, aspect ratio with the worst ids, and inverted or degenerate cells (`ok: false`) |
+| `mdpa_quality(path, worst?)` | per type: measure min/mean/max/total, aspect ratio with the worst ids, corner-angle extremes in degrees (`angle_degrees`: min, max and the cells with the smallest angle; triangles and quads), and inverted or degenerate cells (`ok: false`) |
 
 ::: warning Pressure sign
 Conditions from `mdpa_extract_boundary` and the generators run with the

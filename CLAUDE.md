@@ -118,9 +118,11 @@ installed) via `-displayfd`.
   ordering verified against `kratos/geometries/*`) map to their linear kind for
   measures/boundary/extrusion; `convert_cells` has a `quadratic_to_linear` mode.
   Cubic line4/tri10/quad16 and pyramid5/13/14 are handled through `_EDGE_NODES`
-  (ordered, direction-aware edge slots) and `_CORNER_INTERIOR`; their order is the
-  Gmsh/meshio Lagrange convention, NOT verified against Kratos sources. `cell_kind`
-  disambiguates 10 nodes by name (`2D10`/`Tri` -> tri, else tet); tet20/wedge18 stay rejected.
+  (ordered, direction-aware edge slots) and `_CORNER_INTERIOR`; Gmsh/meshio Lagrange order,
+  checked against `kratos/geometries` for `Line2D4`, `Triangle2D10`, `Pyramid3D13`. Kratos has
+  no quad16/pyramid14/tet20/wedge18 geometry (the first two exist for meshio interchange only;
+  the others stay rejected). `cell_kind` disambiguates 10 nodes by name (`2D10`/`Tri` -> tri,
+  else tet). `quality` also reports `angle_degrees` for tri/quad.
   `mdpa.py` also owns `find_part`/`part_paths` (the one dotted-path
   lookup), `expected_node_count` (type-name suffix -> node count, used by `validate`) and
   geometries (`Mdpa.geometries`, `SubModelPart.geometries`). Boundary conditions it creates are
@@ -130,7 +132,7 @@ installed) via `-displayfd`.
 - `src/kratos_mcp/geometry.py` — numpy-only parametric generators (annulus, disc, cylinder via
   `extrude`, sphere, ear-clipped polygon with hole bridging + `target_size` subdivision and
   gmsh-free grading: `size_field`/`size_sources` -> `grade_triangles` conforming Rivara
-  longest-edge bisection, optional `smooth_interior`) following `create_rectangle_mesh`'s
+  longest-edge bisection, optional `flip_edges` + `smooth_interior`) following `create_rectangle_mesh`'s
   part naming (`side_<i>`, `hole_<k>`).
 - `src/kratos_mcp/mesh_io.py` + `gmsh_worker.py` — meshio import/export (`from_meshio`/
   `to_meshio`, physical groups <-> sub model parts; linear, quadratic and cubic line4/triangle10/

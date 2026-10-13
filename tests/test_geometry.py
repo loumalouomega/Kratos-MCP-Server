@@ -208,3 +208,40 @@ def test_grading_errors():
         geo.create_polygon_mesh(SQUARE, size_sources=[{"point": [0, 0], "size": 0}])
     with pytest.raises(ValueError, match="smooth_iterations"):
         geo.create_polygon_mesh(SQUARE, size_field="1", smooth_iterations=-1)
+
+
+def min_angle(m):
+    return me.quality(m)["elements"]["SmallDisplacementElement2D3N"]["angle_degrees"]["min"]
+
+
+def test_quality_reports_corner_angles():
+    m = mdpa_mod.create_rectangle_mesh(1.0, 1.0, 1, 1, element_name="Element2D3N",
+                                       condition_name="LineCondition2D2N", triangles=True)
+    angles = me.quality(m)["elements"]["Element2D3N"]["angle_degrees"]
+    assert angles["min"] == pytest.approx(45.0) and angles["max"] == pytest.approx(90.0)
+    quad = mdpa_mod.create_rectangle_mesh(1.0, 1.0, 1, 1)
+    q = next(iter(me.quality(quad)["elements"].values()))["angle_degrees"]
+    assert q["min"] == pytest.approx(90.0) and q["max"] == pytest.approx(90.0)
+
+
+def test_flips_and_smoothing_keep_conformity_and_never_worsen_the_graded_mesh():
+    kw = dict(size_field="0.15 + 0.3*abs(x - 3)", target_size=1.0,
+              holes=[[[1.0, 0.5], [2.0, 0.5], [2.0, 1.5], [1.0, 1.5]]])
+    raw = geo.create_polygon_mesh(SQUARE, **kw)
+    polished = geo.create_polygon_mesh(SQUARE, smooth_iterations=3, **kw)
+    assert polished.validate() == []
+    assert_conforming(polished)
+    assert area(polished) == pytest.approx(area(raw))
+    assert len(polished.nodes) == len(raw.nodes)
+    assert min_angle(polished) >= min_angle(raw) - 1e-9
+    assert len(polished.sub_model_parts["hole_0"].conditions) == len(
+        raw.sub_model_parts["hole_0"].conditions)
+
+
+def test_delaunay_flip_repairs_a_sliver_pair():
+    pts = [(0.0, 0.0), (4.0, 0.0), (2.0, 0.1), (2.0, -0.1)]
+    # diagonal 0-1 is long and thin; the Delaunay diagonal is 2-3
+    tris = geo.flip_edges(pts, [(0, 1, 2), (1, 0, 3)])
+    assert {frozenset(t) for t in tris} == {frozenset((0, 3, 2)), frozenset((3, 1, 2))}
+    assert all(((pts[b][0] - pts[a][0]) * (pts[c][1] - pts[a][1])
+                - (pts[c][0] - pts[a][0]) * (pts[b][1] - pts[a][1])) > 0 for a, b, c in tris)

@@ -46,29 +46,6 @@ Build these separate experiments on the existing sweeps and response extraction.
 
 **Probe:** first reproduce a tiny optimization reference with its objective history; separately train a small ROM and report error on held-out parameters against full-order results. Store the training inputs and basis provenance.
 
-### 2.3 Mesh editing: remaining gaps — S
-
-The `mdpa_*` editing tools, `mesh_import`/`mesh_export`, `Tables`,
-`ElementalData`/`ConditionalData`, vector/flag `NodalData`, per-sub-model-part
-data, quadratic and cubic (line4, triangle10, quad16) cells, pyramids and
-hole-capable, gmsh-free graded polygon meshing are shipped. Gaps that remain:
-
-- **Cells past that set.** Cubic tetrahedra and 18-node wedges (their face/edge
-  node order could not be checked without a Kratos source tree), anything of
-  order four or higher, and meshio export of 15-node wedges and 13-node
-  pyramids (meshio 5.3 has no such cell type; `linearize_unsupported` writes
-  their corners) are rejected rather than converted.
-- **Kratos cross-check of cubic ordering.** `tri10` / `quad16` / `line4` follow
-  the Gmsh/meshio Lagrange order; the Kratos geometry classes' node order
-  (`Triangle2D10`, …) has not been compared.
-- **Quality of graded polygon meshes.** Longest-edge bisection keeps meshes
-  conforming but not well shaped; CAD input and quality-driven sizing still need
-  the optional gmsh extra, which is not exercised in CI.
-
-**Probe:** compare `Triangle2D10` node order against Kratos by solving a cubic
-patch test; mesh a polygon with a graded size field and report minimum angle
-against gmsh.
-
 ## Non-goals and decisions taken
 
 Recorded so they are not re-proposed as gaps.
@@ -76,6 +53,7 @@ Recorded so they are not re-proposed as gaps.
 - **No Kratos or PyVista imports in the MCP server process.** Keep native execution in workers to protect stdio transport and contain native crashes.
 - **No replacement graphical editor.** FlowGraph import/export already provides the visual editing route; improve interoperability when a concrete gap arises.
 - **No duplicate solver or process registry.** Extend existing runtime discovery and source parsing, using the configured Kratos build and source as authority.
+- **No cubic tetrahedra, 18-node wedges or order four and up.** Kratos has no such geometry (`Line2D4`, `Triangle2D10` and `Pyramid3D13` are its only cells past quadratic, and all three are supported); `quad16` and `pyramid14` exist only for meshio interchange.
 - **No promise that every Kratos application is supported by a template.** The generic analysis-class entry point remains available; curated workflows need capability checks and numerical reference cases.
 
 ---

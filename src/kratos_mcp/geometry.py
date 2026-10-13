@@ -489,10 +489,49 @@ def grade_triangles(points: list[tuple[float, float]], tris: list[tuple[int, int
     return points, list(alive.values())
 
 
+def flip_edges(points: list[tuple[float, float]], tris: list[tuple[int, int, int]],
+               max_sweeps: int = 100) -> list[tuple[int, int, int]]:
+    """Delaunay edge flips (Lawson): an interior edge is flipped when the angles
+    opposite to it sum to more than pi and the surrounding quadrilateral is convex.
+    Free edges never flip, so the boundary and conformity are preserved."""
+    tris = list(tris)
+
+    def angle(apex: int, p: int, q: int) -> float:
+        u = (points[p][0] - points[apex][0], points[p][1] - points[apex][1])
+        v = (points[q][0] - points[apex][0], points[q][1] - points[apex][1])
+        cos = (u[0] * v[0] + u[1] * v[1]) / (math.hypot(*u) * math.hypot(*v))
+        return math.acos(max(-1.0, min(1.0, cos)))
+
+    def area(a: int, b: int, c: int) -> float:
+        return ((points[b][0] - points[a][0]) * (points[c][1] - points[a][1])
+                - (points[c][0] - points[a][0]) * (points[b][1] - points[a][1]))
+
+    for _ in range(max_sweeps):
+        owner: dict[tuple[int, int], tuple[int, int]] = {}  # directed edge -> (tri, apex)
+        for t, (a, b, c) in enumerate(tris):
+            owner[(a, b)], owner[(b, c)], owner[(c, a)] = (t, c), (t, a), (t, b)
+        flipped: set[int] = set()
+        for (u, v), (t1, w) in list(owner.items()):
+            other = owner.get((v, u))
+            if other is None or u > v or t1 in flipped or other[0] in flipped:
+                continue
+            t2, x = other
+            if angle(w, u, v) + angle(x, u, v) <= math.pi * (1 + 1e-9):
+                continue
+            if area(w, u, x) <= 0 or area(w, x, v) <= 0:
+                continue
+            tris[t1], tris[t2] = (w, u, x), (w, x, v)
+            flipped |= {t1, t2}
+        if not flipped:
+            break
+    return tris
+
+
 def smooth_interior(points: list[tuple[float, float]], tris: list[tuple[int, int, int]],
                     iterations: int) -> list[tuple[float, float]]:
     """Laplacian smoothing of the nodes that do not lie on a free edge; a move that
-    would flip or collapse an adjacent triangle is skipped."""
+    would lower the smallest angle among the adjacent triangles (which includes
+    flipping one) is skipped, so smoothing never makes the worst local angle worse."""
     points = list(points)
     counts: dict[tuple[int, int], int] = {}
     neighbours: dict[int, set[int]] = {}
@@ -507,18 +546,27 @@ def smooth_interior(points: list[tuple[float, float]], tris: list[tuple[int, int
             incident.setdefault(n, []).append(t)
     fixed = {n for (u, v), c in counts.items() if c == 1 for n in (u, v)}
 
-    def area(t: int) -> float:
+    def worst_angle(t: int) -> float:
+        """Smallest corner angle (radians) of triangle ``t``; -1 when inverted."""
         a, b, c = (points[i] for i in tris[t])
-        return (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])
+        if (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]) <= 0:
+            return -1.0
+        best = math.pi
+        for p, q, r in ((a, b, c), (b, c, a), (c, a, b)):
+            u, v = (q[0] - p[0], q[1] - p[1]), (r[0] - p[0], r[1] - p[1])
+            cos = (u[0] * v[0] + u[1] * v[1]) / (math.hypot(*u) * math.hypot(*v))
+            best = min(best, math.acos(max(-1.0, min(1.0, cos))))
+        return best
 
     for _ in range(iterations):
         for n in sorted(neighbours):
             if n in fixed:
                 continue
             old = points[n]
+            before = min(worst_angle(t) for t in incident[n])
             ring = [points[m] for m in neighbours[n]]
             points[n] = (sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring))
-            if any(area(t) <= 0 for t in incident[n]):
+            if min(worst_angle(t) for t in incident[n]) < before:
                 points[n] = old
     return points
 
@@ -542,8 +590,9 @@ def create_polygon_mesh(vertices: list[list[float]], refinements: int = 0,
     (point / segment sources with ``size`` and ``growth``, see
     :func:`size_function`) then grade the mesh by conforming longest-edge
     bisection until each triangle's longest edge is at most the local size
-    (raises past ``max_elements`` triangles); ``smooth_iterations`` rounds of
-    Laplacian smoothing move interior nodes only. Triangle quality is whatever
+    (raises past ``max_elements`` triangles); ``smooth_iterations`` > 0 first applies Delaunay edge flips, then that many
+    rounds of Laplacian smoothing of interior nodes (a move that lowers the
+    worst adjacent angle is skipped). Triangle quality is whatever
     ear clipping gives; use gmsh for CAD-driven meshes."""
     poly = [(float(v[0]), float(v[1])) for v in vertices]
     if not 0 <= refinements <= 6:
@@ -615,6 +664,7 @@ def create_polygon_mesh(vertices: list[list[float]], refinements: int = 0,
         points, tris = grade_triangles(points, tris, size_function(size_field, size_sources),
                                        max_elements)
     if smooth_iterations:
+        tris = flip_edges(points, tris)
         points = smooth_interior(points, tris, smooth_iterations)
     m = Mdpa()
     for i, (x, y) in enumerate(points):
