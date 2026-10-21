@@ -37,6 +37,22 @@ from repository tags and diffs; dates are the tagged commits' dates.
   is checked in `meshing_support`. 3D and surface results carry a warning that
   those paths are not yet verified against reference numbers.
 
+### Changed
+
+- Updated the Python dependency lock to clear the open Dependabot alert on the
+  MCP Python SDK: `mcp` 1.30.0 (from 1.28.1, GHSA-84m7-p3x7-pcfv /
+  CVE-2026-59951, unbounded session accumulation in the Streamable HTTP
+  transport). The `mcp` requirement is now `>=1.30.0,<2`: the floor is the
+  patched 1.x release, and the upper bound keeps the server on the 1.x API
+  (`mcp.server.fastmcp`), which 2.x renamed to `MCPServer`. This server only
+  speaks stdio, so the advisory did not apply to it directly.
+- Also bumped `certifi` to 2026.10.19 in the Python lock (from 2026.6.17,
+  GHSA-6q48-6c7w-9gw2 / PYSEC-2026-4320: the bundle shipped emSign root CAs
+  whose intermediate CA keys are compromised) and `vite` to 6.4.5 in the docs
+  lock (from 6.4.3: the remaining `launch-editor` advisories
+  GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw and GHSA-587h-7wmj-h5pm are
+  cleared because 6.4.4 dropped the `launch-editor` dependency).
+
 ### Fixed
 
 - `mesh_export` to `.msh` now writes Gmsh format; meshio's extension lookup

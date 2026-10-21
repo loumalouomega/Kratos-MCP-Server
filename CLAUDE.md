@@ -407,7 +407,9 @@ installed) via `-displayfd`.
 - Tools that return a mixed `[dict, Image]` list (inline image + metadata)
   must be registered with `@mcp.tool(structured_output=False)`, or FastMCP's
   output-schema validation chokes; `Image` comes from `mcp.server.fastmcp`.
-  This is why `pyproject.toml` requires `mcp>=1.10`.
+  This is why `pyproject.toml` pins `mcp>=1.30.0,<2`: the floor covers that
+  `structured_output` support (1.10) plus the session-expiry fix (1.30.0), and
+  `<2` keeps the 1.x `mcp.server.fastmcp` API that 2.x renamed to `MCPServer`.
 - `imageio` is needed by pyvista's `open_gif` but is NOT a pyvista core
   dependency — the `viz` extra lists it explicitly.
 - `pyvista.start_xvfb()` was removed in pyvista 0.48; `render_worker.py`
