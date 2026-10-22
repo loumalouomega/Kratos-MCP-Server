@@ -6,7 +6,7 @@ hero:
   text: Finite element simulations for AI assistants
   tagline: >-
     Scaffold, run and post-process Kratos Multiphysics simulations through
-    the Model Context Protocol — 110 tools, guided workflows, managed jobs.
+    the Model Context Protocol — 113 tools, guided workflows, managed jobs.
   actions:
     - theme: brand
       text: Get started

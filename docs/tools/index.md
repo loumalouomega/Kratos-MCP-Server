@@ -1,6 +1,6 @@
 # Tool reference
 
-The server exposes **110 tools**, **21 resources** (15 worked examples) and
+The server exposes **113 tools**, **21 resources** (15 worked examples) and
 **8 prompts**, grouped by workflow stage:
 
 | Category | Tools |
@@ -17,6 +17,7 @@ The server exposes **110 tools**, **21 resources** (15 worked examples) and
 | [Post-processing](/tools/postprocessing) | `results_list`, `results_summary`, `results_probe`, `results_convergence`, `results_time_history`, `results_compare` |
 | [Visualization](/tools/visualization) | `results_render`, `results_animate` (optional `viz` extra) |
 | [Interoperability](/tools/interop) | `explain_project_parameters`, `export_case_to_flowgraph`, `import_flowgraph_to_case` |
+| [Documentation lookup](/tools/docs) | `kratos_docs_structure`, `kratos_docs_read`, `kratos_docs_ask` (opt-in, DeepWiki) |
 
 Plus [resources](/tools/resources) (templates, format guides, worked
 examples, live job logs) and [prompts](/tools/prompts) (guided workflows).

@@ -7,6 +7,12 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ### Added
 
+- **DeepWiki documentation lookup.** Opt-in tools `kratos_docs_structure`,
+  `kratos_docs_read` and `kratos_docs_ask` (`KRATOS_MCP_ENABLE_DEEPWIKI=1`) query the
+  public DeepWiki MCP for `KratosMultiphysics/Kratos`; the server instructions and the
+  `setup_*`, `debug_failed_simulation` and `edit_existing_case` prompts point to DeepWiki
+  (connected directly or through these tools) for concept questions. Docs show how to
+  register DeepWiki next to this server.
 - **Cubic and pyramid cells.** `cell_kind`, measures, quality, boundary
   extraction (4-node cubic edges, 6/8/9-node pyramid faces), mirror/negative-scale
   re-orientation (edge-node pairs are re-ordered along the flipped edge) and

@@ -66,6 +66,9 @@ takes priority over a pip installation.
 | `KRATOS_MPI_ARGS` | empty | Extra launcher flags, shell-split (e.g. `--oversubscribe`) |
 | `KRATOS_MCP_HOME` | `~/.kratos-mcp` | Server state: jobs, sessions, studies, caches |
 | `KRATOS_MCP_ALLOW_EXEC` | unset | Set to `1` to enable `session_exec_python` (runs arbitrary Python inside an interactive session; off by default) |
+| `KRATOS_MCP_ENABLE_DEEPWIKI` | unset | Set to `1` to enable the `kratos_docs_*` tools, which send questions to the public DeepWiki MCP (off by default) |
+| `KRATOS_MCP_DEEPWIKI_URL` | `https://mcp.deepwiki.com/mcp` | DeepWiki MCP endpoint (streamable HTTP) |
+| `KRATOS_MCP_DEEPWIKI_TIMEOUT` | `60` | Seconds to wait for a DeepWiki answer |
 | `KRATOS_MCP_MAX_SESSIONS` | `4` | Maximum simultaneously open interactive sessions |
 | `KRATOS_MCP_SESSION_IDLE_TIMEOUT` | `3600` | Seconds of inactivity after which a session worker exits on its own |
 
