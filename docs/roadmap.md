@@ -50,6 +50,7 @@ Build these separate experiments on the existing sweeps and response extraction.
 
 Recorded so they are not re-proposed as gaps.
 
+- **Outbound network only by opt-in.** The `kratos_docs_*` tools (the server's only HTTP client, `deepwiki.py`) stay disabled unless `KRATOS_MCP_ENABLE_DEEPWIKI=1`; DeepWiki answers are advisory and never replace the local introspection tools.
 - **No Kratos or PyVista imports in the MCP server process.** Keep native execution in workers to protect stdio transport and contain native crashes.
 - **No replacement graphical editor.** FlowGraph import/export already provides the visual editing route; improve interoperability when a concrete gap arises.
 - **No duplicate solver or process registry.** Extend existing runtime discovery and source parsing, using the configured Kratos build and source as authority.

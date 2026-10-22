@@ -63,7 +63,7 @@ element simulations end to end:
   cases to/from the [Kratos FlowGraph](https://github.com/KratosMultiphysics/Flowgraph)
   visual node editor (lossless round-trip).
 
-110 tools, 21 resources (15 worked examples) and 8 guided prompts. See the full documentation in
+113 tools, 21 resources (15 worked examples) and 8 guided prompts. See the full documentation in
 [`docs/`](docs/) (VitePress).
 
 ## Quick start
@@ -96,6 +96,11 @@ The assistant calls `kratos_install` the first time and reuses it afterwards.
 If you already have a compiled Kratos checkout, skip that and point
 `KRATOS_ROOT` at it instead (`-e KRATOS_ROOT=/path/to/Kratos` on the `claude
 mcp add` line) — see [Installation](docs/guide/installation.md).
+
+For Kratos knowledge beyond the introspection tools, add the public DeepWiki MCP
+alongside (`claude mcp add --transport http deepwiki https://mcp.deepwiki.com/mcp`),
+or start this server with `KRATOS_MCP_ENABLE_DEEPWIKI=1` to use its built-in
+`kratos_docs_*` tools — see [Documentation lookup](docs/tools/docs.md).
 
 ## Notebooks
 

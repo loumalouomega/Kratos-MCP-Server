@@ -38,7 +38,12 @@ mcp = FastMCP(
         "needs the optional 'viz' extra). "
         "Typical workflow: check installation -> create mesh -> create project -> "
         "add BCs/loads -> validate_case -> run_simulation -> results_summary "
-        "-> results_render."
+        "-> results_render. "
+        "For 'how/why' questions about Kratos (solver settings, process parameters, "
+        "error meanings), consult a connected DeepWiki MCP (ask_question on "
+        "KratosMultiphysics/Kratos) or, if the server was started with "
+        "KRATOS_MCP_ENABLE_DEEPWIKI=1, kratos_docs_ask; the kratos_list_* tools "
+        "remain authoritative for the installed build."
     ),
 )
 

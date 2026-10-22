@@ -29,8 +29,19 @@ claude mcp add kratos -e KRATOS_ROOT=/path/to/Kratos -- \
 `KRATOS_ROOT` is optional either way — omit it to have the assistant
 pip-install Kratos itself.
 
+To give the assistant a knowledge base on Kratos itself, also add the public
+[DeepWiki](https://deepwiki.com/KratosMultiphysics/Kratos) MCP next to it (free,
+no login). The server's instructions and prompts point the assistant at its
+`ask_question` tool for "how/why" questions:
+
+```bash
+claude mcp add --transport http deepwiki https://mcp.deepwiki.com/mcp
+```
+
+See [Documentation lookup](/tools/docs) for the alternative built-in tools.
+
 Verify with `/mcp` inside Claude Code — the `kratos` server should list
-110 tools, 21 resources and 8 prompts.
+113 tools, 21 resources and 8 prompts.
 
 To make it available in every project, add `--scope user`.
 
@@ -50,10 +61,17 @@ Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
       "env": {
         "KRATOS_ROOT": "/path/to/Kratos"
       }
+    },
+    "deepwiki": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.deepwiki.com/mcp"]
     }
   }
 }
 ```
+
+The optional `deepwiki` entry adds the public DeepWiki MCP (via the `mcp-remote`
+bridge, since `claude_desktop_config.json` only starts local commands).
 
 Restart Claude Desktop afterwards.
 

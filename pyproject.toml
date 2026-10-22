@@ -45,5 +45,6 @@ packages = ["src/kratos_mcp"]
 testpaths = ["tests"]
 markers = [
     "kratos: integration tests that require a working Kratos build (deselect with '-m \"not kratos\"')",
+    "network: tests that reach the public internet (run with KRATOS_MCP_TEST_NETWORK=1)",
 ]
 asyncio_mode = "auto"

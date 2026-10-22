@@ -22,6 +22,8 @@ Follow this workflow with the kratos MCP tools:
 4. create_project — scaffold ProjectParameters.json and Materials.json into
    the same directory, setting fix_model_part to the support edge and
    material properties in overrides.
+   If a DeepWiki MCP (ask_question on KratosMultiphysics/Kratos) or kratos_docs_ask
+   is available, use it for unfamiliar solver or material parameters; verify against the installed build.
 5. add_boundary_condition — add the loads (line_load/point_load/self_weight).
 6. validate_case — fix any reported issues before running.
 7. run_simulation with wait_seconds=60 for small cases; otherwise poll
@@ -46,6 +48,8 @@ Follow this workflow with the kratos MCP tools:
 3. create_project with template thermal_stationary (steady state) or
    thermal_transient, setting conductivity/density/specific_heat and
    fixed_temperature in overrides.
+   If a DeepWiki MCP (ask_question on KratosMultiphysics/Kratos) or kratos_docs_ask
+   is available, use it for unfamiliar solver or material parameters; verify against the installed build.
 4. add_boundary_condition — fix_temperature on each constrained edge,
    surface_heat_flux/volume_heat_source for heat inputs.
 5. validate_case, then run_simulation.
@@ -72,6 +76,8 @@ Follow this workflow with the kratos MCP tools:
 4. create_project with template fluid_transient, setting volume_part,
    skin_parts, inlet_model_part/inlet_velocity and outlet_model_part in
    overrides to match the mesh's actual submodelpart names.
+   If a DeepWiki MCP (ask_question on KratosMultiphysics/Kratos) or kratos_docs_ask
+   is available, use it for unfamiliar solver or stabilization parameters; verify against the installed build.
 5. add_boundary_condition — kind='fix_velocity' with value=[0,0,0] on every
    no-slip wall submodelpart not already covered by the template's built-in
    inlet/outlet processes (walls, an immersed body's surface, ...).
@@ -100,6 +106,8 @@ Follow this workflow with the kratos MCP tools:
    - Non-convergence: results_convergence('{job_id}') shows iteration counts;
      reduce time_step, increase max_iteration, or relax tolerances.
 3. validate_case on the case directory to catch configuration issues.
+   If a DeepWiki MCP (ask_question on KratosMultiphysics/Kratos) or kratos_docs_ask
+   is available, use it for unfamiliar errors or Kratos concepts in the traceback; verify against the installed build.
 4. Explain the root cause and apply the fix, then re-run and confirm.
 """
 
@@ -186,6 +194,8 @@ Work in '{output_dir}'; use element type {element_type}.
    project_update_process / project_remove_process for processes,
    materials_set_property for materials, mdpa_* tools for the mesh (pass
    output=<new file> to keep the original). Multi-stage cases need stage=.
+   If a DeepWiki MCP (ask_question on KratosMultiphysics/Kratos) or kratos_docs_ask
+   is available, use it for unfamiliar solver or process settings; verify against the installed build.
 3. If the mesh changed: mdpa_quality, mdpa_validate, and make sure every
    model_part_name in the processes and Materials.json still exists
    (materials_check).

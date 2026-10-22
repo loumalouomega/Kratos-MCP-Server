@@ -100,6 +100,11 @@ installed) via `-displayfd`.
 - `src/kratos_mcp/session_worker.py` / `sessions.py` / `tools/sessions.py` —
   interactive stateful sessions (see "Interactive sessions"); the first is the
   third Kratos-importing module.
+- `src/kratos_mcp/deepwiki.py` / `tools/docs.py` — opt-in (`KRATOS_MCP_ENABLE_DEEPWIKI=1`) client for the
+  public DeepWiki MCP (`https://mcp.deepwiki.com/mcp`, streamable HTTP via `mcp.client`), backing
+  `kratos_docs_structure/read/ask`. The ONLY module doing outbound HTTP (pip aside); DeepWiki's tool
+  argument is `repoName`; failures return `{"error"}`; output truncated to 20k chars. Tests monkeypatch
+  `deepwiki.call`; the live check is marked `network` (needs `KRATOS_MCP_TEST_NETWORK=1`).
 - `src/kratos_mcp/render_worker.py` — pyvista/VTK rendering, subprocess-only
   (see above)
 - `src/kratos_mcp/mdpa.py` — pure-Python MDPA parse/write/inspect/validate +
@@ -533,4 +538,4 @@ Every time you change code in this repo, check whether doc/, README.md, and this
   the tool and the worker. Other knobs: `KRATOS_MCP_MAX_SESSIONS` (4),
   `KRATOS_MCP_SESSION_IDLE_TIMEOUT` (3600 s).
 - Tool/resource/prompt counts are quoted in `README.md` and `docs/tools/index.md`
-  (currently 110 / 21 / 8) — bump both when adding any.
+  (currently 113 / 21 / 8) — bump both when adding any.

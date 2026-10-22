@@ -43,6 +43,7 @@ export default defineConfig({
             { text: 'Post-processing', link: '/tools/postprocessing' },
             { text: 'Visualization', link: '/tools/visualization' },
             { text: 'Interoperability', link: '/tools/interop' },
+            { text: 'Documentation lookup', link: '/tools/docs' },
             { text: 'Resources', link: '/tools/resources' },
             { text: 'Prompts', link: '/tools/prompts' },
           ],
