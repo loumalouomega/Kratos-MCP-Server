@@ -3,7 +3,7 @@
 Notable changes to Kratos MCP Server. Historical entries are reconstructed
 from repository tags and diffs; dates are the tagged commits' dates.
 
-## Unreleased
+## 0.10.0 — 2026-10-24
 
 ### Security
 
