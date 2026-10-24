@@ -4,7 +4,7 @@
 [![Deploy docs](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/docs.yml/badge.svg)](https://loumalouomega.github.io/Kratos-MCP-Server/)
 [![Release](https://github.com/loumalouomega/Kratos-MCP-Server/actions/workflows/release.yml/badge.svg)](https://github.com/loumalouomega/Kratos-MCP-Server/releases)
 [![PyPI](https://img.shields.io/pypi/v/kratos-mcp-server.svg)](https://pypi.org/project/kratos-mcp-server/)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/github/license/loumalouomega/Kratos-MCP-Server)](LICENSE)
 
 An [MCP](https://modelcontextprotocol.io) server that lets AI assistants drive
@@ -146,7 +146,7 @@ that `.venv`.
 
 ## Requirements
 
-- Python ≥ 3.10, [uv](https://docs.astral.sh/uv/)
+- Python ≥ 3.11, [uv](https://docs.astral.sh/uv/)
 - Kratos Multiphysics, either pip-installed via `kratos_install`
   (Linux/Windows x86_64 only — no macOS wheels) or a compiled build (tested
   with 10.4, StructuralMechanics / ConvectionDiffusion / FluidDynamics /

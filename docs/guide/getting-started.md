@@ -57,7 +57,7 @@ about **0.43 mm downward**, within a few percent of beam theory.
 
 | Requirement | Notes |
 | --- | --- |
-| Python ≥ 3.10 + [uv](https://docs.astral.sh/uv/) | server runtime |
+| Python ≥ 3.11 + [uv](https://docs.astral.sh/uv/) | server runtime |
 | Kratos, one of: | |
 | — pip-installed via `kratos_install` | Linux/Windows x86_64 only; no setup needed beforehand |
 | — a compiled build | `bin/Release` inside `KRATOS_ROOT`; needed on macOS or for custom builds — see [Installation](/guide/installation) |

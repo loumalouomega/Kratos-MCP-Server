@@ -5,6 +5,12 @@ from repository tags and diffs; dates are the tagged commits' dates.
 
 ## Unreleased
 
+### Security
+
+- **Pillow 13.0.0.** Locked `pillow` (transitive via pyvista/imageio) to 13.0.0 to fix 37
+  Dependabot alerts. It requires Python 3.11+, so **Python 3.10 support is dropped**
+  (`requires-python >=3.11`, CI matrix 3.11/3.12).
+
 ### Added
 
 - **DeepWiki documentation lookup.** Opt-in tools `kratos_docs_structure`,
